@@ -30,7 +30,7 @@ This file is the source of truth for what the project is, where it stands, and w
 | Repo target | User points the app at a folder; agents work there | Manual merge back in v1 |
 | API keys | Plain JSON in user data dir | Move to OS keychain in v1.1 |
 | Branch model | `dev` → `main`, mirrors KnittingApp | Releases tagged on main |
-| Packaging | electron-builder NSIS | Windows-only for v1 |
+| Packaging | Electron Forge `MakerSquirrel` (`.exe` installer) | Windows-only for v1. Switch to `MakerWix` if `.msi` becomes a requirement. |
 | Repo location | `github.com/lukeeexd/Orchestrator`, private | Created at M0 with `--source . --push` |
 
 ## v1 fleet (the five roles)
@@ -124,7 +124,7 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 
 ### M6 — Installer + dogfood  *(not started)*
 
-- [ ] electron-builder NSIS installer config
+- [ ] Forge `MakerSquirrel` `.exe` installer config (already scaffolded by the template — verify icons, publisher, exit codes)
 - [ ] Decide on code signing (cost vs. SmartScreen warnings)
 - [ ] Use on a real task in another repo, file issues
 - [ ] Tag v0.1.0 on main
