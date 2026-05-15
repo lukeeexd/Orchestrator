@@ -3,6 +3,7 @@ import type { DirectorMessage, DirectorMode } from '../shared/types';
 import { useLocalStorageState } from './hooks/useLocalStorageState';
 import { useAgents } from './hooks/useAgents';
 import { useDirector } from './hooks/useDirector';
+import { useSettings } from './hooks/useSettings';
 import { TopBar } from './components/TopBar';
 import { LeftRail, type RailScreen } from './components/LeftRail';
 import { StatusBar } from './components/StatusBar';
@@ -63,6 +64,7 @@ export function App() {
   );
   const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents();
   const { messages, send, busy } = useDirector();
+  const settings = useSettings();
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
 
   const handledPlans = useRef<Set<string>>(new Set());
@@ -112,7 +114,11 @@ export function App() {
 
   return (
     <div className="app">
-      <TopBar workspace={workspace} onChangeWorkspace={changeWorkspace} />
+      <TopBar
+        workspace={workspace}
+        model={settings?.defaultModel ?? 'claude-sonnet-4-6'}
+        onChangeWorkspace={changeWorkspace}
+      />
       <div className="body">
         <LeftRail
           active={active}

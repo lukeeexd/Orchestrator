@@ -58,6 +58,10 @@ export async function spawnAgent(
 
   const wt = createWorktree(req.workspace, name);
 
+  // settings.defaultModel overrides each role's hardcoded model — gives
+  // the user one knob to flip Opus / Sonnet / Haiku across the whole fleet.
+  const effectiveModel = readSettings().defaultModel || role.model;
+
   const agent: Agent = {
     id,
     role: req.role,
@@ -70,7 +74,7 @@ export async function spawnAgent(
     tokens: 0,
     cost: 0,
     elapsed: '00:00',
-    model: role.model,
+    model: effectiveModel,
     workspace: req.workspace,
     worktreePath: wt.isWorktree ? wt.workdir : null,
     spawnedBy: req.spawnedBy ?? 'user',
@@ -110,7 +114,7 @@ async function run(
   agentId: string,
   req: SpawnAgentRequest,
   workdir: string,
-  settings: { apiKey: string; oauthToken: string },
+  settings: { apiKey: string; oauthToken: string; defaultModel: string },
   controller: AbortController,
   sinks: RunnerSinks,
 ): Promise<void> {
@@ -146,6 +150,7 @@ async function run(
   }, 1000);
 
   try {
+    const effectiveModel = settings.defaultModel || role.model;
     const q = sdk.query({
       prompt: req.task,
       options: {
@@ -159,7 +164,7 @@ async function run(
             description: `${role.label} for the Orchestrator app`,
             prompt: role.systemPrompt,
             tools: role.tools,
-            model: role.model,
+            model: effectiveModel,
           },
         },
       },

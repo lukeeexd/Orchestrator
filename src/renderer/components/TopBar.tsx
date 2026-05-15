@@ -2,10 +2,11 @@ import { Icon } from './Icon';
 
 interface Props {
   workspace: string;
+  model: string;
   onChangeWorkspace: () => void;
 }
 
-export function TopBar({ workspace, onChangeWorkspace }: Props) {
+export function TopBar({ workspace, model, onChangeWorkspace }: Props) {
   return (
     <div className="topbar">
       <div className="tb-crumb">
@@ -32,10 +33,9 @@ export function TopBar({ workspace, onChangeWorkspace }: Props) {
         <span className="val">0.00</span>
         <span style={{ color: 'var(--muted-2)' }}>/ 5.00</span>
       </div>
-      <div className="tb-pill">
+      <div className="tb-pill" title="Default model — set via settings.json defaultModel">
         <span className="dot" />
-        <span className="val">claude-sonnet-4-6</span>
-        <Icon name="chevron-down" size={11} color="var(--muted)" />
+        <span className="val">{model}</span>
       </div>
     </div>
   );
