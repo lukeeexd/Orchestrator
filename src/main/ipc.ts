@@ -162,6 +162,22 @@ export function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(
+    IpcChannels.DirectorAckRedirect,
+    (
+      _event,
+      req: { messageId: string; agentName: string; ok: boolean; error?: string },
+    ): { ok: true } => {
+      director.acknowledgeRedirect(
+        req.messageId,
+        req.agentName,
+        req.ok,
+        req.error,
+      );
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
     IpcChannels.DirectorAcceptPlan,
     async (
       _event,

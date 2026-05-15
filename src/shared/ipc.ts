@@ -22,6 +22,7 @@ export const IpcChannels = {
   DirectorList: 'director:list',
   DirectorSend: 'director:send',
   DirectorAcceptPlan: 'director:acceptPlan',
+  DirectorAckRedirect: 'director:ackRedirect',
   DirectorAbort: 'director:abort',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
@@ -121,6 +122,12 @@ export interface OrchestratorApi {
     attachments?: string[],
   ) => Promise<{ ok: true }>;
   acceptPlan: (req: AcceptPlanRequest) => Promise<AcceptPlanResponse>;
+  ackDirectorRedirect: (req: {
+    messageId: string;
+    agentName: string;
+    ok: boolean;
+    error?: string;
+  }) => Promise<{ ok: true }>;
   abortDirector: () => Promise<{ ok: true }>;
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;

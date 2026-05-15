@@ -116,8 +116,45 @@ export function App() {
     }
   };
 
-  // Auto-spawn plans in 'auto' mode. In 'manual' mode the user clicks
-  // "Spawn this" on the plan card if they want it.
+  const handledRedirects = useRef<Set<string>>(new Set());
+
+  const fireRedirect = async (
+    messageId: string,
+    agentName: string,
+    instruction: string,
+  ) => {
+    if (handledRedirects.current.has(messageId)) return;
+    handledRedirects.current.add(messageId);
+    // Resolve agent name → id from the live registry snapshot.
+    const target = agents.find((a) => a.name === agentName);
+    if (!target) {
+      console.warn(
+        `[orchestrator] redirect target not found: @${agentName}`,
+      );
+      handledRedirects.current.delete(messageId);
+      return;
+    }
+    try {
+      const res = await window.api.redirectAgent({
+        agentId: target.id,
+        body: instruction,
+      });
+      // Note: ack the redirect outcome via a follow-up IPC. The
+      // Director-side handler patches `redirectFired` so we don't fire
+      // again on the next render.
+      await window.api.ackDirectorRedirect({
+        messageId,
+        agentName,
+        ok: res.ok,
+        error: res.error,
+      });
+    } catch (e) {
+      console.error('[orchestrator] redirect fire failed', e);
+      handledRedirects.current.delete(messageId);
+    }
+  };
+
+  // Auto-spawn plans + auto-fire redirects in 'auto' mode.
   useEffect(() => {
     if (mode !== 'auto') return;
     void (async () => {
@@ -125,10 +162,17 @@ export function App() {
         if (msg.plan && !msg.planAccepted) {
           await spawnPlan(msg);
         }
+        if (msg.redirect && !msg.redirectFired) {
+          await fireRedirect(
+            msg.id,
+            msg.redirect.agent,
+            msg.redirect.instruction,
+          );
+        }
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, mode, workspace]);
+  }, [messages, mode, workspace, agents]);
 
   const changeWorkspace = async () => {
     const { path } = await window.api.pickWorkspace();

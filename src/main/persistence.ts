@@ -25,8 +25,8 @@ export function saveDirectorMessage(m: DirectorMessage): void {
   messageOrdering += 1;
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO director_messages
-      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     m.id,
@@ -41,6 +41,8 @@ export function saveDirectorMessage(m: DirectorMessage): void {
     m.attachments && m.attachments.length > 0
       ? JSON.stringify(m.attachments)
       : null,
+    m.redirect ? JSON.stringify(m.redirect) : null,
+    m.redirectFired ? 1 : 0,
   ]);
   stmt.free();
   scheduleSave();
@@ -69,6 +71,14 @@ export function patchDirectorMessage(
     sets.push('live = ?');
     values.push(patch.live ? 1 : 0);
   }
+  if ('redirect' in patch) {
+    sets.push('redirect = ?');
+    values.push(patch.redirect ? JSON.stringify(patch.redirect) : null);
+  }
+  if ('redirectFired' in patch) {
+    sets.push('redirect_fired = ?');
+    values.push(patch.redirectFired ? 1 : 0);
+  }
   if (sets.length === 0) return;
   values.push(id);
   const stmt = db.prepare(
@@ -82,7 +92,7 @@ export function patchDirectorMessage(
 export function loadDirectorMessages(): DirectorMessage[] {
   const db = getDb();
   const res = db.exec(`
-    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments
+    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired
     FROM director_messages
     ORDER BY ordering ASC
   `);
@@ -108,6 +118,15 @@ export function loadDirectorMessages(): DirectorMessage[] {
         attachments = undefined;
       }
     }
+    const redirectRaw = row[10];
+    let redirect: DirectorMessage['redirect'];
+    if (typeof redirectRaw === 'string' && redirectRaw.length > 0) {
+      try {
+        redirect = JSON.parse(redirectRaw);
+      } catch {
+        redirect = undefined;
+      }
+    }
     out.push({
       id: asStr(row[0]),
       who: asStr(row[2]) as DirectorMessage['who'],
@@ -118,6 +137,8 @@ export function loadDirectorMessages(): DirectorMessage[] {
       planAccepted: asInt(row[7]) === 1,
       live: false, // never restore live state — runs reset on app start
       attachments,
+      redirect,
+      redirectFired: asInt(row[11]) === 1,
     });
     messageOrdering = Math.max(messageOrdering, asInt(row[1]));
   }

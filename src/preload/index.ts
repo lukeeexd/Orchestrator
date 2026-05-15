@@ -71,6 +71,11 @@ const api: OrchestratorApi = {
       IpcChannels.DirectorAcceptPlan,
       req,
     ) as Promise<AcceptPlanResponse>,
+  ackDirectorRedirect: (req) =>
+    ipcRenderer.invoke(
+      IpcChannels.DirectorAckRedirect,
+      req,
+    ) as Promise<{ ok: true }>,
   abortDirector: () =>
     ipcRenderer.invoke(IpcChannels.DirectorAbort) as Promise<{ ok: true }>,
 

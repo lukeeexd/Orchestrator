@@ -80,6 +80,11 @@ export interface AttachmentRef {
   name: string;
 }
 
+export interface RedirectInstruction {
+  agent: string;
+  instruction: string;
+}
+
 export interface DirectorMessage {
   id: string;
   who: DirectorWho;
@@ -88,6 +93,8 @@ export interface DirectorMessage {
   body: string;
   plan?: PlanRow[];
   planAccepted?: boolean;
+  redirect?: RedirectInstruction;
+  redirectFired?: boolean;
   live?: boolean;
   attachments?: AttachmentRef[];
 }

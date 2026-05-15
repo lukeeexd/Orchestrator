@@ -4,7 +4,7 @@ import { app } from 'electron';
 import type { DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
 import { readSettings } from '../settings';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
-import { extractPlan } from './parse';
+import { extractDirectives } from './parse';
 import { nowTs } from '../agents/classifier';
 import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
@@ -202,10 +202,11 @@ async function runTurn(
       }
     }
 
-    const { text, plan } = extractPlan(bodyBuf);
+    const { text, plan, redirect } = extractDirectives(bodyBuf);
     patchMessage(directorMessage.id, {
-      body: text || (plan ? '' : '(empty response)'),
+      body: text || (plan || redirect ? '' : '(empty response)'),
       plan: plan ?? undefined,
+      redirect: redirect ?? undefined,
       live: false,
     });
   } catch (e) {
@@ -214,6 +215,48 @@ async function runTurn(
       live: false,
     });
   }
+}
+
+/**
+ * Mark a redirect message as fired (so the auto-trigger doesn't fire it
+ * twice) and push a system follow-up into the queue so the Director's
+ * next turn can supervise the redirected run.
+ */
+export function acknowledgeRedirect(
+  messageId: string,
+  agentName: string,
+  ok: boolean,
+  errorMsg?: string,
+): void {
+  patchMessage(messageId, { redirectFired: true });
+  if (ok) {
+    pushMessage({
+      id: randomUUID(),
+      who: 'system',
+      name: 'system',
+      time: timeOnly(),
+      body: `Redirected ${agentName}`,
+    });
+    queue.push({
+      kind: 'system',
+      body: `Redirect to @${agentName} fired. The agent is now resuming its session with the new instruction. Reply with "ok" or any additional guidance.`,
+      mode: currentMode,
+    });
+  } else {
+    pushMessage({
+      id: randomUUID(),
+      who: 'system',
+      name: 'system',
+      time: timeOnly(),
+      body: `Redirect to ${agentName} failed: ${errorMsg ?? 'unknown error'}`,
+    });
+    queue.push({
+      kind: 'system',
+      body: `Redirect to @${agentName} failed: ${errorMsg ?? 'unknown error'}. Reconsider whether to spawn a fresh agent instead.`,
+      mode: currentMode,
+    });
+  }
+  void pump();
 }
 
 /**

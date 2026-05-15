@@ -88,6 +88,15 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 5,
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE director_messages ADD COLUMN redirect TEXT;
+        ALTER TABLE director_messages ADD COLUMN redirect_fired INTEGER NOT NULL DEFAULT 0;
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

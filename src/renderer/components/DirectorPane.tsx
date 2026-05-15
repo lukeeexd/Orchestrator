@@ -201,6 +201,20 @@ function Message({
           onSpawn={() => onSpawn(message)}
         />
       )}
+      {message.redirect && (
+        <div className="dir-redirect">
+          <div className="dir-redirect-head">
+            <Icon name="redirect" size={11} color="var(--accent)" /> Redirect
+            <span className="badge">
+              {message.redirectFired ? 'fired' : 'queued'}
+            </span>
+          </div>
+          <div className="dir-redirect-body">
+            <span className="r-agent">@{message.redirect.agent}</span>{' '}
+            {message.redirect.instruction}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
