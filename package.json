@@ -29,9 +29,12 @@
     "@electron-forge/plugin-vite": "^7.11.1",
     "@electron/fuses": "^1.8.0",
     "@types/electron-squirrel-startup": "^1.0.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@types/sql.js": "^1.4.11",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
     "@typescript-eslint/parser": "^5.62.0",
+    "@vitejs/plugin-react": "^4.7.0",
     "electron": "42.1.0",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
@@ -39,7 +42,10 @@
     "vite": "^5.4.21"
   },
   "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "electron-squirrel-startup": "^1.0.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "sql.js": "^1.14.1"
   }
 }

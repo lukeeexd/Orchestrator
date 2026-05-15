@@ -14,7 +14,7 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current milestone | **M1 — not started** |
+| Current milestone | **M2 — not started** |
 | Last updated | 2026-05-15 |
 | Repo | `github.com/lukeeexd/Orchestrator` (private). Branches: `main` (release), `dev` (working). |
 
@@ -69,16 +69,16 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 - [x] Design handoff copied to `docs/design/`
 - [x] `dev` branch created off `main`, both pushed to the private repo
 
-### M1 — UI shell empty-state  *(not started)*
+### M1 — UI shell empty-state  *(completed 2026-05-15)*
 
-- [ ] Design tokens lifted from `docs/design/design-reference/styles.css` into CSS vars
-- [ ] TopBar (38px), LeftRail (52px), StatusBar (24px)
-- [ ] Three panes: Director (resizable 300–640, default 400) / Agents (flex) / Drawer (resizable 340–680, default 460)
-- [ ] Draggable resize handles with accent-green hover glow + snap to min/max
-- [ ] Persist `dirW` and `drawerW` to localStorage
-- [ ] Empty states matching `docs/design/screenshots/empty-state.png`
-- [ ] JetBrains Mono bundled as a webfont, `tabular-nums` global
-- [ ] Rail nav items (Templates / Spend / Runs / Settings) route to placeholder screens
+- [x] Design tokens lifted from `docs/design/design-reference/styles.css` into CSS vars (mac traffic-light block dropped — we use native Electron chrome)
+- [x] TopBar (38px), LeftRail (52px), StatusBar (24px)
+- [x] Three panes: Director (resizable 300–640, default 400) / Agents (flex) / Drawer (resizable 340–680, default 460)
+- [x] Draggable resize handles with accent-green hover glow + snap to min/max
+- [x] Persist `dirW` and `drawerW` to localStorage (`orchestrator.dirW`, `orchestrator.drawerW` keys)
+- [x] Empty states matching `docs/design/screenshots/empty-state.png` (Director "Awaiting your first task" + Drawer "No agent selected" + Agents "No agents running")
+- [x] JetBrains Mono bundled as a webfont via `@fontsource/jetbrains-mono`, `tabular-nums` global
+- [x] Rail nav items (Templates / Tools / Spend / Runs / Settings) route to a `PlaceholderScreen` ("coming in v1.1")
 
 ### M2 — Single-agent loop  *(not started — hardest milestone)*
 
@@ -145,4 +145,5 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 
 ## Recently completed
 
+- **2026-05-15 — M1 UI shell empty-state.** React + Vite plugin wired, full design CSS lifted verbatim (minus mac traffic lights). Component tree under `src/renderer/components/`: TopBar, LeftRail, StatusBar, DirectorPane (+ EmptyChat + Composer), AgentsPane (+ EmptyAgents), Drawer (no-selection state), ResizeHandle, Icon, PlaceholderScreen. Resize widths persist via `useLocalStorageState`. Rail items route between the home orchestrator screen and v1.1 placeholders.
 - **2026-05-15 — M0 Skeleton.** Forge scaffold reorganised into four-pane src layout. Typed IPC bridge proves end-to-end. sql.js stood in for better-sqlite3 (no native compile toolchain). Window opens on `--ink` background, first commit on `main`, working branch `dev` pushed.
