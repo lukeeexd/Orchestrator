@@ -344,7 +344,10 @@ function Composer({
         return;
       }
     }
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Only intercept Enter for submit when Director is idle. While busy,
+    // let Enter insert a newline so the user can keep composing their
+    // next message instead of being locked out for a few seconds.
+    if (e.key === 'Enter' && !e.shiftKey && !busy) {
       e.preventDefault();
       void submit();
     }
@@ -397,7 +400,6 @@ function Composer({
               : 'Ask the Director for advice… (type @ to reference an agent)'
           }
           rows={3}
-          disabled={busy}
         />
         {mentionState.open && mentionMatches.length > 0 && (
           <div className="mention-picker">
