@@ -32,10 +32,7 @@ const createWindow = (): void => {
       path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
     );
   }
-
-  if (!app.isPackaged) {
-    win.webContents.openDevTools({ mode: 'detach' });
-  }
+  // DevTools stays available via Ctrl+Shift+I / F12; don't auto-open it.
 };
 
 app.whenReady().then(async () => {
