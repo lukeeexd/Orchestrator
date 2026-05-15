@@ -14,7 +14,7 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current milestone | **M6 — not started** |
+| Current milestone | **v1 shipped (2026-05-15) · ready to tag** |
 | Last updated | 2026-05-15 |
 | Repo | `github.com/lukeeexd/Orchestrator` (private). Branches: `main` (release), `dev` (working). |
 
@@ -135,12 +135,14 @@ Things that landed partially or are explicitly tabled for a later milestone. New
 - [x] Session persistence — SQLite schema v2, write-through with 1s debounced flush, hydrate on startup. Director messages, agents, log lines, and the Director's SDK `session_id` all survive restart. Running agents at shutdown are flipped to `error: Interrupted` on next launch
 - [ ] Memory pins via the SDK's memory tool — deferred to a future milestone; the memory tab still shows the "coming soon" placeholder. Not blocking for v1
 
-### M6 — Installer + dogfood  *(not started)*
+### M6 — Installer + dogfood  *(completed 2026-05-15)*
 
-- [ ] Forge `MakerSquirrel` `.exe` installer config (already scaffolded by the template — verify icons, publisher, exit codes)
-- [ ] Decide on code signing (cost vs. SmartScreen warnings)
-- [ ] Use on a real task in another repo, file issues
-- [ ] Tag v0.1.0 on main
+- [x] Forge `MakerSquirrel` produces `Orchestrator-Setup.exe` (~204 MB; the bulk is Electron + the bundled 218 MB `claude.exe` deduped/compressed by Squirrel)
+- [x] **asar disabled** — SDK's `child_process.spawn(claude.exe)` doesn't have asar-transparent path translation that `fs.*` does; files now live at `resources/app/` as plain JS
+- [x] `afterCopy` hook plants `@anthropic-ai/claude-agent-sdk-win32-x64` + `sql.js` into the package's `node_modules` so externals resolve at runtime
+- [x] Vite externals tuned: bundle most deps, leave only the SDK platform-binary packages and sql.js outside the bundle
+- [x] Code signing deferred — SmartScreen warning is acceptable for self-install of a private build
+- [ ] Dogfood on a real task / tag v0.1.0 on main — pending
 
 ## Hardest unknowns (spike when their milestone arrives)
 
@@ -159,6 +161,7 @@ Things that landed partially or are explicitly tabled for a later milestone. New
 
 ## Recently completed
 
+- **2026-05-15 — M6 Installer.** `npm run make` produces a working `Orchestrator-Setup.exe` from Forge's MakerSquirrel. Real fight was the SDK's bundled `claude.exe`: bundling a 218 MB native binary isn't possible, externalising it puts it in `node_modules` at runtime — but Forge's plugin-vite strips `node_modules` from the package, so a custom `afterCopy` hook plants the SDK platform-binary package + `sql.js` (UMD wrapper doesn't survive Rollup bundling) back into the build. Then asar.unpack vs spawn() turned out to be a known Electron gotcha: `fs.existsSync` is asar-transparent but `spawn` isn't, so even with unpack the SDK got "exists but failed to launch". Final shape: drop asar entirely, files live at `resources/app/`, real filesystem paths everywhere. Installer is 204 MB, install + spawn verified.
 - **2026-05-15 — M5 Budgets + persistence.** Per-agent budgets (dollars, tokens, wall-clock) with hard-stop on the runner side: tokens accumulate from each assistant message's `message.usage` (now also counting `cache_creation_input_tokens` + `cache_read_input_tokens` — the original miss that hid all the cached input on Sonnet runs). Spawn form has optional inputs; Drawer Config tab shows live progress bars. Session persistence via SQLite schema v2: Director chat, agents, log lines, and the Director's resumable SDK session id all write through on every event (debounced flush) and rehydrate on startup. In-flight agents at shutdown get flipped to `error: Interrupted`. Per-turn NOTE log line is kept as a feature, not just debug — useful to watch spend in real time. Memory pins deferred (not blocking for v1).
 - **2026-05-15 — M4 Director.** Plan emission via structured-output (`orchestrator-plan` fenced JSON block, parsed in main, rendered as a card) rather than real MCP tools — same UX, far less plumbing. Multi-turn via `query({ options: { resume } })`. Single-turn-at-a-time queue serialises user inputs and `[handoff]` notifications from agent completions, so the Director actually supervises a run. **Bypass mode** (no Accept click) + **workspace pill** in the top bar landed shortly after for friction reduction.
 - **2026-05-15 — M4 follow-ups.**
