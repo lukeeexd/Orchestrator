@@ -14,7 +14,7 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current milestone | **M2 — smoke-testing** |
+| Current milestone | **M3 — not started** |
 | Last updated | 2026-05-15 |
 | Repo | `github.com/lukeeexd/Orchestrator` (private). Branches: `main` (release), `dev` (working). |
 
@@ -80,19 +80,14 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 - [x] JetBrains Mono bundled as a webfont via `@fontsource/jetbrains-mono`, `tabular-nums` global
 - [x] Rail nav items (Templates / Tools / Spend / Runs / Settings) route to a `PlaceholderScreen` ("coming in v1.1")
 
-### M2 — Single-agent loop  *(not started — hardest milestone)*
+### M2 — Single-agent loop  *(completed 2026-05-15)*
 
-- [ ] Bypass Director temporarily: pick role + type task → spawn one SDK session in a fresh worktree
-- [ ] **Event classifier**: SDK stream events → `LogLine[]` with the design's 7 kinds
-  - assistant text → `THOUGHT`
-  - tool_use → `TOOL` (structured args)
-  - tool_result → `RESULT`
-  - errors → `WARN` / `ERROR`
-  - meta-tool `pin_note(...)` → `NOTE`
-  - meta-tool `complete_task(...)` → `HANDOFF`
-- [ ] Worktree lifecycle: create on spawn, prune on done, clean conflict handling
-- [ ] Agent row in workspace pane with chevron expand → inline structured log
-- [ ] One running role end-to-end before adding the other four
+- [x] Bypass Director temporarily: pick role + type task → spawn one SDK session in a fresh worktree
+- [x] **Event classifier**: SDK stream events → `LogLine[]` with the design's 7 kinds. THOUGHT/TOOL/RESULT/WARN/ERROR/HANDOFF implemented; NOTE and proper HANDOFF meta-tools deferred to M3 (synthetic HANDOFF on `result` event for now)
+- [x] Worktree lifecycle: create on spawn under `.orchestrator-worktrees/<name>` if target is a git repo; fall back to workspace itself otherwise. Pruning is a no-op for v1 — leave worktree for user to inspect / merge
+- [x] Agent row in workspace pane with chevron expand → inline structured log streaming live
+- [x] One running role end-to-end (coder, on auto-discovered Claude Code OAuth login)
+- [x] Flex auth — supports Anthropic API key, explicit OAuth token, or auto-discovery from `~/.claude/` (Team plan users without API access work via Claude Code login)
 
 ### M3 — Drawer wired  *(not started)*
 
@@ -145,5 +140,6 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 
 ## Recently completed
 
+- **2026-05-15 — M2 Single-agent loop.** Wired the Claude Agent SDK (which ships a 218MB `claude.exe` and is loaded via dynamic ESM import from our CJS main). Per-agent git worktree, event classifier mapping SDK stream → 7 LogLine kinds, IPC streaming (agent/log/patch channels), useAgents hook + AgentRow + LogLineRow + SpawnAgentForm modal. Flex auth so Team-plan users without API access can run via auto-discovered Claude Code OAuth. End-to-end smoke verified (coder spawned, THOUGHT + HANDOFF rendered live).
 - **2026-05-15 — M1 UI shell empty-state.** React + Vite plugin wired, full design CSS lifted verbatim (minus mac traffic lights). Component tree under `src/renderer/components/`: TopBar, LeftRail, StatusBar, DirectorPane (+ EmptyChat + Composer), AgentsPane (+ EmptyAgents), Drawer (no-selection state), ResizeHandle, Icon, PlaceholderScreen. Resize widths persist via `useLocalStorageState`. Rail items route between the home orchestrator screen and v1.1 placeholders.
 - **2026-05-15 — M0 Skeleton.** Forge scaffold reorganised into four-pane src layout. Typed IPC bridge proves end-to-end. sql.js stood in for better-sqlite3 (no native compile toolchain). Window opens on `--ink` background, first commit on `main`, working branch `dev` pushed.
