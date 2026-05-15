@@ -4,36 +4,30 @@ import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
-import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
 const config: ForgeConfig = {
   packagerConfig: {
     name: 'Orchestrator',
     executableName: 'Orchestrator',
-    asar: {
-      // The Claude Agent SDK code is bundled into main.js by Vite, but the
-      // platform-specific binary package (claude.exe, ~218 MB) stays on
-      // disk. It must live under node_modules/@anthropic-ai/ for the
-      // bundled SDK's `require()` to resolve it. We copy it into the
-      // build dir via afterCopy, then unpack it from asar so the .exe is
-      // a real file the SDK can spawn.
-      unpack:
-        '**/{*.node,node_modules/@anthropic-ai/claude-agent-sdk-win32-*/**}',
-    },
+    // asar is disabled deliberately: the Claude Agent SDK spawns its native
+    // claude.exe binary via child_process.spawn, and spawn() doesn't have
+    // the asar-transparent path translation that fs.* does. With asar on,
+    // the SDK gets a "resources\app.asar\...\claude.exe — exists but failed
+    // to launch" error because the path is still inside an archive.
+    // Disabling asar means the binary sits as a real file Windows can spawn.
+    asar: false,
     afterCopy: [
       (buildPath, _electronVersion, _platform, _arch, callback) => {
         try {
-          const src = path.resolve(
-            __dirname,
-            'node_modules/@anthropic-ai/claude-agent-sdk-win32-x64',
-          );
-          const dst = path.join(
-            buildPath,
-            'node_modules/@anthropic-ai/claude-agent-sdk-win32-x64',
-          );
-          fs.mkdirSync(path.dirname(dst), { recursive: true });
-          fs.cpSync(src, dst, { recursive: true });
+          const copyPkg = (pkg: string) => {
+            const src = path.resolve(__dirname, 'node_modules', pkg);
+            const dst = path.join(buildPath, 'node_modules', pkg);
+            fs.mkdirSync(path.dirname(dst), { recursive: true });
+            fs.cpSync(src, dst, { recursive: true });
+          };
+          copyPkg('@anthropic-ai/claude-agent-sdk-win32-x64');
+          copyPkg('sql.js');
           callback();
         } catch (e) {
           callback(e as Error);
@@ -71,15 +65,15 @@ const config: ForgeConfig = {
         },
       ],
     }),
-    new AutoUnpackNativesPlugin({}),
     new FusesPlugin({
       version: FuseVersion.V1,
       [FuseV1Options.RunAsNode]: false,
       [FuseV1Options.EnableCookieEncryption]: true,
       [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
       [FuseV1Options.EnableNodeCliInspectArguments]: false,
-      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-      [FuseV1Options.OnlyLoadAppFromAsar]: true,
+      // asar is disabled, so the integrity / asar-only fuses can't apply.
+      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
+      [FuseV1Options.OnlyLoadAppFromAsar]: false,
     }),
   ],
 };

@@ -14,6 +14,10 @@ const external = [
   'electron',
   ...builtinModules,
   ...builtinModules.map((m) => `node:${m}`),
+  // sql.js's UMD wrapper doesn't survive Rollup bundling — it tries to set
+  // `module.exports` against an undefined module object and throws at init.
+  // Keep it on disk; afterCopy + asar.unpack put it where Node can find it.
+  'sql.js',
   '@anthropic-ai/claude-agent-sdk-win32-x64',
   '@anthropic-ai/claude-agent-sdk-win32-arm64',
   '@anthropic-ai/claude-agent-sdk-darwin-x64',
