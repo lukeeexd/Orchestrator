@@ -5,6 +5,7 @@ import { readSettings } from '../settings';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractPlan } from './parse';
 import { nowTs } from '../agents/classifier';
+import * as persistence from '../persistence';
 
 export interface DirectorSinks {
   onMessage: (msg: DirectorMessage) => void;
@@ -28,12 +29,14 @@ function timeOnly(): string {
 
 function pushMessage(msg: DirectorMessage): void {
   messages.push(msg);
+  persistence.saveDirectorMessage(msg);
   sinks?.onMessage(msg);
 }
 
 function patchMessage(id: string, patch: Partial<DirectorMessage>): void {
   const idx = messages.findIndex((m) => m.id === id);
   if (idx >= 0) messages[idx] = { ...messages[idx], ...patch };
+  persistence.patchDirectorMessage(id, patch);
   sinks?.onPatch(id, patch);
 }
 
@@ -43,6 +46,18 @@ export function listMessages(): DirectorMessage[] {
 
 export function setSinks(s: DirectorSinks): void {
   sinks = s;
+}
+
+/**
+ * Hydrate Director state from SQLite. Call once at app startup after
+ * openDb() but before registerIpcHandlers(), so when the renderer asks
+ * for the initial message list it sees the restored chat.
+ */
+export function hydrate(): void {
+  const stored = persistence.loadDirectorMessages();
+  messages.length = 0;
+  for (const m of stored) messages.push(m);
+  sessionId = persistence.loadDirectorSessionId();
 }
 
 let currentMode: DirectorMode = 'auto';
@@ -159,7 +174,10 @@ async function runTurn(promptBody: string, mode: DirectorMode): Promise<void> {
         }
       } else if (ev.type === 'result') {
         const result = ev as unknown as { session_id?: string };
-        if (result.session_id) sessionId = result.session_id;
+        if (result.session_id) {
+          sessionId = result.session_id;
+          persistence.saveDirectorSessionId(result.session_id);
+        }
       }
     }
 

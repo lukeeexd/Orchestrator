@@ -12,6 +12,7 @@ import * as registry from './registry';
 import { classify, nowTs } from './classifier';
 import { readSettings } from '../settings';
 import * as director from '../director/runner';
+import * as persistence from '../persistence';
 
 export interface RunnerSinks {
   onAgent: (agent: Agent) => void;
@@ -118,6 +119,7 @@ export async function spawnAgent(
   };
 
   registry.add(agent, controller);
+  persistence.saveAgent(agent);
   sinks.onAgent(agent);
 
   const settings = readSettings();
@@ -246,6 +248,7 @@ ${req.task}`;
       for (const line of lines) {
         const entry = registry.get(agentId);
         if (entry) entry.agent.log.push(line);
+        persistence.appendLogLine(agentId, line);
         sinks.onLog(agentId, line);
       }
 
