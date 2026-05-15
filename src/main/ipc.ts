@@ -10,7 +10,7 @@ import {
 } from '../shared/ipc';
 import type { Agent, DirectorMessage, SpawnAgentRequest } from '../shared/types';
 import { readSettings, writeSettings } from './settings';
-import { spawnAgent, registry } from './agents/runner';
+import { spawnAgent, registry, awaitCompletion } from './agents/runner';
 import * as director from './director/runner';
 
 const startedAt = Date.now();
@@ -121,24 +121,60 @@ export function registerIpcHandlers(): void {
         onPatch: (agentId: string, patch: Partial<Agent>) =>
           broadcast(IpcChannels.AgentEventPatch, { agentId, patch }),
       };
+      // Spawn the first agent so the user sees something happen immediately,
+      // then ack the plan to the Director so the chat shows "Spawned N
+      // agents · pm-01 · coder-01 · qa-01" up front. The remaining agents
+      // spawn sequentially as each predecessor reaches a terminal state.
       const spawned: { id: string; name: string }[] = [];
-      for (const row of req.rows) {
-        const r = await spawnAgent(
-          {
-            role: row.role,
-            task: row.task,
-            workspace: req.workspace,
-            spawnedBy: 'director',
-          },
-          sinks,
-        );
-        const e = registry.get(r.agentId);
-        spawned.push({ id: r.agentId, name: e?.agent.name ?? row.name });
+      const firstId = req.rows.length > 0
+        ? await spawnAgent(
+            {
+              role: req.rows[0].role,
+              task: req.rows[0].task,
+              workspace: req.workspace,
+              spawnedBy: 'director',
+            },
+            sinks,
+          )
+        : null;
+      if (firstId) {
+        const e = registry.get(firstId.agentId);
+        spawned.push({
+          id: firstId.agentId,
+          name: e?.agent.name ?? req.rows[0].name,
+        });
       }
-      director.acknowledgePlanAccepted(
-        req.rows,
-        spawned.map((s) => s.name),
-      );
+      // Speculatively reserve names for the rest so the system message is
+      // accurate. Actual agents are created in the background loop below.
+      const reservedNames = [
+        ...spawned.map((s) => s.name),
+        ...req.rows.slice(1).map((r) => r.name),
+      ];
+      director.acknowledgePlanAccepted(req.rows, reservedNames);
+
+      // Sequential tail: await each predecessor before spawning the next.
+      void (async () => {
+        for (let i = 1; i < req.rows.length; i++) {
+          const prev = spawned[spawned.length - 1];
+          if (prev) await awaitCompletion(prev.id);
+          const row = req.rows[i];
+          const r = await spawnAgent(
+            {
+              role: row.role,
+              task: row.task,
+              workspace: req.workspace,
+              spawnedBy: 'director',
+            },
+            sinks,
+          );
+          const e = registry.get(r.agentId);
+          spawned.push({
+            id: r.agentId,
+            name: e?.agent.name ?? row.name,
+          });
+        }
+      })();
+
       return { spawnedAgentIds: spawned.map((s) => s.id) };
     },
   );

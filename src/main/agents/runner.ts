@@ -36,6 +36,17 @@ function elapsed(startedAt: number): string {
   return `${m}:${s}`;
 }
 
+const completions = new Map<string, Promise<void>>();
+
+/**
+ * Returns a promise that resolves when the given agent reaches a terminal
+ * status (done | error | aborted). Already-completed agents resolve
+ * immediately.
+ */
+export function awaitCompletion(agentId: string): Promise<void> {
+  return completions.get(agentId) ?? Promise.resolve();
+}
+
 export async function spawnAgent(
   req: SpawnAgentRequest,
   sinks: RunnerSinks,
@@ -72,12 +83,25 @@ export async function spawnAgent(
 
   const settings = readSettings();
 
-  // Fire-and-forget the async run; events stream via sinks.
-  run(id, req, wt.workdir, settings, controller, sinks).catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    sinks.onLog(id, { ts: nowTs(), kind: 'error', msg: `runner crashed: ${msg}` });
-    sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
+  let resolveDone!: () => void;
+  const donePromise = new Promise<void>((res) => {
+    resolveDone = res;
   });
+  completions.set(id, donePromise);
+
+  // Fire-and-forget the async run; events stream via sinks.
+  run(id, req, wt.workdir, settings, controller, sinks)
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      sinks.onLog(id, { ts: nowTs(), kind: 'error', msg: `runner crashed: ${msg}` });
+      sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
+    })
+    .finally(() => {
+      resolveDone();
+      // Keep the entry in `completions` for a short tail so late awaiters
+      // resolve immediately, then drop it. Memory hygiene.
+      setTimeout(() => completions.delete(id), 60_000);
+    });
 
   return { agentId: id };
 }
