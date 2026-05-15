@@ -127,10 +127,11 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 
 ## Hardest unknowns (spike when their milestone arrives)
 
-1. **Event classifier (M2)** — THOUGHT vs NOTE is fuzzy. Plan: assistant text deltas always become THOUGHT; NOTE only appears when the agent explicitly calls the `pin_note` meta-tool.
-2. **Fork semantics (M3)** — Whether the SDK supports session resume from message N. If not, fork replays the existing log into a fresh session.
-3. **Plan card I/O (M4)** — Conversational feel + structured output. Resolved via a `propose_plan` tool call that the UI intercepts (the Director never has to emit JSON in chat).
-4. **HANDOFF (M4)** — How the Director knows an agent finished. Resolved via a required `complete_task` tool that emits the HANDOFF line and updates agent status to `done`.
+1. **Event classifier (M2)** — Resolved. Synthetic HANDOFF on `result` event; NOTE deferred (no `pin_note` meta-tool in v1).
+2. **Fork semantics (M3.5)** — Resolved by spike. SDK exposes `forkSession(sessionId)` + `query({ options: { resume } })`. Wiring deferred but the API is there.
+3. **Plan card I/O (M4)** — Resolved via structured-output JSON block (`orchestrator-plan`) parsed in main, instead of an MCP tool call. Simpler.
+4. **HANDOFF (M4)** — Resolved. Agent's `result` event triggers `director.notifyAgentDone()` which queues a `[handoff]` user message into the Director session.
+5. **Redirect (M5+)** — Director can't inject instructions into an already-running agent. Each spawned agent is one-shot — it commits to its initial task. The SDK's `Query.streamInput()` (sdk.d.ts:2248) might be the path; needs a spike. Workaround for now: write self-contained task lines, or use manual mode for tighter per-agent control.
 
 ## References
 
@@ -141,7 +142,11 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 
 ## Recently completed
 
-- **2026-05-15 — M4 Director.** Plan emission via structured-output (`orchestrator-plan` fenced JSON block, parsed in main, rendered as a card) rather than real MCP tools — same UX, far less plumbing. Multi-turn via `query({ options: { resume } })`. Single-turn-at-a-time queue serialises user inputs and `[handoff]` notifications from agent completions, so the Director actually supervises a run. **Bypass mode** added after smoke: workspace is picked once and remembered in localStorage; subsequent plans auto-spawn with no Accept click. Workspace pill in the top bar shows current + lets you change it.
+- **2026-05-15 — M4 Director.** Plan emission via structured-output (`orchestrator-plan` fenced JSON block, parsed in main, rendered as a card) rather than real MCP tools — same UX, far less plumbing. Multi-turn via `query({ options: { resume } })`. Single-turn-at-a-time queue serialises user inputs and `[handoff]` notifications from agent completions, so the Director actually supervises a run. **Bypass mode** (no Accept click) + **workspace pill** in the top bar landed shortly after for friction reduction.
+- **2026-05-15 — M4 follow-ups.**
+  - **Mode toggle** in the Director header — `auto` (current — plans + auto-spawns) vs `manual` (advisor — prose only, no plan blocks). Mode persists to localStorage. Each user message is tagged `[mode: X]` so the Director sees it without restarting the session. Director system prompt explains both modes; manual-mode response is verified to give phase-structured prose advice with concrete agent counts + risk flags + an explicit nudge back to manual control.
+  - **Sequential auto-spawn** — agents now run in plan order, one at a time. `spawnAgent` registers a completion `Promise<void>` in a Map; new `awaitCompletion(id)` lets `acceptPlan` chain rows. Fixed the bug where pm/coder/qa all started simultaneously and qa "verified" before coder had touched a file.
+  - **Director prompt update**: task lines must be self-contained (agents are one-shot, can't be redirected mid-flight). Real `Redirect` is deferred to a later milestone — see Hardest unknowns.
 - **2026-05-15 — M3 Drawer wired.** Click an agent → live drawer with role-tinted sigil, KPI strip (Step / Tokens / Cost / Elapsed updating each second), and five tabs. Logs tab tails the last 8 lines, Tools tab derives invocation counts + last-used from `agent.log`, Context tab shows a tokens-vs-200k-cap bar, Config tab has the click-to-expand system prompt + model + workspace + worktree path. Pause action functional (aborts the AbortController). Redirect / Fork / Approve disabled with hover tooltips pointing at the milestone where each lands. Moved `roles.ts` to `shared/` so renderer can read it. Fork spike: SDK has `forkSession()` + `resume` option — deferred to M3.5.
 - **2026-05-15 — M2 Single-agent loop.** Wired the Claude Agent SDK (which ships a 218MB `claude.exe` and is loaded via dynamic ESM import from our CJS main). Per-agent git worktree, event classifier mapping SDK stream → 7 LogLine kinds, IPC streaming (agent/log/patch channels), useAgents hook + AgentRow + LogLineRow + SpawnAgentForm modal. Flex auth so Team-plan users without API access can run via auto-discovered Claude Code OAuth. End-to-end smoke verified (coder spawned, THOUGHT + HANDOFF rendered live).
 - **2026-05-15 — M1 UI shell empty-state.** React + Vite plugin wired, full design CSS lifted verbatim (minus mac traffic lights). Component tree under `src/renderer/components/`: TopBar, LeftRail, StatusBar, DirectorPane (+ EmptyChat + Composer), AgentsPane (+ EmptyAgents), Drawer (no-selection state), ResizeHandle, Icon, PlaceholderScreen. Resize widths persist via `useLocalStorageState`. Rail items route between the home orchestrator screen and v1.1 placeholders.
