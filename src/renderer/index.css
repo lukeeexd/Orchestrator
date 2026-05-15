@@ -643,6 +643,53 @@ body.resizing * { cursor: col-resize !important; }
   padding: 8px 10px;
 }
 
+/* Attachment chips (composer + spawn form + chat messages) */
+.att-row {
+  display: flex; flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.att-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 6px 2px 6px;
+  background: var(--sub);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-2);
+  font-size: 10px;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.att-chip.bad {
+  background: rgba(239,91,91,0.06);
+  border-color: rgba(239,91,91,0.3);
+  color: var(--error);
+}
+.att-x {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: default;
+  padding: 0 0 0 2px;
+  margin-left: 2px;
+  opacity: 0.6;
+}
+.att-x:hover { opacity: 1; }
+
+.msg-attachments {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin: 2px 0 4px;
+}
+.msg-attachments .att-chip {
+  background: rgba(74,222,128,0.04);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+
 .budget-row {
   display: grid;
   grid-template-columns: 1fr 1.3fr 1fr;

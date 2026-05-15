@@ -13,6 +13,8 @@ import { readSettings, writeSettings } from './settings';
 import { spawnAgent, registry, awaitCompletion } from './agents/runner';
 import * as director from './director/runner';
 import { deleteAgent } from './persistence';
+import { describeAttachments } from './attachments';
+import path from 'node:path';
 
 const startedAt = Date.now();
 
@@ -99,6 +101,22 @@ export function registerIpcHandlers(): void {
     },
   );
 
+  ipcMain.handle(
+    IpcChannels.AttachmentPick,
+    async (event) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return { attachments: [] };
+      const result = await dialog.showOpenDialog(win, {
+        title: 'Attach files',
+        properties: ['openFile', 'multiSelections'],
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return { attachments: [] };
+      }
+      return { attachments: describeAttachments(result.filePaths) };
+    },
+  );
+
   ipcMain.handle(IpcChannels.DirectorList, (): DirectorMessage[] => {
     return director.listMessages();
   });
@@ -109,8 +127,9 @@ export function registerIpcHandlers(): void {
       _event,
       body: string,
       mode: import('../shared/types').DirectorMode,
+      attachments?: string[],
     ): { ok: true } => {
-      director.sendFromUser(body, mode);
+      director.sendFromUser(body, mode, attachments);
       return { ok: true };
     },
   );

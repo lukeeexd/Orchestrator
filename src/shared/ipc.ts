@@ -16,6 +16,7 @@ export const IpcChannels = {
   AgentAbort: 'agent:abort',
   AgentRemove: 'agent:remove',
   AgentPickWorkspace: 'agent:pickWorkspace',
+  AttachmentPick: 'attachment:pick',
   DirectorList: 'director:list',
   DirectorSend: 'director:send',
   DirectorAcceptPlan: 'director:acceptPlan',
@@ -58,6 +59,10 @@ export interface SpawnAgentResponse {
 
 export interface PickWorkspaceResponse {
   path: string | null;
+}
+
+export interface PickAttachmentsResponse {
+  attachments: { path: string; name: string; ok: boolean; reason?: string }[];
 }
 
 export interface AgentEventAgentPayload {
@@ -105,8 +110,13 @@ export interface OrchestratorApi {
   abortAgent: (id: string) => Promise<{ ok: boolean }>;
   removeAgent: (id: string) => Promise<{ ok: boolean }>;
   pickWorkspace: () => Promise<PickWorkspaceResponse>;
+  pickAttachments: () => Promise<PickAttachmentsResponse>;
   listDirectorMessages: () => Promise<DirectorMessage[]>;
-  sendToDirector: (body: string, mode: DirectorMode) => Promise<{ ok: true }>;
+  sendToDirector: (
+    body: string,
+    mode: DirectorMode,
+    attachments?: string[],
+  ) => Promise<{ ok: true }>;
   acceptPlan: (req: AcceptPlanRequest) => Promise<AcceptPlanResponse>;
   abortDirector: () => Promise<{ ok: true }>;
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;

@@ -47,11 +47,20 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.AgentRemove, id) as Promise<{ ok: boolean }>,
   pickWorkspace: () =>
     ipcRenderer.invoke(IpcChannels.AgentPickWorkspace) as Promise<PickWorkspaceResponse>,
+  pickAttachments: () =>
+    ipcRenderer.invoke(IpcChannels.AttachmentPick) as Promise<
+      import('../shared/ipc').PickAttachmentsResponse
+    >,
 
   listDirectorMessages: () =>
     ipcRenderer.invoke(IpcChannels.DirectorList) as Promise<DirectorMessage[]>,
-  sendToDirector: (body, mode) =>
-    ipcRenderer.invoke(IpcChannels.DirectorSend, body, mode) as Promise<{ ok: true }>,
+  sendToDirector: (body, mode, attachments) =>
+    ipcRenderer.invoke(
+      IpcChannels.DirectorSend,
+      body,
+      mode,
+      attachments,
+    ) as Promise<{ ok: true }>,
   acceptPlan: (req: AcceptPlanRequest) =>
     ipcRenderer.invoke(
       IpcChannels.DirectorAcceptPlan,

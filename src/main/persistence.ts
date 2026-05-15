@@ -25,8 +25,8 @@ export function saveDirectorMessage(m: DirectorMessage): void {
   messageOrdering += 1;
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO director_messages
-      (id, ordering, who, name, time, body, plan, plan_accepted, live)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     m.id,
@@ -38,6 +38,9 @@ export function saveDirectorMessage(m: DirectorMessage): void {
     m.plan ? JSON.stringify(m.plan) : null,
     m.planAccepted ? 1 : 0,
     m.live ? 1 : 0,
+    m.attachments && m.attachments.length > 0
+      ? JSON.stringify(m.attachments)
+      : null,
   ]);
   stmt.free();
   scheduleSave();
@@ -79,7 +82,7 @@ export function patchDirectorMessage(
 export function loadDirectorMessages(): DirectorMessage[] {
   const db = getDb();
   const res = db.exec(`
-    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live
+    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments
     FROM director_messages
     ORDER BY ordering ASC
   `);
@@ -96,6 +99,15 @@ export function loadDirectorMessages(): DirectorMessage[] {
         plan = undefined;
       }
     }
+    const attRaw = row[9];
+    let attachments: DirectorMessage['attachments'];
+    if (typeof attRaw === 'string' && attRaw.length > 0) {
+      try {
+        attachments = JSON.parse(attRaw);
+      } catch {
+        attachments = undefined;
+      }
+    }
     out.push({
       id: asStr(row[0]),
       who: asStr(row[2]) as DirectorMessage['who'],
@@ -105,6 +117,7 @@ export function loadDirectorMessages(): DirectorMessage[] {
       plan,
       planAccepted: asInt(row[7]) === 1,
       live: false, // never restore live state — runs reset on app start
+      attachments,
     });
     messageOrdering = Math.max(messageOrdering, asInt(row[1]));
   }

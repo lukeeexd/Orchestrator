@@ -67,6 +67,11 @@ export type DirectorMode = 'auto' | 'manual';
 
 export type DirectorWho = 'user' | 'director' | 'system';
 
+export interface AttachmentRef {
+  path: string;
+  name: string;
+}
+
 export interface DirectorMessage {
   id: string;
   who: DirectorWho;
@@ -76,6 +81,7 @@ export interface DirectorMessage {
   plan?: PlanRow[];
   planAccepted?: boolean;
   live?: boolean;
+  attachments?: AttachmentRef[];
 }
 
 export interface SpawnAgentRequest {
@@ -84,6 +90,7 @@ export interface SpawnAgentRequest {
   workspace: string;
   spawnedBy?: AgentSpawnedBy;
   budget?: Partial<AgentBudget>;
+  attachments?: string[];
 }
 
 export interface SpawnAgentResponse {

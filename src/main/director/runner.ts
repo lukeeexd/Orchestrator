@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import { app } from 'electron';
 import type { DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
 import { readSettings } from '../settings';
@@ -6,6 +7,7 @@ import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractPlan } from './parse';
 import { nowTs } from '../agents/classifier';
 import * as persistence from '../persistence';
+import { inlineAttachments } from '../attachments';
 
 export interface DirectorSinks {
   onMessage: (msg: DirectorMessage) => void;
@@ -13,7 +15,7 @@ export interface DirectorSinks {
 }
 
 type QueueEntry =
-  | { kind: 'user'; body: string; mode: DirectorMode }
+  | { kind: 'user'; body: string; mode: DirectorMode; attachments?: string[] }
   | { kind: 'system'; body: string; mode: DirectorMode };
 
 const messages: DirectorMessage[] = [];
@@ -62,7 +64,11 @@ export function hydrate(): void {
 
 let currentMode: DirectorMode = 'auto';
 
-export function sendFromUser(body: string, mode: DirectorMode): void {
+export function sendFromUser(
+  body: string,
+  mode: DirectorMode,
+  attachments?: string[],
+): void {
   currentMode = mode;
   pushMessage({
     id: randomUUID(),
@@ -70,8 +76,12 @@ export function sendFromUser(body: string, mode: DirectorMode): void {
     name: 'you',
     time: timeOnly(),
     body,
+    attachments:
+      attachments && attachments.length > 0
+        ? attachments.map((p) => ({ path: p, name: path.basename(p) }))
+        : undefined,
   });
-  queue.push({ kind: 'user', body, mode });
+  queue.push({ kind: 'user', body, mode, attachments });
   void pump();
 }
 
@@ -104,14 +114,19 @@ async function pump(): Promise<void> {
     while (queue.length > 0) {
       const next = queue.shift();
       if (!next) break;
-      await runTurn(next.body, next.mode);
+      const attachments = next.kind === 'user' ? next.attachments : undefined;
+      await runTurn(next.body, next.mode, attachments);
     }
   } finally {
     busy = false;
   }
 }
 
-async function runTurn(promptBody: string, mode: DirectorMode): Promise<void> {
+async function runTurn(
+  promptBody: string,
+  mode: DirectorMode,
+  attachments?: string[],
+): Promise<void> {
   const settings = readSettings();
   const env: Record<string, string | undefined> = { ...process.env };
   if (settings.oauthToken) {
@@ -152,8 +167,12 @@ async function runTurn(promptBody: string, mode: DirectorMode): Promise<void> {
   };
 
   try {
+    const attachmentBlock =
+      attachments && attachments.length > 0
+        ? inlineAttachments(attachments)
+        : '';
     const q = sdk.query({
-      prompt: `[mode: ${mode}] ${promptBody}`,
+      prompt: `[mode: ${mode}] ${attachmentBlock}${promptBody}`,
       options: queryOptions,
     });
 

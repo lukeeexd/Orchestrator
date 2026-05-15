@@ -72,6 +72,14 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 3,
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE director_messages ADD COLUMN attachments TEXT;
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

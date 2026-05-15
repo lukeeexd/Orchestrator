@@ -3,7 +3,11 @@ import type { DirectorMessage, DirectorMode } from '../../shared/types';
 
 interface UseDirectorResult {
   messages: DirectorMessage[];
-  send: (body: string, mode: DirectorMode) => Promise<void>;
+  send: (
+    body: string,
+    mode: DirectorMode,
+    attachments?: string[],
+  ) => Promise<void>;
   busy: boolean;
 }
 
@@ -44,11 +48,14 @@ export function useDirector(): UseDirectorResult {
     };
   }, []);
 
-  const send = useCallback(async (body: string, mode: DirectorMode) => {
-    if (!body.trim()) return;
-    setBusy(true);
-    await window.api.sendToDirector(body, mode);
-  }, []);
+  const send = useCallback(
+    async (body: string, mode: DirectorMode, attachments?: string[]) => {
+      if (!body.trim() && !(attachments && attachments.length > 0)) return;
+      setBusy(true);
+      await window.api.sendToDirector(body, mode, attachments);
+    },
+    [],
+  );
 
   return { messages, send, busy };
 }

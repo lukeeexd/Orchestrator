@@ -9,8 +9,19 @@ interface Props {
   busy: boolean;
   mode: DirectorMode;
   onModeChange: (next: DirectorMode) => void;
-  onSend: (body: string, mode: DirectorMode) => Promise<void>;
+  onSend: (
+    body: string,
+    mode: DirectorMode,
+    attachments?: string[],
+  ) => Promise<void>;
   onSpawnPlan: (msg: DirectorMessage) => Promise<void>;
+}
+
+interface AttachmentChip {
+  path: string;
+  name: string;
+  ok: boolean;
+  reason?: string;
 }
 
 export function DirectorPane({
@@ -46,7 +57,11 @@ export function DirectorPane({
         <Chat messages={messages} mode={mode} onSpawnPlan={onSpawnPlan} />
       )}
 
-      <Composer busy={busy} mode={mode} onSend={(body) => onSend(body, mode)} />
+      <Composer
+        busy={busy}
+        mode={mode}
+        onSend={(body, attachments) => onSend(body, mode, attachments)}
+      />
     </div>
   );
 }
@@ -146,6 +161,15 @@ function Message({
           <span style={{ color: 'var(--accent)' }}>· streaming</span>
         )}
       </div>
+      {message.attachments && message.attachments.length > 0 && (
+        <div className="msg-attachments">
+          {message.attachments.map((a, i) => (
+            <span className="att-chip" key={`${a.path}-${i}`} title={a.path}>
+              <Icon name="attach" size={10} /> {a.name}
+            </span>
+          ))}
+        </div>
+      )}
       {(message.body || message.live) && (
         <div className="msg-body">
           {message.body}
@@ -171,15 +195,29 @@ function Composer({
 }: {
   busy: boolean;
   mode: DirectorMode;
-  onSend: (body: string) => Promise<void>;
+  onSend: (body: string, attachments?: string[]) => Promise<void>;
 }) {
   const [text, setText] = useState('');
+  const [attachments, setAttachments] = useState<AttachmentChip[]>([]);
+
+  const pick = async () => {
+    const { attachments: picked } = await window.api.pickAttachments();
+    if (picked.length === 0) return;
+    setAttachments((prev) => [...prev, ...picked]);
+  };
+
+  const remove = (path: string) => {
+    setAttachments((prev) => prev.filter((a) => a.path !== path));
+  };
 
   const submit = async () => {
     const body = text.trim();
-    if (!body || busy) return;
+    const okPaths = attachments.filter((a) => a.ok).map((a) => a.path);
+    if (!body && okPaths.length === 0) return;
+    if (busy) return;
     setText('');
-    await onSend(body);
+    setAttachments([]);
+    await onSend(body, okPaths.length > 0 ? okPaths : undefined);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -191,6 +229,27 @@ function Composer({
 
   return (
     <div className="composer">
+      {attachments.length > 0 && (
+        <div className="att-row">
+          {attachments.map((a) => (
+            <span
+              className={'att-chip' + (a.ok ? '' : ' bad')}
+              key={a.path}
+              title={a.reason ?? a.path}
+            >
+              <Icon name="attach" size={10} />
+              {a.name}
+              <button
+                className="att-x"
+                onClick={() => remove(a.path)}
+                title="Remove"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <textarea
         className="composer-textarea"
         value={text}
@@ -205,13 +264,25 @@ function Composer({
         disabled={busy}
       />
       <div className="composer-bar">
+        <button
+          className="tb-btn"
+          style={{ height: 22 }}
+          onClick={() => void pick()}
+          disabled={busy}
+          title="Attach text files (md / code / config)"
+        >
+          <Icon name="attach" size={11} /> Attach
+        </button>
         <span className="spacer" />
         <span style={{ color: 'var(--muted-2)' }}>⇧↵ newline</span>
         <button
           className="tb-btn primary"
           style={{ height: 22 }}
           onClick={() => void submit()}
-          disabled={busy || !text.trim()}
+          disabled={
+            busy ||
+            (!text.trim() && attachments.filter((a) => a.ok).length === 0)
+          }
         >
           <Icon name="send" size={11} /> {busy ? 'Working…' : 'Send'}
           <span className="kbd">↵</span>

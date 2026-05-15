@@ -17,6 +17,13 @@ interface Props {
   defaultWorkspace: string;
 }
 
+interface AttachmentChip {
+  path: string;
+  name: string;
+  ok: boolean;
+  reason?: string;
+}
+
 export function SpawnAgentForm({ onCancel, onSpawned, defaultWorkspace }: Props) {
   const [role, setRole] = useState<AgentRole>('coder');
   const [workspace, setWorkspace] = useState(defaultWorkspace);
@@ -26,6 +33,7 @@ export function SpawnAgentForm({ onCancel, onSpawned, defaultWorkspace }: Props)
   const [budgetUsd, setBudgetUsd] = useState('');
   const [budgetTokens, setBudgetTokens] = useState('');
   const [budgetSeconds, setBudgetSeconds] = useState('');
+  const [attachments, setAttachments] = useState<AttachmentChip[]>([]);
   const [defaults, setDefaults] = useState<{
     usd: number;
     tokens: number;
@@ -45,6 +53,17 @@ export function SpawnAgentForm({ onCancel, onSpawned, defaultWorkspace }: Props)
   const pickWorkspace = async () => {
     const { path } = await window.api.pickWorkspace();
     if (path) setWorkspace(path);
+  };
+
+  const pickAttachments = async () => {
+    const { attachments: picked } = await window.api.pickAttachments();
+    if (picked.length > 0) {
+      setAttachments((prev) => [...prev, ...picked]);
+    }
+  };
+
+  const removeAttachment = (path: string) => {
+    setAttachments((prev) => prev.filter((a) => a.path !== path));
   };
 
   const parseNum = (raw: string): number | undefined => {
@@ -74,11 +93,13 @@ export function SpawnAgentForm({ onCancel, onSpawned, defaultWorkspace }: Props)
       };
       const hasBudget =
         budget.usd != null || budget.tokens != null || budget.seconds != null;
+      const okAttachments = attachments.filter((a) => a.ok).map((a) => a.path);
       await window.api.spawnAgent({
         role,
         workspace,
         task,
         ...(hasBudget ? { budget } : {}),
+        ...(okAttachments.length > 0 ? { attachments: okAttachments } : {}),
       });
       onSpawned();
     } catch (e) {
@@ -146,6 +167,38 @@ export function SpawnAgentForm({ onCancel, onSpawned, defaultWorkspace }: Props)
               placeholder="Describe what you want the agent to do…"
               rows={6}
             />
+          </div>
+
+          <div className="field">
+            <span className="lbl">
+              Attachments · optional · text files only (md / code / config)
+            </span>
+            <div className="att-row" style={{ marginBottom: 4 }}>
+              {attachments.map((a) => (
+                <span
+                  className={'att-chip' + (a.ok ? '' : ' bad')}
+                  key={a.path}
+                  title={a.reason ?? a.path}
+                >
+                  <Icon name="attach" size={10} />
+                  {a.name}
+                  <button
+                    className="att-x"
+                    onClick={() => removeAttachment(a.path)}
+                    title="Remove"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+              <button
+                className="tb-btn"
+                style={{ height: 22 }}
+                onClick={pickAttachments}
+              >
+                <Icon name="attach" size={11} /> Attach files
+              </button>
+            </div>
           </div>
 
           <div className="field">
