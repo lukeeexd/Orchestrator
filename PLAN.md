@@ -14,7 +14,7 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current milestone | **M4 — smoke-testing** |
+| Current milestone | **M5 — not started** |
 | Last updated | 2026-05-15 |
 | Repo | `github.com/lukeeexd/Orchestrator` (private). Branches: `main` (release), `dev` (working). |
 
@@ -99,7 +99,7 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 - [x] Action buttons: **Pause** (functional — aborts the SDK abort-controller). **Redirect** / **Fork** / **Approve** rendered but disabled with hover tooltips pointing at the milestone where each lands
 - [x] **Spike result**: SDK exports `forkSession(sessionId)` (line 622 of sdk.d.ts) and `query({ options: { resume: sessionId } })`. Fork = `forkSession` → new session id → spawn new agent with that resume id + branched worktree. Feasible; defer the wiring to a M3.5 follow-up
 
-### M4 — Director  *(shipped; smoke pending)*
+### M4 — Director  *(completed 2026-05-15)*
 
 - [x] Director system prompt (planner-supervisor role) in `src/main/director/prompt.ts`
 - [x] Plan emission via **structured output** rather than MCP tool — Director outputs a fenced `orchestrator-plan` JSON block; UI auto-detects + renders a card. Same UX, far less plumbing for v1. Real MCP tools deferred.
@@ -141,6 +141,7 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 
 ## Recently completed
 
+- **2026-05-15 — M4 Director.** Plan emission via structured-output (`orchestrator-plan` fenced JSON block, parsed in main, rendered as a card) rather than real MCP tools — same UX, far less plumbing. Multi-turn via `query({ options: { resume } })`. Single-turn-at-a-time queue serialises user inputs and `[handoff]` notifications from agent completions, so the Director actually supervises a run. **Bypass mode** added after smoke: workspace is picked once and remembered in localStorage; subsequent plans auto-spawn with no Accept click. Workspace pill in the top bar shows current + lets you change it.
 - **2026-05-15 — M3 Drawer wired.** Click an agent → live drawer with role-tinted sigil, KPI strip (Step / Tokens / Cost / Elapsed updating each second), and five tabs. Logs tab tails the last 8 lines, Tools tab derives invocation counts + last-used from `agent.log`, Context tab shows a tokens-vs-200k-cap bar, Config tab has the click-to-expand system prompt + model + workspace + worktree path. Pause action functional (aborts the AbortController). Redirect / Fork / Approve disabled with hover tooltips pointing at the milestone where each lands. Moved `roles.ts` to `shared/` so renderer can read it. Fork spike: SDK has `forkSession()` + `resume` option — deferred to M3.5.
 - **2026-05-15 — M2 Single-agent loop.** Wired the Claude Agent SDK (which ships a 218MB `claude.exe` and is loaded via dynamic ESM import from our CJS main). Per-agent git worktree, event classifier mapping SDK stream → 7 LogLine kinds, IPC streaming (agent/log/patch channels), useAgents hook + AgentRow + LogLineRow + SpawnAgentForm modal. Flex auth so Team-plan users without API access can run via auto-discovered Claude Code OAuth. End-to-end smoke verified (coder spawned, THOUGHT + HANDOFF rendered live).
 - **2026-05-15 — M1 UI shell empty-state.** React + Vite plugin wired, full design CSS lifted verbatim (minus mac traffic lights). Component tree under `src/renderer/components/`: TopBar, LeftRail, StatusBar, DirectorPane (+ EmptyChat + Composer), AgentsPane (+ EmptyAgents), Drawer (no-selection state), ResizeHandle, Icon, PlaceholderScreen. Resize widths persist via `useLocalStorageState`. Rail items route between the home orchestrator screen and v1.1 placeholders.
