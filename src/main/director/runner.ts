@@ -8,6 +8,7 @@ import { extractPlan } from './parse';
 import { nowTs } from '../agents/classifier';
 import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
+import * as registry from '../agents/registry';
 
 export interface DirectorSinks {
   onMessage: (msg: DirectorMessage) => void;
@@ -171,8 +172,9 @@ async function runTurn(
       attachments && attachments.length > 0
         ? inlineAttachments(attachments)
         : '';
+    const agentBlock = buildAgentFleetBlock();
     const q = sdk.query({
-      prompt: `[mode: ${mode}] ${attachmentBlock}${promptBody}`,
+      prompt: `[mode: ${mode}]\n${agentBlock}${attachmentBlock}${promptBody}`,
       options: queryOptions,
     });
 
@@ -212,6 +214,23 @@ async function runTurn(
       live: false,
     });
   }
+}
+
+/**
+ * Snapshot the currently-registered agents and render them as a compact
+ * block the Director sees ahead of each user message. Without this the
+ * Director only knows about agents IT spawned (via acceptPlan's follow-up
+ * message), not ones the user spawned manually via the workspace pane.
+ */
+function buildAgentFleetBlock(): string {
+  const all = registry.list();
+  if (all.length === 0) return '';
+  const lines = all.map((a) => {
+    const task = a.task ? `, task: "${a.task.slice(0, 80).replace(/"/g, "'")}"` : '';
+    const tokens = a.tokens > 0 ? `, ${(a.tokens / 1000).toFixed(1)}k tok` : '';
+    return `- @${a.name} (${a.role}, ${a.status}${task}${tokens})`;
+  });
+  return `[currently spawned agents]\n${lines.join('\n')}\n[/currently spawned agents]\n\n`;
 }
 
 /**
