@@ -467,14 +467,25 @@ async function consumeQuery(
       const result = ev as unknown as {
         subtype: string;
         total_cost_usd?: number;
-        usage?: { input_tokens?: number; output_tokens?: number };
+        usage?: {
+          input_tokens?: number;
+          output_tokens?: number;
+          cache_creation_input_tokens?: number;
+          cache_read_input_tokens?: number;
+        };
         is_error?: boolean;
         errors?: string[];
         result?: string;
       };
       // result.usage is for THIS run only; combine with base for cumulative.
-      const resultRunInput = result.usage?.input_tokens ?? 0;
-      const resultRunOutput = result.usage?.output_tokens ?? 0;
+      // Include cache_* token totals so we don't undercount Sonnet/Opus
+      // prompts that hit cache (the bulk of input is usually a cached read).
+      const u = result.usage ?? {};
+      const resultRunInput =
+        (Number(u.input_tokens) || 0) +
+        (Number(u.cache_creation_input_tokens) || 0) +
+        (Number(u.cache_read_input_tokens) || 0);
+      const resultRunOutput = Number(u.output_tokens) || 0;
       const finalTokens = baseTokens + resultRunInput + resultRunOutput;
       const finalCost = baseCost + (result.total_cost_usd ?? 0);
       if (result.subtype === 'success') {
