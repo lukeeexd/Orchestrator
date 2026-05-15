@@ -14,7 +14,7 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current milestone | **M5 — not started** |
+| Current milestone | **M6 — not started** |
 | Last updated | 2026-05-15 |
 | Repo | `github.com/lukeeexd/Orchestrator` (private). Branches: `main` (release), `dev` (working). |
 
@@ -109,14 +109,14 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 - [x] HANDOFF flow: when a Director-spawned agent's `result` event fires, `director.notifyAgentDone(name, summary)` queues a `[handoff]` user message into the Director session — Director sees it on the next turn and replies.
 - [x] Multi-turn via `query({ options: { resume: sessionId } })` — one Director session per app lifetime; message queue serialises user inputs and handoff notifications so we never overlap turns.
 
-### M5 — Budgets + polish  *(not started)*
+### M5 — Budgets + polish  *(completed 2026-05-15)*
 
-- [ ] Per-agent transport wrapper that meters tokens + dollars
-- [ ] Hard-stop on budget exceeded → status `error`
-- [ ] Pulse animation (1.6s ease-in-out) on running and approval dots
-- [ ] Streaming cursor on live Director messages and tail log lines
-- [ ] Session persistence across app restart (reload from SQLite)
-- [ ] Memory pins via the SDK's memory tool
+- [x] Per-agent token + dollar meter, live (updates per assistant turn from `message.usage`)
+- [x] Hard-stop on budget exceeded → status `error: Budget exceeded`. Caps for $ / tokens / wall-clock seconds, each independently configurable; 0 = unlimited
+- [x] Per-turn NOTE log line showing input / output / cumulative / cost / current caps — surfaced the original bug where cached-prompt tokens were undercounted
+- [x] Pulse animation on running / approval dots and streaming cursor on Director messages — landed in M2 + M4 CSS; verified
+- [x] Session persistence — SQLite schema v2, write-through with 1s debounced flush, hydrate on startup. Director messages, agents, log lines, and the Director's SDK `session_id` all survive restart. Running agents at shutdown are flipped to `error: Interrupted` on next launch
+- [ ] Memory pins via the SDK's memory tool — deferred to a future milestone; the memory tab still shows the "coming soon" placeholder. Not blocking for v1
 
 ### M6 — Installer + dogfood  *(not started)*
 
@@ -142,6 +142,7 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 
 ## Recently completed
 
+- **2026-05-15 — M5 Budgets + persistence.** Per-agent budgets (dollars, tokens, wall-clock) with hard-stop on the runner side: tokens accumulate from each assistant message's `message.usage` (now also counting `cache_creation_input_tokens` + `cache_read_input_tokens` — the original miss that hid all the cached input on Sonnet runs). Spawn form has optional inputs; Drawer Config tab shows live progress bars. Session persistence via SQLite schema v2: Director chat, agents, log lines, and the Director's resumable SDK session id all write through on every event (debounced flush) and rehydrate on startup. In-flight agents at shutdown get flipped to `error: Interrupted`. Per-turn NOTE log line is kept as a feature, not just debug — useful to watch spend in real time. Memory pins deferred (not blocking for v1).
 - **2026-05-15 — M4 Director.** Plan emission via structured-output (`orchestrator-plan` fenced JSON block, parsed in main, rendered as a card) rather than real MCP tools — same UX, far less plumbing. Multi-turn via `query({ options: { resume } })`. Single-turn-at-a-time queue serialises user inputs and `[handoff]` notifications from agent completions, so the Director actually supervises a run. **Bypass mode** (no Accept click) + **workspace pill** in the top bar landed shortly after for friction reduction.
 - **2026-05-15 — M4 follow-ups.**
   - **Mode toggle** in the Director header — `auto` (current — plans + auto-spawns) vs `manual` (advisor — prose only, no plan blocks). Mode persists to localStorage. Each user message is tagged `[mode: X]` so the Director sees it without restarting the session. Director system prompt explains both modes; manual-mode response is verified to give phase-structured prose advice with concrete agent counts + risk flags + an explicit nudge back to manual control.
