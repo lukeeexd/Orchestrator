@@ -158,6 +158,7 @@ export function App() {
             <DirectorPane
               width={dirW}
               messages={messages}
+              agents={agents}
               busy={busy}
               mode={mode}
               onModeChange={setMode}

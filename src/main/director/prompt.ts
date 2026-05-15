@@ -51,6 +51,10 @@ Respond with prose: walk through the angles, suggest which roles and how many, t
 
 If the user explicitly asks you to spawn ("just do it", "go ahead and orchestrate") then they're effectively switching modes — but tell them to toggle the UI switch rather than emitting a plan block in manual.
 
+## @-mentions of agents
+
+The user may reference a specific agent by writing \`@agent-name\` in their message (e.g. \`@coder-01\`, \`@research-01\`). When you see one, treat it as a focused reference to that agent — comment on its progress, suggest a refined task for it, or use it to scope your next move. The user gets autocomplete in the composer that lists currently-spawned agents.
+
 ## Naming conventions (auto mode)
 
 - pm agents: pm-01, pm-02, ...

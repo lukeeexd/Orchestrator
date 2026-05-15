@@ -690,6 +690,56 @@ body.resizing * { cursor: col-resize !important; }
   color: var(--accent);
 }
 
+/* Mention autocomplete picker */
+.composer-input-wrap {
+  position: relative;
+}
+.mention-picker {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 50;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.mention-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+  cursor: default;
+}
+.mention-item:hover,
+.mention-item.on {
+  background: var(--sub-2);
+  color: var(--text);
+}
+.mention-item .m-name {
+  color: var(--text);
+  font-weight: 500;
+}
+.mention-item .m-role {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mention-item .m-status {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .budget-row {
   display: grid;
   grid-template-columns: 1fr 1.3fr 1fr;

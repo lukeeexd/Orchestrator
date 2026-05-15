@@ -1,11 +1,26 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import type { DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
+import type { Agent, DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
 import { Icon } from './Icon';
 import { PlanCard } from './PlanCard';
+
+const ROLE_TINT: Record<Agent['role'], string> = {
+  pm: '#4ade80',
+  researcher: '#60a5fa',
+  coder: '#c084fc',
+  qa: '#fbbf24',
+  devops: '#f97316',
+};
 
 interface Props {
   width: number;
   messages: DirectorMessage[];
+  agents: Agent[];
   busy: boolean;
   mode: DirectorMode;
   onModeChange: (next: DirectorMode) => void;
@@ -27,6 +42,7 @@ interface AttachmentChip {
 export function DirectorPane({
   width,
   messages,
+  agents,
   busy,
   mode,
   onModeChange,
@@ -60,6 +76,7 @@ export function DirectorPane({
       <Composer
         busy={busy}
         mode={mode}
+        agents={agents}
         onSend={(body, attachments) => onSend(body, mode, attachments)}
       />
     </div>
@@ -191,14 +208,32 @@ function Message({
 function Composer({
   busy,
   mode,
+  agents,
   onSend,
 }: {
   busy: boolean;
   mode: DirectorMode;
+  agents: Agent[];
   onSend: (body: string, attachments?: string[]) => Promise<void>;
 }) {
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<AttachmentChip[]>([]);
+  const [mentionState, setMentionState] = useState<{
+    open: boolean;
+    query: string;
+    /** Index in `text` where the '@' sits. */
+    atIdx: number;
+    selected: number;
+  }>({ open: false, query: '', atIdx: -1, selected: 0 });
+
+  const mentionMatches = useMemo(() => {
+    if (!mentionState.open) return [];
+    const q = mentionState.query.toLowerCase();
+    return agents
+      .filter((a) => !q || a.name.toLowerCase().startsWith(q))
+      .slice(0, 8);
+  }, [mentionState, agents]);
 
   const pick = async () => {
     const { attachments: picked } = await window.api.pickAttachments();
@@ -217,10 +252,84 @@ function Composer({
     if (busy) return;
     setText('');
     setAttachments([]);
+    setMentionState({ open: false, query: '', atIdx: -1, selected: 0 });
     await onSend(body, okPaths.length > 0 ? okPaths : undefined);
   };
 
+  /** Detect `@<prefix>` at the cursor and open/refresh the picker. */
+  const refreshMention = (value: string, caret: number) => {
+    // Walk back from caret looking for an '@' bounded by start-of-line or
+    // whitespace. Stop if we hit whitespace before an '@' (so spaces close
+    // the picker).
+    let i = caret - 1;
+    while (i >= 0) {
+      const ch = value[i];
+      if (ch === '@') {
+        const before = i === 0 ? ' ' : value[i - 1];
+        if (/\s/.test(before) || i === 0) {
+          const query = value.slice(i + 1, caret);
+          if (/^[A-Za-z0-9_-]*$/.test(query)) {
+            setMentionState({ open: true, query, atIdx: i, selected: 0 });
+            return;
+          }
+        }
+        break;
+      }
+      if (/\s/.test(ch)) break;
+      i--;
+    }
+    setMentionState({ open: false, query: '', atIdx: -1, selected: 0 });
+  };
+
+  const insertMention = (name: string) => {
+    if (mentionState.atIdx < 0) return;
+    const before = text.slice(0, mentionState.atIdx);
+    const after = text.slice(
+      mentionState.atIdx + 1 + mentionState.query.length,
+    );
+    const inserted = `@${name} `;
+    const next = before + inserted + after;
+    setText(next);
+    setMentionState({ open: false, query: '', atIdx: -1, selected: 0 });
+    // Restore caret right after the inserted mention.
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      const pos = before.length + inserted.length;
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+    });
+  };
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionState.open && mentionMatches.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionState((m) => ({
+          ...m,
+          selected: Math.min(mentionMatches.length - 1, m.selected + 1),
+        }));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionState((m) => ({
+          ...m,
+          selected: Math.max(0, m.selected - 1),
+        }));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        insertMention(mentionMatches[mentionState.selected].name);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionState({ open: false, query: '', atIdx: -1, selected: 0 });
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void submit();
@@ -250,19 +359,56 @@ function Composer({
           ))}
         </div>
       )}
-      <textarea
-        className="composer-textarea"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder={
-          mode === 'auto'
-            ? 'Describe a task — Director will plan & auto-spawn…'
-            : 'Ask the Director for advice…'
-        }
-        rows={3}
-        disabled={busy}
-      />
+      <div className="composer-input-wrap">
+        <textarea
+          ref={taRef}
+          className="composer-textarea"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            refreshMention(e.target.value, e.target.selectionStart ?? 0);
+          }}
+          onKeyDown={onKeyDown}
+          onKeyUp={(e) => {
+            const target = e.target as HTMLTextAreaElement;
+            refreshMention(target.value, target.selectionStart ?? 0);
+          }}
+          onClick={(e) => {
+            const target = e.target as HTMLTextAreaElement;
+            refreshMention(target.value, target.selectionStart ?? 0);
+          }}
+          placeholder={
+            mode === 'auto'
+              ? 'Describe a task — Director will plan & auto-spawn… (type @ to reference an agent)'
+              : 'Ask the Director for advice… (type @ to reference an agent)'
+          }
+          rows={3}
+          disabled={busy}
+        />
+        {mentionState.open && mentionMatches.length > 0 && (
+          <div className="mention-picker">
+            {mentionMatches.map((a, i) => (
+              <div
+                key={a.id}
+                className={'mention-item' + (i === mentionState.selected ? ' on' : '')}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertMention(a.name);
+                }}
+              >
+                <span className="m-name">@{a.name}</span>
+                <span
+                  className="m-role"
+                  style={{ color: ROLE_TINT[a.role] }}
+                >
+                  {a.role}
+                </span>
+                <span className="m-status">{a.status}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="composer-bar">
         <button
           className="tb-btn"
