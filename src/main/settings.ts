@@ -5,7 +5,16 @@ import type { Settings } from '../shared/ipc';
 
 const DEFAULTS: Settings = {
   apiKey: '',
+  oauthToken: '',
   defaultModel: 'claude-sonnet-4-6',
+  // Budgets default to 0 (unlimited). Caps are opt-in — set a non-zero
+  // value here (or per spawn) to enforce one. The old $1 / 100k / 600s
+  // safety belts were too restrictive (a single Opus 4.7 turn easily
+  // exceeds $1) and surprised users who thought "no limit set" meant
+  // unlimited.
+  defaultBudgetUsd: 0,
+  defaultBudgetTokens: 0,
+  defaultBudgetSeconds: 0,
 };
 
 let cached: Settings | null = null;
@@ -24,6 +33,25 @@ export function readSettings(): Settings {
   try {
     const raw = fs.readFileSync(p, 'utf8');
     const parsed = JSON.parse(raw) as Partial<Settings>;
+
+    // One-time migration: the v1.0 defaults were ($1 / 100k / 600s) and
+    // surprised users who'd never set a budget. If we see all three at
+    // exactly those values, assume they're untouched legacy defaults and
+    // flip to unlimited. Writes back so the migration runs once.
+    if (
+      parsed.defaultBudgetUsd === 1.0 &&
+      parsed.defaultBudgetTokens === 100_000 &&
+      parsed.defaultBudgetSeconds === 600
+    ) {
+      parsed.defaultBudgetUsd = 0;
+      parsed.defaultBudgetTokens = 0;
+      parsed.defaultBudgetSeconds = 0;
+      const merged: Settings = { ...DEFAULTS, ...parsed };
+      fs.writeFileSync(p, JSON.stringify(merged, null, 2), 'utf8');
+      cached = merged;
+      return cached;
+    }
+
     cached = { ...DEFAULTS, ...parsed };
   } catch {
     cached = { ...DEFAULTS };

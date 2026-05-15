@@ -1,22 +1,316 @@
-import { ipcMain, app } from 'electron';
-import { IpcChannels, type AppPingResponse, type Settings } from '../shared/ipc';
+import { ipcMain, app, BrowserWindow, dialog } from 'electron';
+import {
+  IpcChannels,
+  type AcceptPlanRequest,
+  type AcceptPlanResponse,
+  type AppPingResponse,
+  type PickWorkspaceResponse,
+  type Settings,
+  type SpawnAgentResponse,
+} from '../shared/ipc';
+import type {
+  Agent,
+  DirectorMessage,
+  Project,
+  SpawnAgentRequest,
+} from '../shared/types';
 import { readSettings, writeSettings } from './settings';
+import {
+  spawnAgent,
+  redirectAgent,
+  registry,
+  awaitCompletion,
+} from './agents/runner';
+import * as director from './director/runner';
+import { deleteAgent } from './persistence';
+import { describeAttachments } from './attachments';
+import {
+  createProject,
+  deleteProject,
+  getActiveProjectId,
+  listProjects,
+  renameProject,
+  setActiveProjectId,
+  setProjectWorkspace,
+} from './projects';
 
 const startedAt = Date.now();
 
+function broadcast(channel: string, payload: unknown): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send(channel, payload);
+  }
+}
+
 export function registerIpcHandlers(): void {
+  director.setSinks({
+    onMessage: (projectId, message) =>
+      broadcast(IpcChannels.DirectorEventMessage, { projectId, message }),
+    onPatch: (projectId, id, patch) =>
+      broadcast(IpcChannels.DirectorEventPatch, { projectId, id, patch }),
+  });
+
   ipcMain.handle(IpcChannels.AppPing, (): AppPingResponse => {
     return { ok: true, version: app.getVersion(), startedAt };
   });
 
-  ipcMain.handle(IpcChannels.SettingsGet, (): Settings => {
-    return readSettings();
-  });
-
+  ipcMain.handle(IpcChannels.SettingsGet, (): Settings => readSettings());
   ipcMain.handle(
     IpcChannels.SettingsSet,
-    (_event, next: Partial<Settings>): Settings => {
-      return writeSettings(next);
+    (_event, next: Partial<Settings>): Settings => writeSettings(next),
+  );
+
+  // ─────────────────────────── Projects ───────────────────────────
+  ipcMain.handle(IpcChannels.ProjectList, (): Project[] => listProjects());
+  ipcMain.handle(IpcChannels.ProjectGetActive, (): string | null =>
+    getActiveProjectId(),
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectCreate,
+    (_event, name: string, workspace: string): Project =>
+      createProject(name, workspace),
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetActive,
+    (_event, id: string): { ok: true } => {
+      setActiveProjectId(id);
+      broadcast(IpcChannels.ProjectEventActiveChanged, { projectId: id });
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectRename,
+    (_event, id: string, name: string): { ok: true } => {
+      renameProject(id, name);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetWorkspace,
+    (_event, id: string, workspace: string): { ok: true } => {
+      setProjectWorkspace(id, workspace);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectDelete,
+    (_event, id: string): { ok: true } => {
+      // Stop the Director session and remove agents for this project first.
+      director.discardSession(id);
+      for (const a of registry.listForProject(id)) {
+        registry.remove(a.id);
+      }
+      deleteProject(id);
+      return { ok: true };
+    },
+  );
+
+  // ───────────────────────────── Agents ───────────────────────────
+  const agentSinks = {
+    onAgent: (agent: Agent) =>
+      broadcast(IpcChannels.AgentEventAgent, {
+        projectId: agent.projectId,
+        agent,
+      }),
+    onLog: (agentId: string, line: import('../shared/types').LogLine) => {
+      const entry = registry.get(agentId);
+      broadcast(IpcChannels.AgentEventLog, {
+        projectId: entry?.agent.projectId ?? '',
+        agentId,
+        line,
+      });
+    },
+    onPatch: (agentId: string, patch: Partial<Agent>) => {
+      const entry = registry.get(agentId);
+      broadcast(IpcChannels.AgentEventPatch, {
+        projectId: entry?.agent.projectId ?? '',
+        agentId,
+        patch,
+      });
+    },
+  };
+
+  ipcMain.handle(
+    IpcChannels.AgentList,
+    (_event, projectId: string): Agent[] => registry.listForProject(projectId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentSpawn,
+    async (_event, req: SpawnAgentRequest): Promise<SpawnAgentResponse> => {
+      const result = await spawnAgent(req, agentSinks);
+      return { ok: true, agentId: result.agentId };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentAbort,
+    (_event, id: string): { ok: boolean } => ({ ok: registry.abort(id) }),
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentRemove,
+    (_event, id: string): { ok: boolean } => {
+      const entry = registry.get(id);
+      const projectId = entry?.agent.projectId ?? '';
+      const ok = registry.remove(id);
+      if (ok) {
+        deleteAgent(id);
+        broadcast(IpcChannels.AgentEventRemove, { projectId, agentId: id });
+      }
+      return { ok };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentRedirect,
+    async (
+      _event,
+      req: import('../shared/types').RedirectAgentRequest,
+    ): Promise<{ ok: boolean; error?: string }> => {
+      return redirectAgent(req, agentSinks);
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentPickWorkspace,
+    async (event): Promise<PickWorkspaceResponse> => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return { path: null };
+      const result = await dialog.showOpenDialog(win, {
+        title: 'Choose workspace folder',
+        properties: ['openDirectory'],
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return { path: null };
+      }
+      return { path: result.filePaths[0] };
+    },
+  );
+
+  ipcMain.handle(IpcChannels.AttachmentPick, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return { attachments: [] };
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Attach files',
+      properties: ['openFile', 'multiSelections'],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { attachments: [] };
+    }
+    return { attachments: describeAttachments(result.filePaths) };
+  });
+
+  // ─────────────────────────── Director ───────────────────────────
+  ipcMain.handle(
+    IpcChannels.DirectorList,
+    (_event, projectId: string): DirectorMessage[] =>
+      director.listMessages(projectId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.DirectorSend,
+    (
+      _event,
+      projectId: string,
+      body: string,
+      mode: import('../shared/types').DirectorMode,
+      attachments?: string[],
+    ): { ok: true } => {
+      director.sendFromUser(projectId, body, mode, attachments);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.DirectorAbort,
+    (_event, projectId: string): { ok: true } => {
+      director.abort(projectId);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.DirectorAckRedirect,
+    (
+      _event,
+      req: {
+        projectId: string;
+        messageId: string;
+        agentName: string;
+        ok: boolean;
+        error?: string;
+      },
+    ): { ok: true } => {
+      director.acknowledgeRedirect(
+        req.projectId,
+        req.messageId,
+        req.agentName,
+        req.ok,
+        req.error,
+      );
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.DirectorAcceptPlan,
+    async (_event, req: AcceptPlanRequest): Promise<AcceptPlanResponse> => {
+      const spawned: { id: string; name: string }[] = [];
+      const firstId =
+        req.rows.length > 0
+          ? await spawnAgent(
+              {
+                projectId: req.projectId,
+                role: req.rows[0].role,
+                task: req.rows[0].task,
+                workspace: req.workspace,
+                spawnedBy: 'director',
+              },
+              agentSinks,
+            )
+          : null;
+      if (firstId) {
+        const e = registry.get(firstId.agentId);
+        spawned.push({
+          id: firstId.agentId,
+          name: e?.agent.name ?? req.rows[0].name,
+        });
+      }
+      const reservedNames = [
+        ...spawned.map((s) => s.name),
+        ...req.rows.slice(1).map((r) => r.name),
+      ];
+      director.acknowledgePlanAccepted(
+        req.projectId,
+        req.rows,
+        reservedNames,
+      );
+
+      void (async () => {
+        for (let i = 1; i < req.rows.length; i++) {
+          const prev = spawned[spawned.length - 1];
+          if (prev) await awaitCompletion(prev.id);
+          const row = req.rows[i];
+          const r = await spawnAgent(
+            {
+              projectId: req.projectId,
+              role: row.role,
+              task: row.task,
+              workspace: req.workspace,
+              spawnedBy: 'director',
+            },
+            agentSinks,
+          );
+          const e = registry.get(r.agentId);
+          spawned.push({
+            id: r.agentId,
+            name: e?.agent.name ?? row.name,
+          });
+        }
+      })();
+
+      return { spawnedAgentIds: spawned.map((s) => s.id) };
     },
   );
 }
