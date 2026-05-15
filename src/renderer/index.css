@@ -286,6 +286,21 @@ html, body {
 }
 .project-tab-new:hover { color: var(--accent); border-color: var(--accent-line); }
 
+.project-tab .pt-close {
+  background: transparent;
+  border: 0;
+  color: var(--muted-2);
+  padding: 0 2px;
+  margin-left: 4px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: default;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.project-tab:hover .pt-close { opacity: 1; }
+.project-tab .pt-close:hover { color: var(--error); }
+
 .director {
   flex-shrink: 0;
 }

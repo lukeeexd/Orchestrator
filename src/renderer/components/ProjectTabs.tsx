@@ -8,6 +8,7 @@ interface Props {
   agentCountByProject: Record<string, number>;
   onSelect: (id: string) => void;
   onNewProject: () => void;
+  onDelete: (id: string) => void;
 }
 
 export function ProjectTabs({
@@ -16,20 +17,34 @@ export function ProjectTabs({
   agentCountByProject,
   onSelect,
   onNewProject,
+  onDelete,
 }: Props) {
   return (
     <div className="project-tabs">
       {projects.map((p) => {
         const count = agentCountByProject[p.id] ?? 0;
+        const canDelete = projects.length > 1;
         return (
           <div
             key={p.id}
             className={'project-tab' + (activeId === p.id ? ' on' : '')}
             onClick={() => onSelect(p.id)}
-            title={p.workspace || 'no workspace'}
+            title={p.workspace || 'no workspace set'}
           >
             <span className="pt-name">{p.name}</span>
             {count > 0 && <span className="pt-count">{count}</span>}
+            {canDelete && (
+              <button
+                className="pt-close"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(p.id);
+                }}
+                title="Remove project (workspace files on disk are NOT deleted)"
+              >
+                ×
+              </button>
+            )}
           </div>
         );
       })}
@@ -129,6 +144,86 @@ export function NewProjectForm({ onCreate, onCancel }: NewProjectFormProps) {
             disabled={busy || !name.trim()}
           >
             <Icon name="plus" size={11} /> Create
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ConfirmDeleteProps {
+  project: Project;
+  onConfirm: () => Promise<void>;
+  onCancel: () => void;
+}
+
+export function ConfirmDeleteProject({
+  project,
+  onConfirm,
+  onCancel,
+}: ConfirmDeleteProps) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <span className="title">
+            <b>Remove project</b>
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onCancel} title="Cancel">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="field">
+            <span className="v">
+              Remove <code>{project.name}</code> from the orchestrator?
+            </span>
+          </div>
+          <div className="field">
+            <span className="lbl">Wiped</span>
+            <span className="v">
+              Director chat history, agent rows, log lines, and the SDK
+              session id for this project.
+            </span>
+          </div>
+          <div className="field">
+            <span className="lbl">Not touched</span>
+            <span className="v">
+              {project.workspace ? (
+                <>
+                  Workspace folder at <code>{project.workspace}</code> — any
+                  files agents created stay on disk.
+                </>
+              ) : (
+                <>No workspace was set, so nothing on disk to leave behind.</>
+              )}
+            </span>
+          </div>
+        </div>
+        <div className="modal-foot">
+          <button className="tb-btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            className="tb-btn primary"
+            style={{
+              background: 'rgba(239,91,91,0.18)',
+              borderColor: 'rgba(239,91,91,0.5)',
+              color: 'var(--error)',
+            }}
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onConfirm();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <Icon name="x" size={11} /> Remove
           </button>
         </div>
       </div>

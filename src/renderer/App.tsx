@@ -13,7 +13,11 @@ import { AgentsPane } from './components/AgentsPane';
 import { Drawer } from './components/Drawer';
 import { ResizeHandle } from './components/ResizeHandle';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
-import { ProjectTabs, NewProjectForm } from './components/ProjectTabs';
+import {
+  ProjectTabs,
+  NewProjectForm,
+  ConfirmDeleteProject,
+} from './components/ProjectTabs';
 
 const PLACEHOLDERS: Record<
   Exclude<RailScreen, 'agents'>,
@@ -58,6 +62,7 @@ export function App() {
     'auto',
   );
   const [showNewProject, setShowNewProject] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [agentCountByProject, setAgentCountByProject] = useState<
     Record<string, number>
   >({});
@@ -69,6 +74,7 @@ export function App() {
     setActive: setActiveProject,
     create: createProject,
     setWorkspace: setProjectWorkspace,
+    remove: removeProject,
   } = useProjects();
   const activeProject: Project | null =
     projects.find((p) => p.id === activeProjectId) ?? null;
@@ -263,6 +269,7 @@ export function App() {
         agentCountByProject={agentCountByProject}
         onSelect={(id) => void setActiveProject(id)}
         onNewProject={() => setShowNewProject(true)}
+        onDelete={(id) => setConfirmDeleteId(id)}
       />
       <div className="body">
         <LeftRail
@@ -338,6 +345,29 @@ export function App() {
           onCancel={() => setShowNewProject(false)}
         />
       )}
+      {confirmDeleteId &&
+        (() => {
+          const target = projects.find((p) => p.id === confirmDeleteId);
+          if (!target) return null;
+          return (
+            <ConfirmDeleteProject
+              project={target}
+              onConfirm={async () => {
+                // If deleting the active project, switch to another one first
+                // so the UI doesn't briefly render an orphan state.
+                if (confirmDeleteId === activeProjectId) {
+                  const fallback = projects.find(
+                    (p) => p.id !== confirmDeleteId,
+                  );
+                  if (fallback) await setActiveProject(fallback.id);
+                }
+                await removeProject(confirmDeleteId);
+                setConfirmDeleteId(null);
+              }}
+              onCancel={() => setConfirmDeleteId(null)}
+            />
+          );
+        })()}
     </div>
   );
 }
