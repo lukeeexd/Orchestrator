@@ -55,6 +55,23 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 - Runs (past sessions browser)
 - Settings beyond a single API-key field
 
+## Deferred features (post-v1)
+
+Things that landed partially or are explicitly tabled for a later milestone. New sessions should pick from here when v1 ships.
+
+- **Better attachments.** v1 supports text-file attachments (md / code / config / json / yaml) inlined into the prompt as fenced code blocks, 100 KiB cap per file. Deferred:
+  - Image attachments via Anthropic vision content blocks (`{type: 'image', source: {type: 'base64', media_type, data}}`). Needs the SDK call to switch from `prompt: string` to `prompt: AsyncIterable<SDKUserMessage>` so we can send structured content blocks instead of a single string.
+  - PDF attachments via document content blocks (same shape change).
+  - Larger file caps (current 100 KiB is conservative; raise once we have the streaming pipeline).
+  - File picker filtered to text-like extensions instead of "all files + show error chip" UX.
+  - Drag-and-drop into the composer.
+- **Agent Redirect.** Inject a user message into an already-running agent's session. SDK exposes `Query.streamInput(stream)` (sdk.d.ts:2248) — needs a spike. Currently agents are one-shot; mid-flight redirection isn't possible.
+- **Agent Fork.** SDK has `forkSession(id)` + `query({options:{resume}})` — drawer Fork button is rendered but disabled. Wiring is mostly UX work.
+- **Memory pins.** Drawer Memory tab is a placeholder. Should use the SDK's memory tool to let users pin facts the agent carries between turns.
+- **Plan editing.** In auto mode, plans auto-spawn. Add an Edit button to the plan card for tighter control without flipping to manual mode.
+- **Session-wide budget.** Per-agent budgets exist; a global "session won't exceed $X" cap (rolling across all agents in a session) doesn't.
+- **Wipe session.** Truly nuke a session — agents, Director chat, attachments, settings.json `oauthToken` — for handing the machine off.
+
 ## Milestones
 
 ### M0 — Skeleton  *(completed 2026-05-15)*
