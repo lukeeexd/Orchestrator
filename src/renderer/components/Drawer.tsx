@@ -309,14 +309,84 @@ function ConfigTab({ agent }: { agent: Agent }) {
         </span>
       </div>
       <div className="field">
-        <span className="lbl">Limits</span>
-        <span className="v">budgets &amp; wall-clock land in M5</span>
-      </div>
-      <div className="field">
-        <span className="lbl">On error</span>
-        <span className="v">stop and report (configurable in M5)</span>
+        <span className="lbl">Budget caps</span>
+        <BudgetBars agent={agent} />
       </div>
     </>
+  );
+}
+
+function BudgetBars({ agent }: { agent: Agent }) {
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - agent.startedAt) / 1000),
+  );
+  return (
+    <div className="budget-bars">
+      <BudgetBar
+        label="Cost"
+        used={agent.cost}
+        cap={agent.budget.usd}
+        formatUsed={(v) => `$${v.toFixed(2)}`}
+        formatCap={(v) => `$${v.toFixed(2)}`}
+      />
+      <BudgetBar
+        label="Tokens"
+        used={agent.tokens}
+        cap={agent.budget.tokens}
+        formatUsed={(v) => v.toLocaleString()}
+        formatCap={(v) => v.toLocaleString()}
+      />
+      <BudgetBar
+        label="Time"
+        used={elapsedSeconds}
+        cap={agent.budget.seconds}
+        formatUsed={(v) => `${v}s`}
+        formatCap={(v) => `${v}s`}
+      />
+    </div>
+  );
+}
+
+function BudgetBar({
+  label,
+  used,
+  cap,
+  formatUsed,
+  formatCap,
+}: {
+  label: string;
+  used: number;
+  cap: number;
+  formatUsed: (v: number) => string;
+  formatCap: (v: number) => string;
+}) {
+  if (cap <= 0) {
+    return (
+      <div className="budget-bar">
+        <span className="b-lbl">{label}</span>
+        <div className="b-track">
+          <div className="b-fill" style={{ width: '0%' }} />
+        </div>
+        <span className="b-val">{formatUsed(used)} / ∞</span>
+      </div>
+    );
+  }
+  const pct = Math.min(100, Math.max(0, (used / cap) * 100));
+  const cls = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : '';
+  return (
+    <div className="budget-bar">
+      <span className="b-lbl">{label}</span>
+      <div className="b-track">
+        <div
+          className={'b-fill' + (cls ? ' ' + cls : '')}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="b-val">
+        {formatUsed(used)} / {formatCap(cap)}
+      </span>
+    </div>
   );
 }
 

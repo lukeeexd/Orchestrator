@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AgentRole } from '../../shared/types';
 import { Icon } from './Icon';
 
@@ -21,10 +21,36 @@ export function SpawnAgentForm({ onCancel, onSpawned }: Props) {
   const [task, setTask] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [budgetUsd, setBudgetUsd] = useState('');
+  const [budgetTokens, setBudgetTokens] = useState('');
+  const [budgetSeconds, setBudgetSeconds] = useState('');
+  const [defaults, setDefaults] = useState<{
+    usd: number;
+    tokens: number;
+    seconds: number;
+  } | null>(null);
+
+  useEffect(() => {
+    window.api.getSettings().then((s) => {
+      setDefaults({
+        usd: s.defaultBudgetUsd,
+        tokens: s.defaultBudgetTokens,
+        seconds: s.defaultBudgetSeconds,
+      });
+    });
+  }, []);
 
   const pickWorkspace = async () => {
     const { path } = await window.api.pickWorkspace();
     if (path) setWorkspace(path);
+  };
+
+  const parseNum = (raw: string): number | undefined => {
+    const trimmed = raw.trim();
+    if (!trimmed) return undefined;
+    const n = Number(trimmed);
+    if (!Number.isFinite(n) || n < 0) return undefined;
+    return n;
   };
 
   const submit = async () => {
@@ -39,7 +65,19 @@ export function SpawnAgentForm({ onCancel, onSpawned }: Props) {
     }
     setBusy(true);
     try {
-      await window.api.spawnAgent({ role, workspace, task });
+      const budget = {
+        usd: parseNum(budgetUsd),
+        tokens: parseNum(budgetTokens),
+        seconds: parseNum(budgetSeconds),
+      };
+      const hasBudget =
+        budget.usd != null || budget.tokens != null || budget.seconds != null;
+      await window.api.spawnAgent({
+        role,
+        workspace,
+        task,
+        ...(hasBudget ? { budget } : {}),
+      });
       onSpawned();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -106,6 +144,44 @@ export function SpawnAgentForm({ onCancel, onSpawned }: Props) {
               placeholder="Describe what you want the agent to do…"
               rows={6}
             />
+          </div>
+
+          <div className="field">
+            <span className="lbl">
+              Budget caps · optional · leave blank for defaults
+            </span>
+            <div className="budget-row">
+              <label>
+                <span className="budget-prefix">$</span>
+                <input
+                  className="text-input"
+                  value={budgetUsd}
+                  onChange={(e) => setBudgetUsd(e.target.value)}
+                  placeholder={defaults?.usd.toFixed(2) ?? '—'}
+                  inputMode="decimal"
+                />
+              </label>
+              <label>
+                <input
+                  className="text-input"
+                  value={budgetTokens}
+                  onChange={(e) => setBudgetTokens(e.target.value)}
+                  placeholder={defaults?.tokens.toLocaleString() ?? '—'}
+                  inputMode="numeric"
+                />
+                <span className="budget-suffix">tokens</span>
+              </label>
+              <label>
+                <input
+                  className="text-input"
+                  value={budgetSeconds}
+                  onChange={(e) => setBudgetSeconds(e.target.value)}
+                  placeholder={defaults?.seconds.toString() ?? '—'}
+                  inputMode="numeric"
+                />
+                <span className="budget-suffix">seconds</span>
+              </label>
+            </div>
           </div>
 
           {error && <div className="form-error">{error}</div>}

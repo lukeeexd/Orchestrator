@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import type { Agent, AgentRole, LogLine, SpawnAgentRequest } from '../../shared/types';
+import type {
+  Agent,
+  AgentBudget,
+  AgentRole,
+  LogLine,
+  SpawnAgentRequest,
+} from '../../shared/types';
 import { ROLES } from '../../shared/roles';
+import { estimateCost } from '../../shared/rates';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';
 import { readSettings } from '../settings';
@@ -35,6 +42,31 @@ function elapsed(startedAt: number): string {
   return `${m}:${s}`;
 }
 
+/**
+ * Returns a description of the first budget breach, or null if within limits.
+ * A zero limit means "unlimited" (skip that check).
+ */
+function checkBudget(
+  budget: AgentBudget,
+  tokens: number,
+  cost: number,
+  startedAt: number,
+): string | null {
+  if (budget.usd > 0 && cost > budget.usd) {
+    return `cost $${cost.toFixed(2)} exceeds cap $${budget.usd.toFixed(2)}`;
+  }
+  if (budget.tokens > 0 && tokens > budget.tokens) {
+    return `tokens ${tokens.toLocaleString()} exceed cap ${budget.tokens.toLocaleString()}`;
+  }
+  if (budget.seconds > 0) {
+    const sec = (Date.now() - startedAt) / 1000;
+    if (sec > budget.seconds) {
+      return `wall-clock ${Math.round(sec)}s exceeds cap ${budget.seconds}s`;
+    }
+  }
+  return null;
+}
+
 const completions = new Map<string, Promise<void>>();
 
 /**
@@ -57,7 +89,13 @@ export async function spawnAgent(
 
   // settings.defaultModel overrides each role's hardcoded model — gives
   // the user one knob to flip Opus / Sonnet / Haiku across the whole fleet.
-  const effectiveModel = readSettings().defaultModel || role.model;
+  const baseSettings = readSettings();
+  const effectiveModel = baseSettings.defaultModel || role.model;
+  const budget: AgentBudget = {
+    usd: req.budget?.usd ?? baseSettings.defaultBudgetUsd,
+    tokens: req.budget?.tokens ?? baseSettings.defaultBudgetTokens,
+    seconds: req.budget?.seconds ?? baseSettings.defaultBudgetSeconds,
+  };
 
   const agent: Agent = {
     id,
@@ -73,6 +111,7 @@ export async function spawnAgent(
     elapsed: '00:00',
     model: effectiveModel,
     workspace: req.workspace,
+    budget,
     spawnedBy: req.spawnedBy ?? 'user',
     log: [],
     startedAt: Date.now(),
@@ -143,6 +182,28 @@ async function run(
       registry.patch(agentId, { elapsed: next });
       sinks.onPatch(agentId, { elapsed: next });
     }
+    // Wall-clock budget can trip even while the API call is in flight,
+    // so check it on the elapsed tick too, not just after assistant turns.
+    if (
+      e.agent.status === 'running' &&
+      e.agent.budget.seconds > 0 &&
+      (Date.now() - e.agent.startedAt) / 1000 > e.agent.budget.seconds
+    ) {
+      sinks.onLog(agentId, {
+        ts: nowTs(),
+        kind: 'error',
+        msg: `Wall-clock budget ${e.agent.budget.seconds}s exceeded. Aborting.`,
+      });
+      controller.abort();
+      registry.patch(agentId, {
+        status: 'error',
+        statusLabel: 'Budget exceeded',
+      });
+      sinks.onPatch(agentId, {
+        status: 'error',
+        statusLabel: 'Budget exceeded',
+      });
+    }
   }, 1000);
 
   try {
@@ -175,6 +236,8 @@ ${req.task}`;
     });
 
     let turn = 0;
+    let cumulativeInput = 0;
+    let cumulativeOutput = 0;
     for await (const event of q) {
       if (controller.signal.aborted) break;
       const ev = event as { type: string; [k: string]: unknown };
@@ -188,8 +251,57 @@ ${req.task}`;
 
       if (ev.type === 'assistant') {
         turn += 1;
-        registry.patch(agentId, { step: `${turn}/?` });
-        sinks.onPatch(agentId, { step: `${turn}/?` });
+        const msg = (ev as { message?: { usage?: { input_tokens?: number; output_tokens?: number } } }).message;
+        if (msg?.usage) {
+          cumulativeInput += msg.usage.input_tokens ?? 0;
+          cumulativeOutput += msg.usage.output_tokens ?? 0;
+          const liveTokens = cumulativeInput + cumulativeOutput;
+          const liveCost = estimateCost(
+            effectiveModel,
+            cumulativeInput,
+            cumulativeOutput,
+          );
+          registry.patch(agentId, {
+            step: `${turn}/?`,
+            tokens: liveTokens,
+            cost: liveCost,
+          });
+          sinks.onPatch(agentId, {
+            step: `${turn}/?`,
+            tokens: liveTokens,
+            cost: liveCost,
+          });
+          // Budget enforcement after each assistant turn.
+          const entry = registry.get(agentId);
+          const breach = entry
+            ? checkBudget(
+                entry.agent.budget,
+                liveTokens,
+                liveCost,
+                entry.agent.startedAt,
+              )
+            : null;
+          if (breach) {
+            sinks.onLog(agentId, {
+              ts: nowTs(),
+              kind: 'error',
+              msg: `Budget exceeded — ${breach}. Aborting.`,
+            });
+            controller.abort();
+            registry.patch(agentId, {
+              status: 'error',
+              statusLabel: 'Budget exceeded',
+            });
+            sinks.onPatch(agentId, {
+              status: 'error',
+              statusLabel: 'Budget exceeded',
+            });
+            break;
+          }
+        } else {
+          registry.patch(agentId, { step: `${turn}/?` });
+          sinks.onPatch(agentId, { step: `${turn}/?` });
+        }
       } else if (ev.type === 'result') {
         const result = ev as unknown as {
           subtype: string;

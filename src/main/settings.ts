@@ -7,6 +7,9 @@ const DEFAULTS: Settings = {
   apiKey: '',
   oauthToken: '',
   defaultModel: 'claude-sonnet-4-6',
+  defaultBudgetUsd: 1.0,
+  defaultBudgetTokens: 100_000,
+  defaultBudgetSeconds: 600,
 };
 
 let cached: Settings | null = null;

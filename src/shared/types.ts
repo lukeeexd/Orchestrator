@@ -30,6 +30,12 @@ export interface LogLine {
 
 export type AgentSpawnedBy = 'user' | 'director';
 
+export interface AgentBudget {
+  usd: number;
+  tokens: number;
+  seconds: number;
+}
+
 export interface Agent {
   id: string;
   role: AgentRole;
@@ -44,6 +50,7 @@ export interface Agent {
   elapsed: string;
   model: string;
   workspace: string;
+  budget: AgentBudget;
   spawnedBy: AgentSpawnedBy;
   log: LogLine[];
   startedAt: number;
@@ -76,6 +83,7 @@ export interface SpawnAgentRequest {
   task: string;
   workspace: string;
   spawnedBy?: AgentSpawnedBy;
+  budget?: Partial<AgentBudget>;
 }
 
 export interface SpawnAgentResponse {

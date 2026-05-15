@@ -41,6 +41,12 @@ export interface Settings {
   /** Long-lived OAuth token from `claude setup-token`. Takes precedence over apiKey when set. */
   oauthToken: string;
   defaultModel: string;
+  /** Per-agent dollar cap. 0 = unlimited. */
+  defaultBudgetUsd: number;
+  /** Per-agent token cap (input + output). 0 = unlimited. */
+  defaultBudgetTokens: number;
+  /** Per-agent wall-clock cap in seconds. 0 = unlimited. */
+  defaultBudgetSeconds: number;
 }
 
 export interface SpawnAgentResponse {
