@@ -80,6 +80,14 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 4,
+    up: (db) => {
+      db.exec(`
+        ALTER TABLE agents ADD COLUMN session_id TEXT;
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

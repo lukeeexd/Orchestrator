@@ -4,6 +4,7 @@ import type {
   AgentBudget,
   AgentRole,
   LogLine,
+  RedirectAgentRequest,
   SpawnAgentRequest,
 } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
@@ -14,6 +15,23 @@ import { readSettings } from '../settings';
 import * as director from '../director/runner';
 import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
+
+interface AuthSettings {
+  apiKey: string;
+  oauthToken: string;
+  defaultModel: string;
+}
+
+function buildEnv(settings: AuthSettings): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...process.env };
+  if (settings.oauthToken) {
+    env.CLAUDE_CODE_OAUTH_TOKEN = settings.oauthToken;
+    delete env.ANTHROPIC_API_KEY;
+  } else if (settings.apiKey) {
+    env.ANTHROPIC_API_KEY = settings.apiKey;
+  }
+  return env;
+}
 
 export interface RunnerSinks {
   onAgent: (agent: Agent) => void;
@@ -152,62 +170,14 @@ async function run(
   agentId: string,
   req: SpawnAgentRequest,
   workdir: string,
-  settings: { apiKey: string; oauthToken: string; defaultModel: string },
+  settings: AuthSettings,
   controller: AbortController,
   sinks: RunnerSinks,
 ): Promise<void> {
   const role = ROLES[req.role];
-
-  // Auth resolution, in order of precedence:
-  // 1. Explicit OAuth token from settings → CLAUDE_CODE_OAUTH_TOKEN
-  // 2. Explicit API key from settings → ANTHROPIC_API_KEY
-  // 3. Nothing — fall through to the SDK's auto-discovery from ~/.claude
-  //    (works if you're already logged in via Claude Code CLI)
-  const env: Record<string, string | undefined> = { ...process.env };
-  if (settings.oauthToken) {
-    env.CLAUDE_CODE_OAUTH_TOKEN = settings.oauthToken;
-    delete env.ANTHROPIC_API_KEY;
-  } else if (settings.apiKey) {
-    env.ANTHROPIC_API_KEY = settings.apiKey;
-  }
-
-  // SDK is ESM-only — load it dynamically from our CJS context.
+  const env = buildEnv(settings);
   const sdk = await import('@anthropic-ai/claude-agent-sdk');
-
-  const elapsedTimer = setInterval(() => {
-    const e = registry.get(agentId);
-    if (!e) {
-      clearInterval(elapsedTimer);
-      return;
-    }
-    const next = elapsed(e.agent.startedAt);
-    if (next !== e.agent.elapsed) {
-      registry.patch(agentId, { elapsed: next });
-      sinks.onPatch(agentId, { elapsed: next });
-    }
-    // Wall-clock budget can trip even while the API call is in flight,
-    // so check it on the elapsed tick too, not just after assistant turns.
-    if (
-      e.agent.status === 'running' &&
-      e.agent.budget.seconds > 0 &&
-      (Date.now() - e.agent.startedAt) / 1000 > e.agent.budget.seconds
-    ) {
-      sinks.onLog(agentId, {
-        ts: nowTs(),
-        kind: 'error',
-        msg: `Wall-clock budget ${e.agent.budget.seconds}s exceeded. Aborting.`,
-      });
-      controller.abort();
-      registry.patch(agentId, {
-        status: 'error',
-        statusLabel: 'Budget exceeded',
-      });
-      sinks.onPatch(agentId, {
-        status: 'error',
-        statusLabel: 'Budget exceeded',
-      });
-    }
-  }, 1000);
+  const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
   try {
     const effectiveModel = settings.defaultModel || role.model;
@@ -242,148 +212,311 @@ ${req.task}`;
       },
     });
 
-    let turn = 0;
-    let cumulativeInput = 0;
-    let cumulativeOutput = 0;
-    for await (const event of q) {
-      if (controller.signal.aborted) break;
-      const ev = event as { type: string; [k: string]: unknown };
-
-      const lines = classify(ev);
-      for (const line of lines) {
-        const entry = registry.get(agentId);
-        if (entry) entry.agent.log.push(line);
-        persistence.appendLogLine(agentId, line);
-        sinks.onLog(agentId, line);
-      }
-
-      if (ev.type === 'assistant') {
-        turn += 1;
-        const msg = (ev as { message?: { usage?: Record<string, number | null | undefined> } }).message;
-        if (msg?.usage) {
-          const u = msg.usage;
-          const turnInput =
-            (Number(u.input_tokens) || 0) +
-            (Number(u.cache_creation_input_tokens) || 0) +
-            (Number(u.cache_read_input_tokens) || 0);
-          const turnOutput = Number(u.output_tokens) || 0;
-          cumulativeInput += turnInput;
-          cumulativeOutput += turnOutput;
-          const liveTokens = cumulativeInput + cumulativeOutput;
-          const liveCost = estimateCost(
-            effectiveModel,
-            cumulativeInput,
-            cumulativeOutput,
-          );
-
-          // Diagnostic note so we can see exactly what each turn cost +
-          // whether the budget check is reading the right numbers.
-          const entryNow = registry.get(agentId);
-          const budgetView = entryNow
-            ? `cap ${entryNow.agent.budget.tokens.toLocaleString()}tok / $${entryNow.agent.budget.usd.toFixed(2)} / ${entryNow.agent.budget.seconds}s`
-            : 'no budget';
-          sinks.onLog(agentId, {
-            ts: nowTs(),
-            kind: 'note',
-            msg: `turn ${turn} · in ${turnInput.toLocaleString()} · out ${turnOutput.toLocaleString()} · total ${liveTokens.toLocaleString()} · $${liveCost.toFixed(4)} · ${budgetView}`,
-          });
-
-          registry.patch(agentId, {
-            step: `${turn}/?`,
-            tokens: liveTokens,
-            cost: liveCost,
-          });
-          sinks.onPatch(agentId, {
-            step: `${turn}/?`,
-            tokens: liveTokens,
-            cost: liveCost,
-          });
-          // Budget enforcement after each assistant turn.
-          const entry = registry.get(agentId);
-          const breach = entry
-            ? checkBudget(
-                entry.agent.budget,
-                liveTokens,
-                liveCost,
-                entry.agent.startedAt,
-              )
-            : null;
-          if (breach) {
-            sinks.onLog(agentId, {
-              ts: nowTs(),
-              kind: 'error',
-              msg: `Budget exceeded — ${breach}. Aborting.`,
-            });
-            controller.abort();
-            registry.patch(agentId, {
-              status: 'error',
-              statusLabel: 'Budget exceeded',
-            });
-            sinks.onPatch(agentId, {
-              status: 'error',
-              statusLabel: 'Budget exceeded',
-            });
-            break;
-          }
-        } else {
-          registry.patch(agentId, { step: `${turn}/?` });
-          sinks.onPatch(agentId, { step: `${turn}/?` });
-        }
-      } else if (ev.type === 'result') {
-        const result = ev as unknown as {
-          subtype: string;
-          total_cost_usd?: number;
-          usage?: { input_tokens?: number; output_tokens?: number };
-          is_error?: boolean;
-          errors?: string[];
-        };
-        const tokens =
-          (result.usage?.input_tokens ?? 0) + (result.usage?.output_tokens ?? 0);
-        const cost = result.total_cost_usd ?? 0;
-        if (result.subtype === 'success') {
-          sinks.onLog(agentId, {
-            ts: nowTs(),
-            kind: 'handoff',
-            msg: 'Task complete',
-          });
-          registry.patch(agentId, {
-            status: 'done',
-            statusLabel: 'Done',
-            tokens,
-            cost,
-          });
-          sinks.onPatch(agentId, {
-            status: 'done',
-            statusLabel: 'Done',
-            tokens,
-            cost,
-          });
-          const entry = registry.get(agentId);
-          if (entry && entry.agent.spawnedBy === 'director') {
-            const summary =
-              (result as unknown as { result?: string }).result ?? '';
-            director.notifyAgentDone(entry.agent.name, summary);
-          }
-        } else {
-          const errMsg = (result.errors ?? [result.subtype]).join(' · ');
-          sinks.onLog(agentId, { ts: nowTs(), kind: 'error', msg: errMsg });
-          registry.patch(agentId, {
-            status: 'error',
-            statusLabel: result.subtype,
-            tokens,
-            cost,
-          });
-          sinks.onPatch(agentId, {
-            status: 'error',
-            statusLabel: result.subtype,
-            tokens,
-            cost,
-          });
-        }
-      }
-    }
+    await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
     clearInterval(elapsedTimer);
+  }
+}
+
+/**
+ * Continue a done/error agent's SDK session with a new user message.
+ * Uses `options.resume = agent.sessionId` so conversation memory + tools
+ * + system prompt are all carried over from the original spawn.
+ */
+export async function redirectAgent(
+  req: RedirectAgentRequest,
+  sinks: RunnerSinks,
+): Promise<{ ok: boolean; error?: string }> {
+  const entry = registry.get(req.agentId);
+  if (!entry) return { ok: false, error: 'agent not found' };
+  const agent = entry.agent;
+  if (!agent.sessionId) {
+    return {
+      ok: false,
+      error: 'no SDK session id captured yet — agent never produced a result event',
+    };
+  }
+  if (agent.status === 'running' || agent.status === 'waiting') {
+    return {
+      ok: false,
+      error: 'agent is still running — abort it first',
+    };
+  }
+
+  // Flip back to running for the redirected turn.
+  registry.patch(req.agentId, { status: 'running', statusLabel: 'Running' });
+  sinks.onPatch(req.agentId, { status: 'running', statusLabel: 'Running' });
+
+  const controller = new AbortController();
+  registry.setController(req.agentId, controller);
+
+  let resolveDone!: () => void;
+  const donePromise = new Promise<void>((res) => {
+    resolveDone = res;
+  });
+  completions.set(req.agentId, donePromise);
+
+  runRedirect(req.agentId, req.body, req.attachments, controller, sinks)
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      sinks.onLog(req.agentId, {
+        ts: nowTs(),
+        kind: 'error',
+        msg: `redirect crashed: ${msg}`,
+      });
+      sinks.onPatch(req.agentId, { status: 'error', statusLabel: 'Crashed' });
+    })
+    .finally(() => {
+      resolveDone();
+      setTimeout(() => completions.delete(req.agentId), 60_000);
+    });
+
+  return { ok: true };
+}
+
+async function runRedirect(
+  agentId: string,
+  body: string,
+  attachments: string[] | undefined,
+  controller: AbortController,
+  sinks: RunnerSinks,
+): Promise<void> {
+  const entry = registry.get(agentId);
+  if (!entry || !entry.agent.sessionId) return;
+  const settings = readSettings();
+  const env = buildEnv(settings);
+  const sdk = await import('@anthropic-ai/claude-agent-sdk');
+  const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
+
+  try {
+    const attachmentBlock =
+      attachments && attachments.length > 0 ? inlineAttachments(attachments) : '';
+    const prompt = `${attachmentBlock}Continuing task. New instruction:
+${body}`;
+
+    sinks.onLog(agentId, {
+      ts: nowTs(),
+      kind: 'note',
+      msg: `Redirected — resuming session ${entry.agent.sessionId}`,
+    });
+
+    const q = sdk.query({
+      prompt,
+      options: {
+        cwd: entry.agent.workspace,
+        env,
+        abortController: controller,
+        permissionMode: 'bypassPermissions',
+        resume: entry.agent.sessionId,
+      },
+    });
+
+    await consumeQuery(agentId, q, controller, entry.agent.model, sinks);
+  } finally {
+    clearInterval(elapsedTimer);
+  }
+}
+
+function startElapsedTimer(
+  agentId: string,
+  controller: AbortController,
+  sinks: RunnerSinks,
+): NodeJS.Timeout {
+  const elapsedTimer = setInterval(() => {
+    const e = registry.get(agentId);
+    if (!e) {
+      clearInterval(elapsedTimer);
+      return;
+    }
+    const next = elapsed(e.agent.startedAt);
+    if (next !== e.agent.elapsed) {
+      registry.patch(agentId, { elapsed: next });
+      sinks.onPatch(agentId, { elapsed: next });
+    }
+    if (
+      e.agent.status === 'running' &&
+      e.agent.budget.seconds > 0 &&
+      (Date.now() - e.agent.startedAt) / 1000 > e.agent.budget.seconds
+    ) {
+      sinks.onLog(agentId, {
+        ts: nowTs(),
+        kind: 'error',
+        msg: `Wall-clock budget ${e.agent.budget.seconds}s exceeded. Aborting.`,
+      });
+      controller.abort();
+      registry.patch(agentId, {
+        status: 'error',
+        statusLabel: 'Budget exceeded',
+      });
+      sinks.onPatch(agentId, {
+        status: 'error',
+        statusLabel: 'Budget exceeded',
+      });
+    }
+  }, 1000);
+  return elapsedTimer;
+}
+
+async function consumeQuery(
+  agentId: string,
+  q: AsyncIterable<unknown>,
+  controller: AbortController,
+  model: string,
+  sinks: RunnerSinks,
+): Promise<void> {
+  const entry0 = registry.get(agentId);
+  if (!entry0) return;
+  // Cumulative tracking — start from the agent's existing totals so
+  // a redirect run accumulates onto the original spawn's numbers.
+  const baseTokens = entry0.agent.tokens;
+  const baseCost = entry0.agent.cost;
+  let runInput = 0;
+  let runOutput = 0;
+  let turn = 0;
+
+  for await (const event of q) {
+    if (controller.signal.aborted) break;
+    const ev = event as { type: string; session_id?: string; [k: string]: unknown };
+
+    // Capture session_id whenever we see one — needed for Redirect to
+    // resume the conversation later.
+    if (typeof ev.session_id === 'string') {
+      const e = registry.get(agentId);
+      if (e && e.agent.sessionId !== ev.session_id) {
+        registry.patch(agentId, { sessionId: ev.session_id });
+        sinks.onPatch(agentId, { sessionId: ev.session_id });
+      }
+    }
+
+    const lines = classify(ev);
+    for (const line of lines) {
+      const entry = registry.get(agentId);
+      if (entry) entry.agent.log.push(line);
+      persistence.appendLogLine(agentId, line);
+      sinks.onLog(agentId, line);
+    }
+
+    if (ev.type === 'assistant') {
+      turn += 1;
+      const msg = (ev as { message?: { usage?: Record<string, number | null | undefined> } }).message;
+      if (msg?.usage) {
+        const u = msg.usage;
+        const turnInput =
+          (Number(u.input_tokens) || 0) +
+          (Number(u.cache_creation_input_tokens) || 0) +
+          (Number(u.cache_read_input_tokens) || 0);
+        const turnOutput = Number(u.output_tokens) || 0;
+        runInput += turnInput;
+        runOutput += turnOutput;
+        const totalTokens = baseTokens + runInput + runOutput;
+        const totalCost = baseCost + estimateCost(model, runInput, runOutput);
+
+        // Diagnostic note showing per-turn cost and current cap state.
+        const entryNow = registry.get(agentId);
+        const budgetView = entryNow
+          ? `cap ${entryNow.agent.budget.tokens.toLocaleString()}tok / $${entryNow.agent.budget.usd.toFixed(2)} / ${entryNow.agent.budget.seconds}s`
+          : 'no budget';
+        sinks.onLog(agentId, {
+          ts: nowTs(),
+          kind: 'note',
+          msg: `turn ${turn} · in ${turnInput.toLocaleString()} · out ${turnOutput.toLocaleString()} · cumulative ${totalTokens.toLocaleString()} · $${totalCost.toFixed(4)} · ${budgetView}`,
+        });
+
+        registry.patch(agentId, {
+          step: `${turn}/?`,
+          tokens: totalTokens,
+          cost: totalCost,
+        });
+        sinks.onPatch(agentId, {
+          step: `${turn}/?`,
+          tokens: totalTokens,
+          cost: totalCost,
+        });
+        // Budget enforcement after each assistant turn — against cumulative.
+        const entry = registry.get(agentId);
+        const breach = entry
+          ? checkBudget(
+              entry.agent.budget,
+              totalTokens,
+              totalCost,
+              entry.agent.startedAt,
+            )
+          : null;
+        if (breach) {
+          sinks.onLog(agentId, {
+            ts: nowTs(),
+            kind: 'error',
+            msg: `Budget exceeded — ${breach}. Aborting.`,
+          });
+          controller.abort();
+          registry.patch(agentId, {
+            status: 'error',
+            statusLabel: 'Budget exceeded',
+          });
+          sinks.onPatch(agentId, {
+            status: 'error',
+            statusLabel: 'Budget exceeded',
+          });
+          break;
+        }
+      } else {
+        registry.patch(agentId, { step: `${turn}/?` });
+        sinks.onPatch(agentId, { step: `${turn}/?` });
+      }
+    } else if (ev.type === 'result') {
+      const result = ev as unknown as {
+        subtype: string;
+        total_cost_usd?: number;
+        usage?: { input_tokens?: number; output_tokens?: number };
+        is_error?: boolean;
+        errors?: string[];
+        result?: string;
+      };
+      // result.usage is for THIS run only; combine with base for cumulative.
+      const resultRunInput = result.usage?.input_tokens ?? 0;
+      const resultRunOutput = result.usage?.output_tokens ?? 0;
+      const finalTokens = baseTokens + resultRunInput + resultRunOutput;
+      const finalCost = baseCost + (result.total_cost_usd ?? 0);
+      if (result.subtype === 'success') {
+        sinks.onLog(agentId, {
+          ts: nowTs(),
+          kind: 'handoff',
+          msg: 'Task complete',
+        });
+        registry.patch(agentId, {
+          status: 'done',
+          statusLabel: 'Done',
+          tokens: finalTokens,
+          cost: finalCost,
+        });
+        sinks.onPatch(agentId, {
+          status: 'done',
+          statusLabel: 'Done',
+          tokens: finalTokens,
+          cost: finalCost,
+        });
+        const entry = registry.get(agentId);
+        if (entry && entry.agent.spawnedBy === 'director') {
+          const summary = result.result ?? '';
+          director.notifyAgentDone(entry.agent.name, summary);
+        }
+      } else {
+        const errMsg = (result.errors ?? [result.subtype]).join(' · ');
+        sinks.onLog(agentId, { ts: nowTs(), kind: 'error', msg: errMsg });
+        registry.patch(agentId, {
+          status: 'error',
+          statusLabel: result.subtype,
+          tokens: finalTokens,
+          cost: finalCost,
+        });
+        sinks.onPatch(agentId, {
+          status: 'error',
+          statusLabel: result.subtype,
+          tokens: finalTokens,
+          cost: finalCost,
+        });
+      }
+    }
   }
 }
 

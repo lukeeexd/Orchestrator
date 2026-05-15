@@ -45,6 +45,11 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.AgentAbort, id) as Promise<{ ok: boolean }>,
   removeAgent: (id) =>
     ipcRenderer.invoke(IpcChannels.AgentRemove, id) as Promise<{ ok: boolean }>,
+  redirectAgent: (req) =>
+    ipcRenderer.invoke(IpcChannels.AgentRedirect, req) as Promise<{
+      ok: boolean;
+      error?: string;
+    }>,
   pickWorkspace: () =>
     ipcRenderer.invoke(IpcChannels.AgentPickWorkspace) as Promise<PickWorkspaceResponse>,
   pickAttachments: () =>

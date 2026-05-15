@@ -4,6 +4,7 @@ import type {
   DirectorMode,
   LogLine,
   PlanRow,
+  RedirectAgentRequest,
   SpawnAgentRequest,
 } from './types';
 
@@ -15,6 +16,7 @@ export const IpcChannels = {
   AgentSpawn: 'agent:spawn',
   AgentAbort: 'agent:abort',
   AgentRemove: 'agent:remove',
+  AgentRedirect: 'agent:redirect',
   AgentPickWorkspace: 'agent:pickWorkspace',
   AttachmentPick: 'attachment:pick',
   DirectorList: 'director:list',
@@ -109,6 +111,7 @@ export interface OrchestratorApi {
   spawnAgent: (req: SpawnAgentRequest) => Promise<SpawnAgentResponse>;
   abortAgent: (id: string) => Promise<{ ok: boolean }>;
   removeAgent: (id: string) => Promise<{ ok: boolean }>;
+  redirectAgent: (req: RedirectAgentRequest) => Promise<{ ok: boolean; error?: string }>;
   pickWorkspace: () => Promise<PickWorkspaceResponse>;
   pickAttachments: () => Promise<PickAttachmentsResponse>;
   listDirectorMessages: () => Promise<DirectorMessage[]>;

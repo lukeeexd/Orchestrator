@@ -54,6 +54,14 @@ export interface Agent {
   spawnedBy: AgentSpawnedBy;
   log: LogLine[];
   startedAt: number;
+  /** SDK session id, captured from the stream. Enables Redirect via `options.resume`. */
+  sessionId?: string;
+}
+
+export interface RedirectAgentRequest {
+  agentId: string;
+  body: string;
+  attachments?: string[];
 }
 
 export interface PlanRow {

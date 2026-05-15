@@ -10,7 +10,12 @@ import {
 } from '../shared/ipc';
 import type { Agent, DirectorMessage, SpawnAgentRequest } from '../shared/types';
 import { readSettings, writeSettings } from './settings';
-import { spawnAgent, registry, awaitCompletion } from './agents/runner';
+import {
+  spawnAgent,
+  redirectAgent,
+  registry,
+  awaitCompletion,
+} from './agents/runner';
 import * as director from './director/runner';
 import { deleteAgent } from './persistence';
 import { describeAttachments } from './attachments';
@@ -82,6 +87,23 @@ export function registerIpcHandlers(): void {
         broadcast(IpcChannels.AgentEventRemove, { agentId: id });
       }
       return { ok };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentRedirect,
+    async (
+      _event,
+      req: import('../shared/types').RedirectAgentRequest,
+    ): Promise<{ ok: boolean; error?: string }> => {
+      return redirectAgent(req, {
+        onAgent: (agent) =>
+          broadcast(IpcChannels.AgentEventAgent, { agent }),
+        onLog: (agentId, line) =>
+          broadcast(IpcChannels.AgentEventLog, { agentId, line }),
+        onPatch: (agentId, patch) =>
+          broadcast(IpcChannels.AgentEventPatch, { agentId, patch }),
+      });
     },
   );
 

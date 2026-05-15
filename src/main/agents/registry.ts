@@ -35,6 +35,14 @@ export function abort(id: string): boolean {
   return true;
 }
 
+/** Swap an agent's controller — used when redirecting a done/error agent. */
+export function setController(id: string, controller: AbortController): boolean {
+  const e = entries.get(id);
+  if (!e) return false;
+  e.controller = controller;
+  return true;
+}
+
 export function abortAll(): void {
   for (const e of entries.values()) e.controller.abort();
 }

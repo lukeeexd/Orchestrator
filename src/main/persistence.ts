@@ -156,8 +156,8 @@ export function saveAgent(a: Agent): void {
       (id, ordering, role, role_label, name, status, status_label, step, task,
        tokens, cost, elapsed, model, workspace,
        budget_usd, budget_tokens, budget_seconds,
-       spawned_by, started_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       spawned_by, started_at, session_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     a.id,
@@ -179,6 +179,7 @@ export function saveAgent(a: Agent): void {
     a.budget.seconds,
     a.spawnedBy,
     a.startedAt,
+    a.sessionId ?? null,
   ]);
   stmt.free();
   scheduleSave();
@@ -194,6 +195,7 @@ export function patchAgent(id: string, patch: Partial<Agent>): void {
   if (patch.tokens !== undefined) { sets.push('tokens = ?'); values.push(patch.tokens); }
   if (patch.cost !== undefined) { sets.push('cost = ?'); values.push(patch.cost); }
   if (patch.elapsed !== undefined) { sets.push('elapsed = ?'); values.push(patch.elapsed); }
+  if (patch.sessionId !== undefined) { sets.push('session_id = ?'); values.push(patch.sessionId); }
   if (sets.length === 0) return;
   values.push(id);
   const stmt = db.prepare(
@@ -223,12 +225,13 @@ export function loadAgents(): Agent[] {
   const res = db.exec(`
     SELECT id, ordering, role, role_label, name, status, status_label, step, task,
            tokens, cost, elapsed, model, workspace,
-           budget_usd, budget_tokens, budget_seconds, spawned_by, started_at
+           budget_usd, budget_tokens, budget_seconds, spawned_by, started_at, session_id
     FROM agents ORDER BY ordering ASC
   `);
   if (res.length === 0) return [];
   const out: Agent[] = [];
   for (const row of res[0].values) {
+    const sid = row[19];
     out.push({
       id: asStr(row[0]),
       role: asStr(row[2]) as Agent['role'],
@@ -251,6 +254,7 @@ export function loadAgents(): Agent[] {
       spawnedBy: asStr(row[17]) as Agent['spawnedBy'],
       log: [],
       startedAt: asInt(row[18]),
+      sessionId: typeof sid === 'string' && sid.length > 0 ? sid : undefined,
     });
     agentOrdering = Math.max(agentOrdering, asInt(row[1]));
   }

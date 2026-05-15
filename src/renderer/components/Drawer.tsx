@@ -71,6 +71,9 @@ export function Drawer({ width, agent, onAbort }: Props) {
 
 function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
+  const canRedirect = !isRunning && !!agent.sessionId;
+  const [redirectOpen, setRedirectOpen] = useState(false);
+
   return (
     <div className="drawer-head">
       <div className="drawer-id">
@@ -103,22 +106,97 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
         >
           <Icon name="stop" size={11} /> Pause
         </button>
-        <button className="tb-btn" disabled title="Redirect lands later in v1">
+        <button
+          className="tb-btn"
+          disabled={!canRedirect}
+          onClick={() => setRedirectOpen((v) => !v)}
+          title={
+            isRunning
+              ? 'Abort the agent first'
+              : !agent.sessionId
+              ? 'No session captured yet (no result event)'
+              : 'Continue this agent with a new instruction'
+          }
+        >
           <Icon name="redirect" size={11} /> Redirect
         </button>
         <button
           className="tb-btn"
           disabled
-          title="Fork via SDK forkSession() — wiring up in M3.5"
+          title="Fork via SDK forkSession() — wiring up in a follow-up"
         >
           <Icon name="fork" size={11} /> Fork
         </button>
         <button
           className="tb-btn primary"
           disabled
-          title="Approval gates land in M4 with the Director"
+          title="Approval gates — deferred"
         >
           <Icon name="check" size={11} /> Approve
+        </button>
+      </div>
+
+      {redirectOpen && (
+        <RedirectForm
+          agentId={agent.id}
+          onClose={() => setRedirectOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function RedirectForm({
+  agentId,
+  onClose,
+}: {
+  agentId: string;
+  onClose: () => void;
+}) {
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    const trimmed = body.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await window.api.redirectAgent({ agentId, body: trimmed });
+      if (!res.ok) {
+        setError(res.error ?? 'redirect failed');
+        return;
+      }
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="redirect-form">
+      <textarea
+        className="text-input task-input"
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder="New instruction to continue this agent with…"
+        rows={3}
+        autoFocus
+      />
+      {error && <div className="form-error">{error}</div>}
+      <div className="redirect-form-bar">
+        <button className="tb-btn" onClick={onClose} disabled={busy}>
+          Cancel
+        </button>
+        <button
+          className="tb-btn primary"
+          onClick={() => void submit()}
+          disabled={busy || !body.trim()}
+        >
+          <Icon name="redirect" size={11} /> {busy ? 'Sending…' : 'Send'}
         </button>
       </div>
     </div>
