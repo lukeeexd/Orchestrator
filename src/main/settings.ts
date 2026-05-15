@@ -7,9 +7,14 @@ const DEFAULTS: Settings = {
   apiKey: '',
   oauthToken: '',
   defaultModel: 'claude-sonnet-4-6',
-  defaultBudgetUsd: 1.0,
-  defaultBudgetTokens: 100_000,
-  defaultBudgetSeconds: 600,
+  // Budgets default to 0 (unlimited). Caps are opt-in — set a non-zero
+  // value here (or per spawn) to enforce one. The old $1 / 100k / 600s
+  // safety belts were too restrictive (a single Opus 4.7 turn easily
+  // exceeds $1) and surprised users who thought "no limit set" meant
+  // unlimited.
+  defaultBudgetUsd: 0,
+  defaultBudgetTokens: 0,
+  defaultBudgetSeconds: 0,
 };
 
 let cached: Settings | null = null;

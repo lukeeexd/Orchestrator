@@ -219,7 +219,11 @@ export function SpawnAgentForm({
                   className="text-input"
                   value={budgetUsd}
                   onChange={(e) => setBudgetUsd(e.target.value)}
-                  placeholder={defaults?.usd.toFixed(2) ?? '—'}
+                  placeholder={
+                    defaults && defaults.usd > 0
+                      ? defaults.usd.toFixed(2)
+                      : 'no cap'
+                  }
                   inputMode="decimal"
                 />
               </label>
@@ -228,7 +232,11 @@ export function SpawnAgentForm({
                   className="text-input"
                   value={budgetTokens}
                   onChange={(e) => setBudgetTokens(e.target.value)}
-                  placeholder={defaults?.tokens.toLocaleString() ?? '—'}
+                  placeholder={
+                    defaults && defaults.tokens > 0
+                      ? defaults.tokens.toLocaleString()
+                      : 'no cap'
+                  }
                   inputMode="numeric"
                 />
                 <span className="budget-suffix">tokens</span>
@@ -238,7 +246,11 @@ export function SpawnAgentForm({
                   className="text-input"
                   value={budgetSeconds}
                   onChange={(e) => setBudgetSeconds(e.target.value)}
-                  placeholder={defaults?.seconds.toString() ?? '—'}
+                  placeholder={
+                    defaults && defaults.seconds > 0
+                      ? defaults.seconds.toString()
+                      : 'no cap'
+                  }
                   inputMode="numeric"
                 />
                 <span className="budget-suffix">seconds</span>
