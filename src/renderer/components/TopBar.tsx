@@ -1,12 +1,24 @@
 import { Icon } from './Icon';
 
-export function TopBar() {
+interface Props {
+  workspace: string;
+  onChangeWorkspace: () => void;
+}
+
+export function TopBar({ workspace, onChangeWorkspace }: Props) {
   return (
     <div className="topbar">
       <div className="tb-crumb">
         <span className="proj">orchestrator</span>
         <span className="slash">/</span>
-        <span style={{ color: 'var(--muted)' }}>no active session</span>
+        <span
+          className="session"
+          onClick={onChangeWorkspace}
+          style={{ cursor: 'pointer' }}
+          title="Click to change workspace"
+        >
+          {workspace || 'no workspace · click to set'}
+        </span>
       </div>
 
       <div className="tb-spacer" />
@@ -22,19 +34,9 @@ export function TopBar() {
       </div>
       <div className="tb-pill">
         <span className="dot" />
-        <span className="val">select model</span>
+        <span className="val">claude-sonnet-4-6</span>
         <Icon name="chevron-down" size={11} color="var(--muted)" />
       </div>
-
-      <div style={{ width: 1, height: 18, background: 'var(--border-2)' }} />
-
-      <button className="tb-btn" disabled style={{ opacity: 0.5 }}>
-        <Icon name="pause" size={11} /> Pause all
-      </button>
-      <button className="tb-btn primary">
-        <Icon name="play" size={11} /> Start
-        <span className="kbd">⌘↵</span>
-      </button>
     </div>
   );
 }

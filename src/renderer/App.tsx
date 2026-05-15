@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocalStorageState } from './hooks/useLocalStorageState';
 import { useAgents } from './hooks/useAgents';
 import { useDirector } from './hooks/useDirector';
@@ -52,15 +52,57 @@ export function App() {
     'orchestrator.drawerW',
     460,
   );
+  const [workspace, setWorkspace] = useLocalStorageState<string>(
+    'orchestrator.workspace',
+    '',
+  );
   const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents();
   const { messages, send, busy } = useDirector();
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
+
+  const handledPlans = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    void (async () => {
+      for (const msg of messages) {
+        if (
+          !msg.plan ||
+          msg.planAccepted ||
+          handledPlans.current.has(msg.id)
+        ) {
+          continue;
+        }
+        handledPlans.current.add(msg.id);
+        let ws = workspace;
+        if (!ws) {
+          const { path } = await window.api.pickWorkspace();
+          if (!path) {
+            handledPlans.current.delete(msg.id);
+            return;
+          }
+          ws = path;
+          setWorkspace(ws);
+        }
+        try {
+          await window.api.acceptPlan({ rows: msg.plan, workspace: ws });
+        } catch (e) {
+          console.error('[orchestrator] auto-spawn failed', e);
+          handledPlans.current.delete(msg.id);
+        }
+      }
+    })();
+  }, [messages, workspace, setWorkspace]);
+
+  const changeWorkspace = async () => {
+    const { path } = await window.api.pickWorkspace();
+    if (path) setWorkspace(path);
+  };
 
   const isHome = active === 'director' || active === 'agents';
 
   return (
     <div className="app">
-      <TopBar />
+      <TopBar workspace={workspace} onChangeWorkspace={changeWorkspace} />
       <div className="body">
         <LeftRail
           active={active}

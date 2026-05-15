@@ -104,9 +104,6 @@ function Message({ message }: { message: DirectorMessage }) {
         <PlanCard
           rows={message.plan}
           accepted={message.planAccepted === true}
-          onAccept={async (workspace) => {
-            await window.api.acceptPlan({ rows: message.plan!, workspace });
-          }}
         />
       )}
     </div>
