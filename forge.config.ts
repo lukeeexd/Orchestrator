@@ -1,30 +1,59 @@
+import path from 'node:path';
+import fs from 'node:fs';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
-import { MakerZIP } from '@electron-forge/maker-zip';
-import { MakerDeb } from '@electron-forge/maker-deb';
-import { MakerRpm } from '@electron-forge/maker-rpm';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
+import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    name: 'Orchestrator',
+    executableName: 'Orchestrator',
+    asar: {
+      // The Claude Agent SDK code is bundled into main.js by Vite, but the
+      // platform-specific binary package (claude.exe, ~218 MB) stays on
+      // disk. It must live under node_modules/@anthropic-ai/ for the
+      // bundled SDK's `require()` to resolve it. We copy it into the
+      // build dir via afterCopy, then unpack it from asar so the .exe is
+      // a real file the SDK can spawn.
+      unpack:
+        '**/{*.node,node_modules/@anthropic-ai/claude-agent-sdk-win32-*/**}',
+    },
+    afterCopy: [
+      (buildPath, _electronVersion, _platform, _arch, callback) => {
+        try {
+          const src = path.resolve(
+            __dirname,
+            'node_modules/@anthropic-ai/claude-agent-sdk-win32-x64',
+          );
+          const dst = path.join(
+            buildPath,
+            'node_modules/@anthropic-ai/claude-agent-sdk-win32-x64',
+          );
+          fs.mkdirSync(path.dirname(dst), { recursive: true });
+          fs.cpSync(src, dst, { recursive: true });
+          callback();
+        } catch (e) {
+          callback(e as Error);
+        }
+      },
+    ],
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
-    new MakerZIP({}, ['darwin']),
-    new MakerRpm({}),
-    new MakerDeb({}),
+    new MakerSquirrel({
+      name: 'orchestrator',
+      authors: 'lukeeexd',
+      description: 'Desktop app for orchestrating Claude agents.',
+      setupExe: 'Orchestrator-Setup.exe',
+    }),
   ],
   plugins: [
     new VitePlugin({
-      // `build` can specify multiple entry builds, which can be Main process, Preload scripts, Worker process, etc.
-      // If you are familiar with Vite configuration, it will look really familiar.
       build: [
         {
-          // `entry` is just an alias for `build.lib.entry` in the corresponding file of `config`.
           entry: 'src/main/index.ts',
           config: 'vite.main.config.ts',
           target: 'main',
@@ -42,8 +71,7 @@ const config: ForgeConfig = {
         },
       ],
     }),
-    // Fuses are used to enable/disable various Electron functionality
-    // at package time, before code signing the application
+    new AutoUnpackNativesPlugin({}),
     new FusesPlugin({
       version: FuseVersion.V1,
       [FuseV1Options.RunAsNode]: false,
