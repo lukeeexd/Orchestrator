@@ -14,7 +14,7 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current milestone | **M3 — smoke-testing** |
+| Current milestone | **M4 — not started** |
 | Last updated | 2026-05-15 |
 | Repo | `github.com/lukeeexd/Orchestrator` (private). Branches: `main` (release), `dev` (working). |
 
@@ -89,7 +89,7 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 - [x] One running role end-to-end (coder, on auto-discovered Claude Code OAuth login)
 - [x] Flex auth — supports Anthropic API key, explicit OAuth token, or auto-discovery from `~/.claude/` (Team plan users without API access work via Claude Code login)
 
-### M3 — Drawer wired  *(shipped; smoke pending)*
+### M3 — Drawer wired  *(completed 2026-05-15)*
 
 - [x] Click agent → drawer opens, KPI strip (Step · Tokens · Cost · Elapsed) live
 - [x] **Logs tab**: current task, spawner ("you · direct spawn"), last 8 log lines via shared `LogLineRow`
@@ -140,6 +140,7 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 
 ## Recently completed
 
+- **2026-05-15 — M3 Drawer wired.** Click an agent → live drawer with role-tinted sigil, KPI strip (Step / Tokens / Cost / Elapsed updating each second), and five tabs. Logs tab tails the last 8 lines, Tools tab derives invocation counts + last-used from `agent.log`, Context tab shows a tokens-vs-200k-cap bar, Config tab has the click-to-expand system prompt + model + workspace + worktree path. Pause action functional (aborts the AbortController). Redirect / Fork / Approve disabled with hover tooltips pointing at the milestone where each lands. Moved `roles.ts` to `shared/` so renderer can read it. Fork spike: SDK has `forkSession()` + `resume` option — deferred to M3.5.
 - **2026-05-15 — M2 Single-agent loop.** Wired the Claude Agent SDK (which ships a 218MB `claude.exe` and is loaded via dynamic ESM import from our CJS main). Per-agent git worktree, event classifier mapping SDK stream → 7 LogLine kinds, IPC streaming (agent/log/patch channels), useAgents hook + AgentRow + LogLineRow + SpawnAgentForm modal. Flex auth so Team-plan users without API access can run via auto-discovered Claude Code OAuth. End-to-end smoke verified (coder spawned, THOUGHT + HANDOFF rendered live).
 - **2026-05-15 — M1 UI shell empty-state.** React + Vite plugin wired, full design CSS lifted verbatim (minus mac traffic lights). Component tree under `src/renderer/components/`: TopBar, LeftRail, StatusBar, DirectorPane (+ EmptyChat + Composer), AgentsPane (+ EmptyAgents), Drawer (no-selection state), ResizeHandle, Icon, PlaceholderScreen. Resize widths persist via `useLocalStorageState`. Rail items route between the home orchestrator screen and v1.1 placeholders.
 - **2026-05-15 — M0 Skeleton.** Forge scaffold reorganised into four-pane src layout. Typed IPC bridge proves end-to-end. sql.js stood in for better-sqlite3 (no native compile toolchain). Window opens on `--ink` background, first commit on `main`, working branch `dev` pushed.
