@@ -254,16 +254,35 @@ ${req.task}`;
 
       if (ev.type === 'assistant') {
         turn += 1;
-        const msg = (ev as { message?: { usage?: { input_tokens?: number; output_tokens?: number } } }).message;
+        const msg = (ev as { message?: { usage?: Record<string, number | null | undefined> } }).message;
         if (msg?.usage) {
-          cumulativeInput += msg.usage.input_tokens ?? 0;
-          cumulativeOutput += msg.usage.output_tokens ?? 0;
+          const u = msg.usage;
+          const turnInput =
+            (Number(u.input_tokens) || 0) +
+            (Number(u.cache_creation_input_tokens) || 0) +
+            (Number(u.cache_read_input_tokens) || 0);
+          const turnOutput = Number(u.output_tokens) || 0;
+          cumulativeInput += turnInput;
+          cumulativeOutput += turnOutput;
           const liveTokens = cumulativeInput + cumulativeOutput;
           const liveCost = estimateCost(
             effectiveModel,
             cumulativeInput,
             cumulativeOutput,
           );
+
+          // Diagnostic note so we can see exactly what each turn cost +
+          // whether the budget check is reading the right numbers.
+          const entryNow = registry.get(agentId);
+          const budgetView = entryNow
+            ? `cap ${entryNow.agent.budget.tokens.toLocaleString()}tok / $${entryNow.agent.budget.usd.toFixed(2)} / ${entryNow.agent.budget.seconds}s`
+            : 'no budget';
+          sinks.onLog(agentId, {
+            ts: nowTs(),
+            kind: 'note',
+            msg: `turn ${turn} · in ${turnInput.toLocaleString()} · out ${turnOutput.toLocaleString()} · total ${liveTokens.toLocaleString()} · $${liveCost.toFixed(4)} · ${budgetView}`,
+          });
+
           registry.patch(agentId, {
             step: `${turn}/?`,
             tokens: liveTokens,
