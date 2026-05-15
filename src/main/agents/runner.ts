@@ -147,8 +147,16 @@ async function run(
 
   try {
     const effectiveModel = settings.defaultModel || role.model;
+    const promptWithContext = `[workspace] ${workdir}
+All file paths resolve here — your Read, Write, Edit, Glob, Grep tools all operate inside this folder. Use simple relative paths like "notes.md" (preferred) or the absolute path above.
+
+Do NOT invent paths like /home/user/, /tmp/, or POSIX-style locations — they are not real on this system. Your bash 'pwd' may report this folder in MSYS form (e.g. /d/ClaudeCode/foo) which is equivalent to the Windows path above; file-tool calls should still use Windows-style or simple relative paths.
+
+Task:
+${req.task}`;
+
     const q = sdk.query({
-      prompt: req.task,
+      prompt: promptWithContext,
       options: {
         cwd: workdir,
         env,
