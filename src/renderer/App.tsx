@@ -52,6 +52,7 @@ export function App() {
     460,
   );
   const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents();
+  const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
 
   const isHome = active === 'director' || active === 'agents';
 
@@ -89,7 +90,11 @@ export function App() {
               max={680}
               edge="right"
             />
-            <Drawer width={drawerW} />
+            <Drawer
+              width={drawerW}
+              agent={selectedAgent}
+              onAbort={(id) => void window.api.abortAgent(id)}
+            />
           </>
         ) : (
           <PlaceholderScreen {...PLACEHOLDERS[active]} />

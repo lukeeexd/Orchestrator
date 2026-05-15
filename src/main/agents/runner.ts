@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Agent, AgentRole, LogLine, SpawnAgentRequest } from '../../shared/types';
-import { ROLES } from './roles';
+import { ROLES } from '../../shared/roles';
 import { createWorktree } from './worktree';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';

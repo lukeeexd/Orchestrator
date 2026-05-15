@@ -1,6 +1,6 @@
-import type { AgentRole } from '../../shared/types';
+import type { AgentRole } from './types';
 
-interface RoleDefinition {
+export interface RoleDefinition {
   label: string;
   systemPrompt: string;
   tools: string[];

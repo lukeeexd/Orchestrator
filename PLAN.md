@@ -14,7 +14,7 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current milestone | **M3 — not started** |
+| Current milestone | **M3 — smoke-testing** |
 | Last updated | 2026-05-15 |
 | Repo | `github.com/lukeeexd/Orchestrator` (private). Branches: `main` (release), `dev` (working). |
 
@@ -89,15 +89,15 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 - [x] One running role end-to-end (coder, on auto-discovered Claude Code OAuth login)
 - [x] Flex auth — supports Anthropic API key, explicit OAuth token, or auto-discovery from `~/.claude/` (Team plan users without API access work via Claude Code login)
 
-### M3 — Drawer wired  *(not started)*
+### M3 — Drawer wired  *(shipped; smoke pending)*
 
-- [ ] Click agent → drawer opens, KPI strip (Step · Tokens · Cost · Elapsed) live
-- [ ] **Logs tab**: current task, spawner, last 8 log lines
-- [ ] **Tools tab**: per-tool invocation count + last-used relative time
-- [ ] **Context tab**: token-window breakdown from SDK usage telemetry
-- [ ] **Config tab**: system prompt (collapsible) + model + budgets + on-error policy
-- [ ] Action buttons: **Pause** / **Redirect** / **Fork** / **Approve**
-- [ ] **Spike before starting**: does the SDK support session resume from message N? If not, Fork = replay log into a fresh session + branch the worktree
+- [x] Click agent → drawer opens, KPI strip (Step · Tokens · Cost · Elapsed) live
+- [x] **Logs tab**: current task, spawner ("you · direct spawn"), last 8 log lines via shared `LogLineRow`
+- [x] **Tools tab**: per-tool invocation count derived from `agent.log` + last-used `ts`; granted-but-unused tools shown with `0×` / `—`
+- [x] **Context tab**: token total / 200k cap, percent bar. Per-segment breakdown deferred — requires plumbing model-side usage telemetry per turn
+- [x] **Config tab**: system prompt (click-to-expand) + model + workspace + worktree path + placeholder budget/on-error fields
+- [x] Action buttons: **Pause** (functional — aborts the SDK abort-controller). **Redirect** / **Fork** / **Approve** rendered but disabled with hover tooltips pointing at the milestone where each lands
+- [x] **Spike result**: SDK exports `forkSession(sessionId)` (line 622 of sdk.d.ts) and `query({ options: { resume: sessionId } })`. Fork = `forkSession` → new session id → spawn new agent with that resume id + branched worktree. Feasible; defer the wiring to a M3.5 follow-up
 
 ### M4 — Director  *(not started)*
 

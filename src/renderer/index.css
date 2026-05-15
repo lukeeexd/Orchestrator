@@ -559,6 +559,176 @@ body.resizing * { cursor: col-resize !important; }
   display: flex; flex-direction: column;
   min-height: 0;
 }
+.drawer-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.drawer-id {
+  display: flex; align-items: center; gap: 10px;
+}
+.drawer-id .sigil {
+  width: 30px; height: 30px;
+  border-radius: 6px;
+  background: var(--sub);
+  border: 1px solid var(--border-2);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent);
+}
+.drawer-id .who { display: flex; flex-direction: column; }
+.drawer-id .name {
+  font-size: 13px; color: var(--text); font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.drawer-id .meta {
+  font-size: 10px; color: var(--muted);
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+.drawer-id .spacer { flex: 1; }
+.drawer-id .pill {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--sub);
+  border: 1px solid var(--border-2);
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.drawer-id .pill.running {
+  background: var(--accent-dim);
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.drawer-id .pill.error {
+  background: rgba(239,91,91,0.12);
+  border-color: rgba(239,91,91,0.35);
+  color: var(--error);
+}
+.drawer-id .pill.done {
+  background: var(--sub);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+.drawer-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.kpi {
+  background: var(--sub);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 7px 9px;
+}
+.kpi .label {
+  font-size: 9px; color: var(--muted-2);
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.kpi .val {
+  font-size: 14px; color: var(--text);
+  margin-top: 2px;
+}
+
+.drawer-actions { display: flex; gap: 6px; }
+.drawer-actions .tb-btn {
+  flex: 1; justify-content: center; height: 26px;
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+.tab {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 1px solid transparent;
+  margin-bottom: -1px;
+  cursor: default;
+}
+.tab:hover { color: var(--text-2); }
+.tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.tab .count {
+  margin-left: 6px;
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.drawer-body {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field .lbl {
+  font-size: 10px; color: var(--muted-2);
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.field .v { font-size: 12px; color: var(--text-2); }
+.field .v code {
+  background: var(--sub);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.sys-prompt {
+  background: var(--sub);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-y: auto;
+}
+
+.tool-row {
+  display: grid;
+  grid-template-columns: 16px 1fr 50px 70px;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--sub);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.tool-row + .tool-row { margin-top: 4px; }
+.tool-row .name { color: var(--text); font-size: 12px; }
+.tool-row .name .ns { color: var(--muted); }
+.tool-row .count {
+  font-size: 11px; color: var(--text-2); text-align: right;
+}
+.tool-row .lastuse { font-size: 10px; color: var(--muted); text-align: right; }
+.tool-row .ic { color: var(--accent); }
+
+.ctx-bar {
+  height: 8px;
+  background: var(--sub);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+}
+.ctx-seg { height: 100%; }
 
 .icon-btn {
   width: 22px; height: 22px;
