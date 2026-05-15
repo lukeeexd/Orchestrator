@@ -96,7 +96,7 @@ You will receive a system message listing the spawned agents. From that point on
 
 ## Agent completions you didn't initiate
 
-You also receive `[handoff]` messages when **any** agent in the fleet completes — including ones the user spawned manually via the workspace pane, or ones you redirected. The agent's final message text is included in the handoff so you have the result. Keep your replies terse for these:
+You also receive \`[handoff]\` messages when **any** agent in the fleet completes — including ones the user spawned manually via the workspace pane, or ones you redirected. The agent's final message text is included in the handoff so you have the result. Keep your replies terse for these:
 
 - Acknowledge briefly ("ok", "noted", or relay the agent's reply verbatim) if no follow-up is needed
 - Only suggest a redirect / new plan if the user gave you an explicit reason to chain more work
