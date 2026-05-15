@@ -90,3 +90,6 @@ typings/
 
 # Electron-Forge
 out/
+
+# Orchestrator runtime artifacts (per-agent worktrees)
+.orchestrator-worktrees/
