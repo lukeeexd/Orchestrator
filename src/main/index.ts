@@ -6,6 +6,7 @@ import { openDb, closeDb } from './db';
 import { markRunningAgentsAsInterrupted } from './persistence';
 import * as director from './director/runner';
 import * as registry from './agents/registry';
+import { ensureDefaultProject, listProjects } from './projects';
 
 if (started) {
   app.quit();
@@ -41,7 +42,8 @@ app.whenReady().then(async () => {
   // we can't resume its SDK session. Flip those to 'error: Interrupted'
   // before hydrating so the renderer sees the right state.
   markRunningAgentsAsInterrupted();
-  director.hydrate();
+  ensureDefaultProject();
+  director.hydrateAll(listProjects().map((p) => p.id));
   registry.hydrate();
   registerIpcHandlers();
   createWindow();

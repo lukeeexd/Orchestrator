@@ -13,8 +13,9 @@ const ROLES: { id: AgentRole; label: string; tint: string }[] = [
 interface Props {
   onCancel: () => void;
   onSpawned: () => void;
-  /** Pre-fill the workspace input from the global workspace. User can override. */
+  /** Pre-fill the workspace input from the active project's workspace. */
   defaultWorkspace: string;
+  projectId: string;
 }
 
 interface AttachmentChip {
@@ -24,7 +25,12 @@ interface AttachmentChip {
   reason?: string;
 }
 
-export function SpawnAgentForm({ onCancel, onSpawned, defaultWorkspace }: Props) {
+export function SpawnAgentForm({
+  onCancel,
+  onSpawned,
+  defaultWorkspace,
+  projectId,
+}: Props) {
   const [role, setRole] = useState<AgentRole>('coder');
   const [workspace, setWorkspace] = useState(defaultWorkspace);
   const [task, setTask] = useState('');
@@ -95,6 +101,7 @@ export function SpawnAgentForm({ onCancel, onSpawned, defaultWorkspace }: Props)
         budget.usd != null || budget.tokens != null || budget.seconds != null;
       const okAttachments = attachments.filter((a) => a.ok).map((a) => a.path);
       await window.api.spawnAgent({
+        projectId,
         role,
         workspace,
         task,

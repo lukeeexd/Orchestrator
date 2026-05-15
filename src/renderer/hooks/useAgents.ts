@@ -9,18 +9,30 @@ interface UseAgentsResult {
   toggle: (id: string) => void;
 }
 
-export function useAgents(): UseAgentsResult {
+export function useAgents(projectId: string | null): UseAgentsResult {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
+  // Reload when active project changes.
   useEffect(() => {
+    if (!projectId) {
+      setAgents([]);
+      return;
+    }
     let mounted = true;
-    window.api.listAgents().then((initial) => {
+    setSelectedId(null);
+    window.api.listAgents(projectId).then((initial) => {
       if (mounted) setAgents(initial);
     });
+    return () => {
+      mounted = false;
+    };
+  }, [projectId]);
 
-    const offAgent = window.api.onAgent(({ agent }) => {
+  useEffect(() => {
+    const offAgent = window.api.onAgent(({ projectId: pid, agent }) => {
+      if (pid !== projectId) return;
       setAgents((prev) => {
         const idx = prev.findIndex((a) => a.id === agent.id);
         if (idx >= 0) {
@@ -33,7 +45,8 @@ export function useAgents(): UseAgentsResult {
       setExpanded((prev) => ({ ...prev, [agent.id]: true }));
     });
 
-    const offLog = window.api.onLog(({ agentId, line }) => {
+    const offLog = window.api.onLog(({ projectId: pid, agentId, line }) => {
+      if (pid !== projectId) return;
       setAgents((prev) =>
         prev.map((a) =>
           a.id === agentId ? { ...a, log: [...a.log, line] } : a,
@@ -41,13 +54,15 @@ export function useAgents(): UseAgentsResult {
       );
     });
 
-    const offPatch = window.api.onPatch(({ agentId, patch }) => {
+    const offPatch = window.api.onPatch(({ projectId: pid, agentId, patch }) => {
+      if (pid !== projectId) return;
       setAgents((prev) =>
         prev.map((a) => (a.id === agentId ? { ...a, ...patch } : a)),
       );
     });
 
-    const offRemove = window.api.onAgentRemove(({ agentId }) => {
+    const offRemove = window.api.onAgentRemove(({ projectId: pid, agentId }) => {
+      if (pid !== projectId) return;
       setAgents((prev) => prev.filter((a) => a.id !== agentId));
       setSelectedId((prev) => (prev === agentId ? null : prev));
       setExpanded((prev) => {
@@ -59,13 +74,12 @@ export function useAgents(): UseAgentsResult {
     });
 
     return () => {
-      mounted = false;
       offAgent();
       offLog();
       offPatch();
       offRemove();
     };
-  }, []);
+  }, [projectId]);
 
   const toggle = useCallback((id: string) => {
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));

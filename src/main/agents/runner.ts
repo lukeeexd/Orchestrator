@@ -119,6 +119,7 @@ export async function spawnAgent(
 
   const agent: Agent = {
     id,
+    projectId: req.projectId,
     role: req.role,
     roleLabel: role.label,
     name,
@@ -512,7 +513,11 @@ async function consumeQuery(
         // turn and can decide whether to comment briefly or stay quiet.
         if (entry) {
           const summary = result.result ?? '';
-          director.notifyAgentDone(entry.agent.name, summary);
+          director.notifyAgentDone(
+            entry.agent.projectId,
+            entry.agent.name,
+            summary,
+          );
         }
       } else {
         const errMsg = (result.errors ?? [result.subtype]).join(' · ');

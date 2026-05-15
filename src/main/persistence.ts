@@ -25,8 +25,8 @@ export function saveDirectorMessage(m: DirectorMessage): void {
   messageOrdering += 1;
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO director_messages
-      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     m.id,
@@ -43,6 +43,7 @@ export function saveDirectorMessage(m: DirectorMessage): void {
       : null,
     m.redirect ? JSON.stringify(m.redirect) : null,
     m.redirectFired ? 1 : 0,
+    m.projectId,
   ]);
   stmt.free();
   scheduleSave();
@@ -89,15 +90,19 @@ export function patchDirectorMessage(
   scheduleSave();
 }
 
-export function loadDirectorMessages(): DirectorMessage[] {
+export function loadDirectorMessages(projectId: string): DirectorMessage[] {
   const db = getDb();
-  const res = db.exec(`
-    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired
+  const stmt = db.prepare(`
+    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id
     FROM director_messages
+    WHERE project_id = ?
     ORDER BY ordering ASC
   `);
-  if (res.length === 0) return [];
-  const rows = res[0].values;
+  stmt.bind([projectId]);
+  const rows: unknown[][] = [];
+  while (stmt.step()) rows.push(stmt.get());
+  stmt.free();
+  if (rows.length === 0) return [];
   const out: DirectorMessage[] = [];
   for (const row of rows) {
     const planRaw = row[6];
@@ -129,6 +134,7 @@ export function loadDirectorMessages(): DirectorMessage[] {
     }
     out.push({
       id: asStr(row[0]),
+      projectId: asStr(row[12], projectId),
       who: asStr(row[2]) as DirectorMessage['who'],
       name: asStr(row[3]),
       time: asStr(row[4]),
@@ -147,24 +153,33 @@ export function loadDirectorMessages(): DirectorMessage[] {
 
 // ────────────────────── Director session id ─────────────────────
 
-export function saveDirectorSessionId(sessionId: string): void {
+const sessionKey = (projectId: string) =>
+  `project:${projectId}:director_session_id`;
+
+export function saveDirectorSessionId(
+  projectId: string,
+  sessionId: string,
+): void {
   const db = getDb();
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO kv (key, value) VALUES ('director_session_id', ?)
-  `);
-  stmt.run([sessionId]);
+  const stmt = db.prepare(
+    `INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)`,
+  );
+  stmt.run([sessionKey(projectId), sessionId]);
   stmt.free();
   scheduleSave();
 }
 
-export function loadDirectorSessionId(): string | null {
+export function loadDirectorSessionId(projectId: string): string | null {
   const db = getDb();
-  const res = db.exec(
-    `SELECT value FROM kv WHERE key = 'director_session_id'`,
-  );
-  if (res.length === 0 || res[0].values.length === 0) return null;
-  const v = res[0].values[0][0];
-  return typeof v === 'string' ? v : null;
+  const stmt = db.prepare(`SELECT value FROM kv WHERE key = ?`);
+  stmt.bind([sessionKey(projectId)]);
+  let value: string | null = null;
+  if (stmt.step()) {
+    const v = stmt.getAsObject().value;
+    if (typeof v === 'string') value = v;
+  }
+  stmt.free();
+  return value;
 }
 
 // ──────────────────────────── Agents ────────────────────────────
@@ -177,8 +192,8 @@ export function saveAgent(a: Agent): void {
       (id, ordering, role, role_label, name, status, status_label, step, task,
        tokens, cost, elapsed, model, workspace,
        budget_usd, budget_tokens, budget_seconds,
-       spawned_by, started_at, session_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       spawned_by, started_at, session_id, project_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     a.id,
@@ -201,6 +216,7 @@ export function saveAgent(a: Agent): void {
     a.spawnedBy,
     a.startedAt,
     a.sessionId ?? null,
+    a.projectId,
   ]);
   stmt.free();
   scheduleSave();
@@ -246,7 +262,7 @@ export function loadAgents(): Agent[] {
   const res = db.exec(`
     SELECT id, ordering, role, role_label, name, status, status_label, step, task,
            tokens, cost, elapsed, model, workspace,
-           budget_usd, budget_tokens, budget_seconds, spawned_by, started_at, session_id
+           budget_usd, budget_tokens, budget_seconds, spawned_by, started_at, session_id, project_id
     FROM agents ORDER BY ordering ASC
   `);
   if (res.length === 0) return [];
@@ -255,6 +271,7 @@ export function loadAgents(): Agent[] {
     const sid = row[19];
     out.push({
       id: asStr(row[0]),
+      projectId: asStr(row[20]),
       role: asStr(row[2]) as Agent['role'],
       roleLabel: asStr(row[3]),
       name: asStr(row[4]),

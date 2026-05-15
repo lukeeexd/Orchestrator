@@ -8,6 +8,7 @@ interface Props {
   selectedId: string | null;
   expanded: Record<string, boolean>;
   workspace: string;
+  projectId: string;
   spawning: boolean;
   setSpawning: (next: boolean) => void;
   onSelect: (id: string) => void;
@@ -19,6 +20,7 @@ export function AgentsPane({
   selectedId,
   expanded,
   workspace,
+  projectId,
   spawning,
   setSpawning,
   onSelect,
@@ -65,6 +67,7 @@ export function AgentsPane({
 
       {spawning && (
         <SpawnAgentForm
+          projectId={projectId}
           defaultWorkspace={workspace}
           onCancel={() => setSpawning(false)}
           onSpawned={() => setSpawning(false)}

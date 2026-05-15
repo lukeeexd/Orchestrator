@@ -97,6 +97,42 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 6,
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE projects (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          workspace TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+
+        ALTER TABLE agents ADD COLUMN project_id TEXT;
+        ALTER TABLE director_messages ADD COLUMN project_id TEXT;
+      `);
+
+      // Migrate existing data into a "Default" project so nothing is lost.
+      const hasAnyData = (db.exec(
+        `SELECT 1 FROM agents UNION SELECT 1 FROM director_messages LIMIT 1`,
+      )[0]?.values.length ?? 0) > 0;
+      if (hasAnyData) {
+        // Reuse a fixed UUID so the migration is idempotent enough for re-runs.
+        const defaultId = '00000000-0000-4000-a000-000000000001';
+        db.exec(`
+          INSERT INTO projects (id, name, workspace, created_at)
+          VALUES ('${defaultId}', 'Default', '', strftime('%s','now') * 1000);
+          UPDATE agents SET project_id = '${defaultId}' WHERE project_id IS NULL;
+          UPDATE director_messages SET project_id = '${defaultId}' WHERE project_id IS NULL;
+          INSERT OR REPLACE INTO kv (key, value)
+            VALUES ('active_project_id', '${defaultId}');
+          INSERT OR REPLACE INTO kv (key, value)
+            SELECT 'project:' || '${defaultId}' || ':director_session_id', value
+            FROM kv WHERE key = 'director_session_id';
+        `);
+      }
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

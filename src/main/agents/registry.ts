@@ -20,6 +20,12 @@ export function list(): Agent[] {
   return [...entries.values()].map((e) => e.agent);
 }
 
+export function listForProject(projectId: string): Agent[] {
+  return [...entries.values()]
+    .map((e) => e.agent)
+    .filter((a) => a.projectId === projectId);
+}
+
 export function patch(id: string, p: Partial<Agent>): Agent | undefined {
   const e = entries.get(id);
   if (!e) return undefined;

@@ -28,6 +28,13 @@ export interface LogLine {
   msg: string | ToolCall;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  workspace: string;
+  createdAt: number;
+}
+
 export type AgentSpawnedBy = 'user' | 'director';
 
 export interface AgentBudget {
@@ -38,6 +45,7 @@ export interface AgentBudget {
 
 export interface Agent {
   id: string;
+  projectId: string;
   role: AgentRole;
   roleLabel: string;
   name: string;
@@ -87,6 +95,7 @@ export interface RedirectInstruction {
 
 export interface DirectorMessage {
   id: string;
+  projectId: string;
   who: DirectorWho;
   name: string;
   time: string;
@@ -100,6 +109,7 @@ export interface DirectorMessage {
 }
 
 export interface SpawnAgentRequest {
+  projectId: string;
   role: AgentRole;
   task: string;
   workspace: string;

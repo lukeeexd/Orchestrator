@@ -4,6 +4,7 @@ import type {
   DirectorMode,
   LogLine,
   PlanRow,
+  Project,
   RedirectAgentRequest,
   SpawnAgentRequest,
 } from './types';
@@ -24,6 +25,12 @@ export const IpcChannels = {
   DirectorAcceptPlan: 'director:acceptPlan',
   DirectorAckRedirect: 'director:ackRedirect',
   DirectorAbort: 'director:abort',
+  ProjectList: 'project:list',
+  ProjectCreate: 'project:create',
+  ProjectSetActive: 'project:setActive',
+  ProjectRename: 'project:rename',
+  ProjectDelete: 'project:delete',
+  ProjectGetActive: 'project:getActive',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
@@ -31,6 +38,7 @@ export const IpcChannels = {
   AgentEventRemove: 'agent:event:remove',
   DirectorEventMessage: 'director:event:message',
   DirectorEventPatch: 'director:event:patch',
+  ProjectEventActiveChanged: 'project:event:activeChanged',
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];
@@ -69,33 +77,44 @@ export interface PickAttachmentsResponse {
 }
 
 export interface AgentEventAgentPayload {
+  projectId: string;
   agent: Agent;
 }
 
 export interface AgentEventLogPayload {
+  projectId: string;
   agentId: string;
   line: LogLine;
 }
 
 export interface AgentEventPatchPayload {
+  projectId: string;
   agentId: string;
   patch: Partial<Agent>;
 }
 
 export interface AgentEventRemovePayload {
+  projectId: string;
   agentId: string;
 }
 
 export interface DirectorEventMessagePayload {
+  projectId: string;
   message: DirectorMessage;
 }
 
 export interface DirectorEventPatchPayload {
+  projectId: string;
   id: string;
   patch: Partial<DirectorMessage>;
 }
 
+export interface ProjectActiveChangedPayload {
+  projectId: string;
+}
+
 export interface AcceptPlanRequest {
+  projectId: string;
   rows: PlanRow[];
   workspace: string;
 }
@@ -108,33 +127,44 @@ export interface OrchestratorApi {
   ping: () => Promise<AppPingResponse>;
   getSettings: () => Promise<Settings>;
   setSettings: (next: Partial<Settings>) => Promise<Settings>;
-  listAgents: () => Promise<Agent[]>;
+  listAgents: (projectId: string) => Promise<Agent[]>;
   spawnAgent: (req: SpawnAgentRequest) => Promise<SpawnAgentResponse>;
   abortAgent: (id: string) => Promise<{ ok: boolean }>;
   removeAgent: (id: string) => Promise<{ ok: boolean }>;
   redirectAgent: (req: RedirectAgentRequest) => Promise<{ ok: boolean; error?: string }>;
   pickWorkspace: () => Promise<PickWorkspaceResponse>;
   pickAttachments: () => Promise<PickAttachmentsResponse>;
-  listDirectorMessages: () => Promise<DirectorMessage[]>;
+  listDirectorMessages: (projectId: string) => Promise<DirectorMessage[]>;
   sendToDirector: (
+    projectId: string,
     body: string,
     mode: DirectorMode,
     attachments?: string[],
   ) => Promise<{ ok: true }>;
   acceptPlan: (req: AcceptPlanRequest) => Promise<AcceptPlanResponse>;
   ackDirectorRedirect: (req: {
+    projectId: string;
     messageId: string;
     agentName: string;
     ok: boolean;
     error?: string;
   }) => Promise<{ ok: true }>;
-  abortDirector: () => Promise<{ ok: true }>;
+  abortDirector: (projectId: string) => Promise<{ ok: true }>;
+  // Projects
+  listProjects: () => Promise<Project[]>;
+  createProject: (name: string, workspace: string) => Promise<Project>;
+  setActiveProject: (id: string) => Promise<{ ok: true }>;
+  renameProject: (id: string, name: string) => Promise<{ ok: true }>;
+  deleteProject: (id: string) => Promise<{ ok: true }>;
+  getActiveProjectId: () => Promise<string | null>;
+  // Streams
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;
   onPatch: (cb: (p: AgentEventPatchPayload) => void) => () => void;
   onAgentRemove: (cb: (p: AgentEventRemovePayload) => void) => () => void;
   onDirectorMessage: (cb: (p: DirectorEventMessagePayload) => void) => () => void;
   onDirectorPatch: (cb: (p: DirectorEventPatchPayload) => void) => () => void;
+  onActiveProjectChanged: (cb: (p: ProjectActiveChangedPayload) => void) => () => void;
 }
 
 declare global {

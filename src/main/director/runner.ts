@@ -11,300 +11,357 @@ import { inlineAttachments } from '../attachments';
 import * as registry from '../agents/registry';
 
 export interface DirectorSinks {
-  onMessage: (msg: DirectorMessage) => void;
-  onPatch: (id: string, patch: Partial<DirectorMessage>) => void;
+  onMessage: (projectId: string, msg: DirectorMessage) => void;
+  onPatch: (projectId: string, id: string, patch: Partial<DirectorMessage>) => void;
 }
 
 type QueueEntry =
   | { kind: 'user'; body: string; mode: DirectorMode; attachments?: string[] }
   | { kind: 'system'; body: string; mode: DirectorMode };
 
-const messages: DirectorMessage[] = [];
-const queue: QueueEntry[] = [];
-let busy = false;
-let sessionId: string | null = null;
-let controller: AbortController | null = null;
-let sinks: DirectorSinks | null = null;
+let sharedSinks: DirectorSinks | null = null;
 
 function timeOnly(): string {
   return nowTs().slice(0, 8);
 }
 
-function pushMessage(msg: DirectorMessage): void {
-  messages.push(msg);
-  persistence.saveDirectorMessage(msg);
-  sinks?.onMessage(msg);
+/**
+ * One Director conversation per project. Keeps its own queue / busy flag /
+ * SDK session id so multiple projects can run their Directors in parallel
+ * without interfering.
+ */
+class DirectorSession {
+  readonly projectId: string;
+  messages: DirectorMessage[] = [];
+  private queue: QueueEntry[] = [];
+  private busy = false;
+  private sessionId: string | null = null;
+  private controller: AbortController | null = null;
+  private currentMode: DirectorMode = 'auto';
+
+  constructor(projectId: string) {
+    this.projectId = projectId;
+  }
+
+  hydrate(): void {
+    this.messages = persistence.loadDirectorMessages(this.projectId);
+    this.sessionId = persistence.loadDirectorSessionId(this.projectId);
+  }
+
+  list(): DirectorMessage[] {
+    return [...this.messages];
+  }
+
+  abort(): void {
+    this.controller?.abort();
+  }
+
+  private pushMessage(msg: DirectorMessage): void {
+    this.messages.push(msg);
+    persistence.saveDirectorMessage(msg);
+    sharedSinks?.onMessage(this.projectId, msg);
+  }
+
+  private patchMessage(id: string, patch: Partial<DirectorMessage>): void {
+    const idx = this.messages.findIndex((m) => m.id === id);
+    if (idx >= 0) this.messages[idx] = { ...this.messages[idx], ...patch };
+    persistence.patchDirectorMessage(id, patch);
+    sharedSinks?.onPatch(this.projectId, id, patch);
+  }
+
+  sendFromUser(
+    body: string,
+    mode: DirectorMode,
+    attachments?: string[],
+  ): void {
+    this.currentMode = mode;
+    this.pushMessage({
+      id: randomUUID(),
+      projectId: this.projectId,
+      who: 'user',
+      name: 'you',
+      time: timeOnly(),
+      body,
+      attachments:
+        attachments && attachments.length > 0
+          ? attachments.map((p) => ({ path: p, name: path.basename(p) }))
+          : undefined,
+    });
+    this.queue.push({ kind: 'user', body, mode, attachments });
+    void this.pump();
+  }
+
+  notifyAgentDone(agentName: string, summary: string): void {
+    const body = `[handoff] Agent ${agentName} completed. ${
+      summary ? 'Summary: ' + summary : 'No summary.'
+    }`;
+    this.pushMessage({
+      id: randomUUID(),
+      projectId: this.projectId,
+      who: 'system',
+      name: 'system',
+      time: timeOnly(),
+      body: `${agentName} → done`,
+    });
+    this.queue.push({ kind: 'system', body, mode: this.currentMode });
+    void this.pump();
+  }
+
+  acknowledgePlanAccepted(rows: PlanRow[], spawnedNames: string[]): void {
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].plan) {
+        this.patchMessage(this.messages[i].id, { planAccepted: true });
+        break;
+      }
+    }
+    this.pushMessage({
+      id: randomUUID(),
+      projectId: this.projectId,
+      who: 'system',
+      name: 'system',
+      time: timeOnly(),
+      body: `Spawned ${rows.length} agent${rows.length === 1 ? '' : 's'} · ${spawnedNames.join(' · ')}`,
+    });
+    const lines = rows
+      .map((r) => `  ${r.i}. ${r.role} ${r.name} — ${r.task}`)
+      .join('\n');
+    this.queue.push({
+      kind: 'system',
+      body: `Plan accepted. Spawned agents:\n${lines}\n\nReply with "ok" or any additional guidance.`,
+      mode: this.currentMode,
+    });
+    void this.pump();
+  }
+
+  acknowledgeRedirect(
+    messageId: string,
+    agentName: string,
+    ok: boolean,
+    errorMsg?: string,
+  ): void {
+    this.patchMessage(messageId, { redirectFired: true });
+    if (ok) {
+      this.pushMessage({
+        id: randomUUID(),
+        projectId: this.projectId,
+        who: 'system',
+        name: 'system',
+        time: timeOnly(),
+        body: `Redirected ${agentName}`,
+      });
+      this.queue.push({
+        kind: 'system',
+        body: `Redirect to @${agentName} fired. The agent is now resuming its session with the new instruction. Reply with "ok" or any additional guidance.`,
+        mode: this.currentMode,
+      });
+    } else {
+      this.pushMessage({
+        id: randomUUID(),
+        projectId: this.projectId,
+        who: 'system',
+        name: 'system',
+        time: timeOnly(),
+        body: `Redirect to ${agentName} failed: ${errorMsg ?? 'unknown error'}`,
+      });
+      this.queue.push({
+        kind: 'system',
+        body: `Redirect to @${agentName} failed: ${errorMsg ?? 'unknown error'}. Reconsider whether to spawn a fresh agent instead.`,
+        mode: this.currentMode,
+      });
+    }
+    void this.pump();
+  }
+
+  private async pump(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      while (this.queue.length > 0) {
+        const next = this.queue.shift();
+        if (!next) break;
+        const attachments = next.kind === 'user' ? next.attachments : undefined;
+        await this.runTurn(next.body, next.mode, attachments);
+      }
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  private buildFleetBlock(): string {
+    const all = registry.listForProject(this.projectId);
+    if (all.length === 0) return '';
+    const lines = all.map((a) => {
+      const task = a.task
+        ? `, task: "${a.task.slice(0, 80).replace(/"/g, "'")}"`
+        : '';
+      const tokens =
+        a.tokens > 0 ? `, ${(a.tokens / 1000).toFixed(1)}k tok` : '';
+      return `- @${a.name} (${a.role}, ${a.status}${task}${tokens})`;
+    });
+    return `[currently spawned agents]\n${lines.join('\n')}\n[/currently spawned agents]\n\n`;
+  }
+
+  private async runTurn(
+    promptBody: string,
+    mode: DirectorMode,
+    attachments?: string[],
+  ): Promise<void> {
+    const settings = readSettings();
+    const env: Record<string, string | undefined> = { ...process.env };
+    if (settings.oauthToken) {
+      env.CLAUDE_CODE_OAUTH_TOKEN = settings.oauthToken;
+      delete env.ANTHROPIC_API_KEY;
+    } else if (settings.apiKey) {
+      env.ANTHROPIC_API_KEY = settings.apiKey;
+    }
+
+    this.controller = new AbortController();
+    const sdk = await import('@anthropic-ai/claude-agent-sdk');
+
+    const directorMessage: DirectorMessage = {
+      id: randomUUID(),
+      projectId: this.projectId,
+      who: 'director',
+      name: 'director',
+      time: timeOnly(),
+      body: '',
+      live: true,
+    };
+    this.pushMessage(directorMessage);
+
+    const queryOptions = {
+      cwd: app.getPath('userData'),
+      env,
+      abortController: this.controller,
+      permissionMode: 'bypassPermissions' as const,
+      agent: 'director',
+      agents: {
+        director: {
+          description: 'Orchestrator director — plans and supervises agents.',
+          prompt: DIRECTOR_SYSTEM_PROMPT,
+          tools: [] as string[],
+          model: settings.defaultModel || 'claude-sonnet-4-6',
+        },
+      },
+      ...(this.sessionId ? { resume: this.sessionId } : {}),
+    };
+
+    try {
+      const attachmentBlock =
+        attachments && attachments.length > 0
+          ? inlineAttachments(attachments)
+          : '';
+      const agentBlock = this.buildFleetBlock();
+      const q = sdk.query({
+        prompt: `[mode: ${mode}]\n${agentBlock}${attachmentBlock}${promptBody}`,
+        options: queryOptions,
+      });
+
+      let bodyBuf = '';
+      for await (const event of q) {
+        if (this.controller.signal.aborted) break;
+        const ev = event as { type: string; [k: string]: unknown };
+        if (ev.type === 'assistant') {
+          const message = ev.message as { content?: unknown[] } | undefined;
+          const blocks = message?.content ?? [];
+          for (const raw of blocks) {
+            if (raw == null || typeof raw !== 'object' || !('type' in raw))
+              continue;
+            const block = raw as { type: string; text?: string };
+            if (block.type === 'text' && typeof block.text === 'string') {
+              bodyBuf += block.text;
+            }
+          }
+        } else if (ev.type === 'result') {
+          const result = ev as unknown as { session_id?: string };
+          if (result.session_id) {
+            this.sessionId = result.session_id;
+            persistence.saveDirectorSessionId(this.projectId, result.session_id);
+          }
+        }
+      }
+
+      const { text, plan, redirect } = extractDirectives(bodyBuf);
+      this.patchMessage(directorMessage.id, {
+        body: text || (plan || redirect ? '' : '(empty response)'),
+        plan: plan ?? undefined,
+        redirect: redirect ?? undefined,
+        live: false,
+      });
+    } catch (e) {
+      this.patchMessage(directorMessage.id, {
+        body: `Error: ${e instanceof Error ? e.message : String(e)}`,
+        live: false,
+      });
+    }
+  }
 }
 
-function patchMessage(id: string, patch: Partial<DirectorMessage>): void {
-  const idx = messages.findIndex((m) => m.id === id);
-  if (idx >= 0) messages[idx] = { ...messages[idx], ...patch };
-  persistence.patchDirectorMessage(id, patch);
-  sinks?.onPatch(id, patch);
-}
+const sessions = new Map<string, DirectorSession>();
 
-export function listMessages(): DirectorMessage[] {
-  return [...messages];
+function getSession(projectId: string): DirectorSession {
+  let s = sessions.get(projectId);
+  if (!s) {
+    s = new DirectorSession(projectId);
+    s.hydrate();
+    sessions.set(projectId, s);
+  }
+  return s;
 }
 
 export function setSinks(s: DirectorSinks): void {
-  sinks = s;
+  sharedSinks = s;
 }
 
-/**
- * Hydrate Director state from SQLite. Call once at app startup after
- * openDb() but before registerIpcHandlers(), so when the renderer asks
- * for the initial message list it sees the restored chat.
- */
-export function hydrate(): void {
-  const stored = persistence.loadDirectorMessages();
-  messages.length = 0;
-  for (const m of stored) messages.push(m);
-  sessionId = persistence.loadDirectorSessionId();
+/** Hydrate every project's Director session at app startup. */
+export function hydrateAll(projectIds: string[]): void {
+  for (const id of projectIds) getSession(id);
 }
 
-let currentMode: DirectorMode = 'auto';
+export function discardSession(projectId: string): void {
+  sessions.get(projectId)?.abort();
+  sessions.delete(projectId);
+}
+
+export function listMessages(projectId: string): DirectorMessage[] {
+  return getSession(projectId).list();
+}
 
 export function sendFromUser(
+  projectId: string,
   body: string,
   mode: DirectorMode,
   attachments?: string[],
 ): void {
-  currentMode = mode;
-  pushMessage({
-    id: randomUUID(),
-    who: 'user',
-    name: 'you',
-    time: timeOnly(),
-    body,
-    attachments:
-      attachments && attachments.length > 0
-        ? attachments.map((p) => ({ path: p, name: path.basename(p) }))
-        : undefined,
-  });
-  queue.push({ kind: 'user', body, mode, attachments });
-  void pump();
+  getSession(projectId).sendFromUser(body, mode, attachments);
 }
 
-export function notifyAgentDone(agentName: string, summary: string): void {
-  const body = `[handoff] Agent ${agentName} completed. ${
-    summary ? 'Summary: ' + summary : 'No summary.'
-  }`;
-  pushMessage({
-    id: randomUUID(),
-    who: 'system',
-    name: 'system',
-    time: timeOnly(),
-    body: `${agentName} → done`,
-  });
-  // Don't render the raw handoff text in chat — render the short system msg
-  // above for the user, and queue the longer text as the actual prompt to
-  // the Director session.
-  queue.push({ kind: 'system', body, mode: currentMode });
-  void pump();
+export function notifyAgentDone(
+  projectId: string,
+  agentName: string,
+  summary: string,
+): void {
+  getSession(projectId).notifyAgentDone(agentName, summary);
 }
 
-export function abort(): void {
-  controller?.abort();
+export function acknowledgePlanAccepted(
+  projectId: string,
+  rows: PlanRow[],
+  spawnedNames: string[],
+): void {
+  getSession(projectId).acknowledgePlanAccepted(rows, spawnedNames);
 }
 
-async function pump(): Promise<void> {
-  if (busy) return;
-  busy = true;
-  try {
-    while (queue.length > 0) {
-      const next = queue.shift();
-      if (!next) break;
-      const attachments = next.kind === 'user' ? next.attachments : undefined;
-      await runTurn(next.body, next.mode, attachments);
-    }
-  } finally {
-    busy = false;
-  }
-}
-
-async function runTurn(
-  promptBody: string,
-  mode: DirectorMode,
-  attachments?: string[],
-): Promise<void> {
-  const settings = readSettings();
-  const env: Record<string, string | undefined> = { ...process.env };
-  if (settings.oauthToken) {
-    env.CLAUDE_CODE_OAUTH_TOKEN = settings.oauthToken;
-    delete env.ANTHROPIC_API_KEY;
-  } else if (settings.apiKey) {
-    env.ANTHROPIC_API_KEY = settings.apiKey;
-  }
-
-  controller = new AbortController();
-  const sdk = await import('@anthropic-ai/claude-agent-sdk');
-
-  const directorMessage: DirectorMessage = {
-    id: randomUUID(),
-    who: 'director',
-    name: 'director',
-    time: timeOnly(),
-    body: '',
-    live: true,
-  };
-  pushMessage(directorMessage);
-
-  const queryOptions = {
-    cwd: app.getPath('userData'),
-    env,
-    abortController: controller,
-    permissionMode: 'bypassPermissions' as const,
-    agent: 'director',
-    agents: {
-      director: {
-        description: 'Orchestrator director — plans and supervises agents.',
-        prompt: DIRECTOR_SYSTEM_PROMPT,
-        tools: [] as string[],
-        model: settings.defaultModel || 'claude-sonnet-4-6',
-      },
-    },
-    ...(sessionId ? { resume: sessionId } : {}),
-  };
-
-  try {
-    const attachmentBlock =
-      attachments && attachments.length > 0
-        ? inlineAttachments(attachments)
-        : '';
-    const agentBlock = buildAgentFleetBlock();
-    const q = sdk.query({
-      prompt: `[mode: ${mode}]\n${agentBlock}${attachmentBlock}${promptBody}`,
-      options: queryOptions,
-    });
-
-    let bodyBuf = '';
-    for await (const event of q) {
-      if (controller.signal.aborted) break;
-      const ev = event as { type: string; [k: string]: unknown };
-
-      if (ev.type === 'assistant') {
-        const message = ev.message as { content?: unknown[] } | undefined;
-        const blocks = message?.content ?? [];
-        for (const raw of blocks) {
-          if (raw == null || typeof raw !== 'object' || !('type' in raw)) continue;
-          const block = raw as { type: string; text?: string };
-          if (block.type === 'text' && typeof block.text === 'string') {
-            bodyBuf += block.text;
-          }
-        }
-      } else if (ev.type === 'result') {
-        const result = ev as unknown as { session_id?: string };
-        if (result.session_id) {
-          sessionId = result.session_id;
-          persistence.saveDirectorSessionId(result.session_id);
-        }
-      }
-    }
-
-    const { text, plan, redirect } = extractDirectives(bodyBuf);
-    patchMessage(directorMessage.id, {
-      body: text || (plan || redirect ? '' : '(empty response)'),
-      plan: plan ?? undefined,
-      redirect: redirect ?? undefined,
-      live: false,
-    });
-  } catch (e) {
-    patchMessage(directorMessage.id, {
-      body: `Error: ${e instanceof Error ? e.message : String(e)}`,
-      live: false,
-    });
-  }
-}
-
-/**
- * Mark a redirect message as fired (so the auto-trigger doesn't fire it
- * twice) and push a system follow-up into the queue so the Director's
- * next turn can supervise the redirected run.
- */
 export function acknowledgeRedirect(
+  projectId: string,
   messageId: string,
   agentName: string,
   ok: boolean,
   errorMsg?: string,
 ): void {
-  patchMessage(messageId, { redirectFired: true });
-  if (ok) {
-    pushMessage({
-      id: randomUUID(),
-      who: 'system',
-      name: 'system',
-      time: timeOnly(),
-      body: `Redirected ${agentName}`,
-    });
-    queue.push({
-      kind: 'system',
-      body: `Redirect to @${agentName} fired. The agent is now resuming its session with the new instruction. Reply with "ok" or any additional guidance.`,
-      mode: currentMode,
-    });
-  } else {
-    pushMessage({
-      id: randomUUID(),
-      who: 'system',
-      name: 'system',
-      time: timeOnly(),
-      body: `Redirect to ${agentName} failed: ${errorMsg ?? 'unknown error'}`,
-    });
-    queue.push({
-      kind: 'system',
-      body: `Redirect to @${agentName} failed: ${errorMsg ?? 'unknown error'}. Reconsider whether to spawn a fresh agent instead.`,
-      mode: currentMode,
-    });
-  }
-  void pump();
+  getSession(projectId).acknowledgeRedirect(messageId, agentName, ok, errorMsg);
 }
 
-/**
- * Snapshot the currently-registered agents and render them as a compact
- * block the Director sees ahead of each user message. Without this the
- * Director only knows about agents IT spawned (via acceptPlan's follow-up
- * message), not ones the user spawned manually via the workspace pane.
- */
-function buildAgentFleetBlock(): string {
-  const all = registry.list();
-  if (all.length === 0) return '';
-  const lines = all.map((a) => {
-    const task = a.task ? `, task: "${a.task.slice(0, 80).replace(/"/g, "'")}"` : '';
-    const tokens = a.tokens > 0 ? `, ${(a.tokens / 1000).toFixed(1)}k tok` : '';
-    return `- @${a.name} (${a.role}, ${a.status}${task}${tokens})`;
-  });
-  return `[currently spawned agents]\n${lines.join('\n')}\n[/currently spawned agents]\n\n`;
-}
-
-/**
- * Synthesize the "plan accepted" follow-up message sent back to the Director
- * after the user clicks Accept and the agents have been spawned.
- */
-export function acknowledgePlanAccepted(
-  rows: PlanRow[],
-  spawnedNames: string[],
-): void {
-  // Mark the most recent message that has a plan as accepted (for UI)
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].plan) {
-      patchMessage(messages[i].id, { planAccepted: true });
-      break;
-    }
-  }
-  // Tell the user the spawns happened
-  pushMessage({
-    id: randomUUID(),
-    who: 'system',
-    name: 'system',
-    time: timeOnly(),
-    body: `Spawned ${rows.length} agent${rows.length === 1 ? '' : 's'} · ${spawnedNames.join(' · ')}`,
-  });
-  // And tell the Director, so its next turn supervises
-  const lines = rows.map((r) => `  ${r.i}. ${r.role} ${r.name} — ${r.task}`).join('\n');
-  queue.push({
-    kind: 'system',
-    body: `Plan accepted. Spawned agents:\n${lines}\n\nReply with "ok" or any additional guidance.`,
-    mode: currentMode,
-  });
-  void pump();
+export function abort(projectId: string): void {
+  sessions.get(projectId)?.abort();
 }

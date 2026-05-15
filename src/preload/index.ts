@@ -12,19 +12,18 @@ import {
   type DirectorEventPatchPayload,
   type OrchestratorApi,
   type PickWorkspaceResponse,
+  type ProjectActiveChangedPayload,
   type Settings,
   type SpawnAgentResponse,
 } from '../shared/ipc';
 import type {
   Agent,
   DirectorMessage,
+  Project,
   SpawnAgentRequest,
 } from '../shared/types';
 
-function subscribe<T>(
-  channel: string,
-  cb: (payload: T) => void,
-): () => void {
+function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   const handler = (_e: IpcRendererEvent, payload: T) => cb(payload);
   ipcRenderer.on(channel, handler);
   return () => ipcRenderer.off(channel, handler);
@@ -37,8 +36,8 @@ const api: OrchestratorApi = {
   setSettings: (next) =>
     ipcRenderer.invoke(IpcChannels.SettingsSet, next) as Promise<Settings>,
 
-  listAgents: () =>
-    ipcRenderer.invoke(IpcChannels.AgentList) as Promise<Agent[]>,
+  listAgents: (projectId) =>
+    ipcRenderer.invoke(IpcChannels.AgentList, projectId) as Promise<Agent[]>,
   spawnAgent: (req: SpawnAgentRequest) =>
     ipcRenderer.invoke(IpcChannels.AgentSpawn, req) as Promise<SpawnAgentResponse>,
   abortAgent: (id) =>
@@ -57,11 +56,15 @@ const api: OrchestratorApi = {
       import('../shared/ipc').PickAttachmentsResponse
     >,
 
-  listDirectorMessages: () =>
-    ipcRenderer.invoke(IpcChannels.DirectorList) as Promise<DirectorMessage[]>,
-  sendToDirector: (body, mode, attachments) =>
+  listDirectorMessages: (projectId) =>
+    ipcRenderer.invoke(
+      IpcChannels.DirectorList,
+      projectId,
+    ) as Promise<DirectorMessage[]>,
+  sendToDirector: (projectId, body, mode, attachments) =>
     ipcRenderer.invoke(
       IpcChannels.DirectorSend,
+      projectId,
       body,
       mode,
       attachments,
@@ -76,8 +79,32 @@ const api: OrchestratorApi = {
       IpcChannels.DirectorAckRedirect,
       req,
     ) as Promise<{ ok: true }>,
-  abortDirector: () =>
-    ipcRenderer.invoke(IpcChannels.DirectorAbort) as Promise<{ ok: true }>,
+  abortDirector: (projectId) =>
+    ipcRenderer.invoke(IpcChannels.DirectorAbort, projectId) as Promise<{
+      ok: true;
+    }>,
+
+  // Projects
+  listProjects: () =>
+    ipcRenderer.invoke(IpcChannels.ProjectList) as Promise<Project[]>,
+  createProject: (name, workspace) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectCreate,
+      name,
+      workspace,
+    ) as Promise<Project>,
+  setActiveProject: (id) =>
+    ipcRenderer.invoke(IpcChannels.ProjectSetActive, id) as Promise<{
+      ok: true;
+    }>,
+  renameProject: (id, name) =>
+    ipcRenderer.invoke(IpcChannels.ProjectRename, id, name) as Promise<{
+      ok: true;
+    }>,
+  deleteProject: (id) =>
+    ipcRenderer.invoke(IpcChannels.ProjectDelete, id) as Promise<{ ok: true }>,
+  getActiveProjectId: () =>
+    ipcRenderer.invoke(IpcChannels.ProjectGetActive) as Promise<string | null>,
 
   onAgent: (cb) => subscribe<AgentEventAgentPayload>(IpcChannels.AgentEventAgent, cb),
   onLog: (cb) => subscribe<AgentEventLogPayload>(IpcChannels.AgentEventLog, cb),
@@ -92,6 +119,11 @@ const api: OrchestratorApi = {
     ),
   onDirectorPatch: (cb) =>
     subscribe<DirectorEventPatchPayload>(IpcChannels.DirectorEventPatch, cb),
+  onActiveProjectChanged: (cb) =>
+    subscribe<ProjectActiveChangedPayload>(
+      IpcChannels.ProjectEventActiveChanged,
+      cb,
+    ),
 };
 
 contextBridge.exposeInMainWorld('api', api);

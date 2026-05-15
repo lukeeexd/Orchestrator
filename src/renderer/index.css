@@ -231,6 +231,61 @@ html, body {
   box-shadow: inset 0 0 0 1px var(--accent-line);
 }
 
+/* ── Project tabs ───────────────────────────────────────────── */
+.project-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 6px;
+  background: var(--ink);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+  overflow-x: auto;
+}
+.project-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 100%;
+  padding: 0 12px;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  cursor: default;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+.project-tab:hover { color: var(--text-2); background: var(--sub); }
+.project-tab.on {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--border-2);
+}
+.project-tab .pt-name {
+  font-weight: 500;
+}
+.project-tab .pt-count {
+  background: var(--accent);
+  color: #0b0d10;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 0 4px;
+  border-radius: 7px;
+  min-width: 14px;
+  text-align: center;
+}
+.project-tab-new {
+  background: transparent;
+  border: 1px dashed var(--border-2);
+  color: var(--muted);
+  padding: 0 9px;
+  cursor: default;
+}
+.project-tab-new:hover { color: var(--accent); border-color: var(--accent-line); }
+
 .director {
   flex-shrink: 0;
 }
