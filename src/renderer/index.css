@@ -1,0 +1,30 @@
+/* Design tokens from docs/design/design-reference/styles.css — full token lift lands in M1. */
+:root {
+  --ink: #08090b;
+  --bg: #0b0d10;
+  --text: #e6e6ea;
+  --muted: #6b7080;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background: var(--ink);
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Berkeley Mono', 'IBM Plex Mono', ui-monospace,
+    SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+}
