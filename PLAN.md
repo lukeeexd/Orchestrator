@@ -14,9 +14,9 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current milestone | **M0 — not started** |
+| Current milestone | **M1 — not started** |
 | Last updated | 2026-05-15 |
-| Repo | not yet created (will be `github.com/lukeeexd/Orchestrator`, private, created at start of M0) |
+| Repo | `github.com/lukeeexd/Orchestrator` (private). Branches: `main` (release), `dev` (working). |
 
 ## Decisions locked
 
@@ -25,7 +25,7 @@ This file is the source of truth for what the project is, where it stands, and w
 | Orchestration model | Director-led | An LLM Director plans and delegates; not manual routing |
 | Frontend shell | Electron Forge + Vite + React + TypeScript | TS-first because the Claude Agent SDK is TS |
 | Agent runtime | `@anthropic-ai/claude-agent-sdk` | One in-process session per agent |
-| Storage | `better-sqlite3` (main process only) | Sessions, agents, logs, settings |
+| Storage | `sql.js` (WASM SQLite, main process only) | Originally `better-sqlite3`; swapped because native rebuild needs a Python + MSVC toolchain not present on the dev machine. WASM is portable and fine for single-user scale. Revisit if perf bites. |
 | Per-agent isolation | Git worktrees on the user's target repo | No auto-PR / auto-merge in v1 |
 | Repo target | User points the app at a folder; agents work there | Manual merge back in v1 |
 | API keys | Plain JSON in user data dir | Move to OS keychain in v1.1 |
@@ -57,17 +57,17 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 
 ## Milestones
 
-### M0 — Skeleton  *(not started)*
+### M0 — Skeleton  *(completed 2026-05-15)*
 
-- [ ] `gh repo create Orchestrator --private --source . --push` from the scaffold dir
-- [ ] Electron Forge with Vite + TS template
-- [ ] Folder layout: `src/main`, `src/preload`, `src/renderer`, `src/shared`
-- [ ] Typed IPC scaffold (channel names + payload types in `src/shared`)
-- [ ] `better-sqlite3` wired with an empty schema and a versioned migration
-- [ ] Settings JSON in Electron's `userData` dir with an API-key field
-- [ ] Blank window opens with the design's `--ink` (`#08090b`) background
-- [ ] Design handoff already copied to `docs/design/` (done by plan setup)
-- [ ] `dev` branch created off `main`
+- [x] `gh repo create Orchestrator --private --source . --push` from the scaffold dir
+- [x] Electron Forge with Vite + TS template (TS bumped from pinned 4.5.4 to ^5.5)
+- [x] Folder layout: `src/main`, `src/preload`, `src/renderer`, `src/shared`
+- [x] Typed IPC scaffold (`IpcChannels` enum + `OrchestratorApi` surface in `src/shared/ipc.ts`); ping + settings get/set handlers prove the bridge
+- [x] `sql.js` wired with an empty schema and a versioned migration runner (swapped from better-sqlite3 — see Decisions locked)
+- [x] Settings JSON in Electron's `userData` dir with `apiKey` and `defaultModel` fields
+- [x] Window opens with the design's `--ink` (`#08090b`) background, JetBrains Mono fallback chain, 1440×900 default, devtools detached in dev
+- [x] Design handoff copied to `docs/design/`
+- [x] `dev` branch created off `main`, both pushed to the private repo
 
 ### M1 — UI shell empty-state  *(not started)*
 
@@ -145,4 +145,4 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 
 ## Recently completed
 
-*(empty — log major milestone completions here with date as they land)*
+- **2026-05-15 — M0 Skeleton.** Forge scaffold reorganised into four-pane src layout. Typed IPC bridge proves end-to-end. sql.js stood in for better-sqlite3 (no native compile toolchain). Window opens on `--ink` background, first commit on `main`, working branch `dev` pushed.
