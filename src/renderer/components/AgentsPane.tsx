@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import type { Agent } from '../../shared/types';
 import { Icon } from './Icon';
 import { AgentRow } from './AgentRow';
@@ -9,6 +8,8 @@ interface Props {
   selectedId: string | null;
   expanded: Record<string, boolean>;
   workspace: string;
+  spawning: boolean;
+  setSpawning: (next: boolean) => void;
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
 }
@@ -18,10 +19,11 @@ export function AgentsPane({
   selectedId,
   expanded,
   workspace,
+  spawning,
+  setSpawning,
   onSelect,
   onToggle,
 }: Props) {
-  const [spawning, setSpawning] = useState(false);
   const activeCount = agents.filter(
     (a) => a.status === 'running' || a.status === 'waiting',
   ).length;

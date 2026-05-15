@@ -66,9 +66,31 @@ export function App() {
   const { messages, send, busy } = useDirector();
   const settings = useSettings();
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
+  const [spawning, setSpawning] = useState(false);
 
   const totalTokens = agents.reduce((s, a) => s + a.tokens, 0);
   const totalCost = agents.reduce((s, a) => s + a.cost, 0);
+
+  // Global keyboard shortcuts. Skip when the user is typing in an input.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const typing =
+        tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable;
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (!ctrl) return;
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        setSpawning(true);
+      } else if (e.key === '.' && !typing) {
+        e.preventDefault();
+        if (selectedId) void window.api.abortAgent(selectedId);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedId]);
 
   const handledPlans = useRef<Set<string>>(new Set());
 
@@ -154,6 +176,8 @@ export function App() {
               selectedId={selectedId}
               expanded={expanded}
               workspace={workspace}
+              spawning={spawning}
+              setSpawning={setSpawning}
               onSelect={setSelectedId}
               onToggle={toggle}
             />
@@ -174,7 +198,7 @@ export function App() {
           <PlaceholderScreen {...PLACEHOLDERS[active]} />
         )}
       </div>
-      <StatusBar />
+      <StatusBar agentCount={agents.length} />
     </div>
   );
 }

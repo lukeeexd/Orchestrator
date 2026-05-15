@@ -1,37 +1,30 @@
-export function StatusBar() {
+interface Props {
+  agentCount: number;
+}
+
+export function StatusBar({ agentCount }: Props) {
+  const idle = agentCount === 0;
   return (
     <div className="statusbar">
       <div className="seg">
         <span
           className="dot"
-          style={{ background: 'var(--muted-2)', boxShadow: 'none' }}
+          style={
+            idle
+              ? { background: 'var(--muted-2)', boxShadow: 'none' }
+              : undefined
+          }
         />
-        <span className="v">Idle</span>
-      </div>
-      <div className="seg">
-        <span className="k">SESSION</span>
-        <span className="v">—</span>
-      </div>
-      <div className="seg">
-        <span className="k">ELAPSED</span>
-        <span className="v">—</span>
-      </div>
-      <div className="seg">
-        <span className="k">CTX</span>
-        <span className="v">—</span>
+        <span className="v">{idle ? 'Idle' : `${agentCount} agents`}</span>
       </div>
       <div className="spacer" />
       <div className="seg">
-        <span className="k">⌘K</span>
-        <span className="v">Command bar</span>
-      </div>
-      <div className="seg">
-        <span className="k">⌘N</span>
+        <span className="k">Ctrl+N</span>
         <span className="v">New agent</span>
       </div>
       <div className="seg">
-        <span className="k">⌘.</span>
-        <span className="v">Interrupt</span>
+        <span className="k">Ctrl+.</span>
+        <span className="v">Abort selected</span>
       </div>
     </div>
   );

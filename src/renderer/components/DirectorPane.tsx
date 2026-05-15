@@ -205,13 +205,6 @@ function Composer({
         disabled={busy}
       />
       <div className="composer-bar">
-        <span className="chip">
-          <Icon name="attach" size={10} /> 0 attachments
-        </span>
-        <span className="chip">
-          <Icon name="branch" size={10} /> main
-        </span>
-        <span className="chip">@ agent</span>
         <span className="spacer" />
         <span style={{ color: 'var(--muted-2)' }}>⇧↵ newline</span>
         <button
