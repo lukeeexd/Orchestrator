@@ -1,7 +1,6 @@
 import { Icon, type IconName } from './Icon';
 
 export type RailScreen =
-  | 'director'
   | 'agents'
   | 'templates'
   | 'tools'
@@ -24,7 +23,6 @@ interface Props {
 
 export function LeftRail({ active, agentCount, onSelect }: Props) {
   const items: RailItem[] = [
-    { id: 'director', icon: 'director', label: 'Director' },
     {
       id: 'agents',
       icon: 'agents',

@@ -8,6 +8,7 @@ interface Props {
   agents: Agent[];
   selectedId: string | null;
   expanded: Record<string, boolean>;
+  workspace: string;
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
 }
@@ -16,6 +17,7 @@ export function AgentsPane({
   agents,
   selectedId,
   expanded,
+  workspace,
   onSelect,
   onToggle,
 }: Props) {
@@ -60,6 +62,7 @@ export function AgentsPane({
 
       {spawning && (
         <SpawnAgentForm
+          defaultWorkspace={workspace}
           onCancel={() => setSpawning(false)}
           onSpawned={() => setSpawning(false)}
         />

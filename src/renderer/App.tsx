@@ -14,7 +14,7 @@ import { ResizeHandle } from './components/ResizeHandle';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
 
 const PLACEHOLDERS: Record<
-  Exclude<RailScreen, 'director' | 'agents'>,
+  Exclude<RailScreen, 'agents'>,
   { title: string; icon: Parameters<typeof PlaceholderScreen>[0]['icon']; body: string }
 > = {
   templates: {
@@ -67,6 +67,9 @@ export function App() {
   const settings = useSettings();
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
 
+  const totalTokens = agents.reduce((s, a) => s + a.tokens, 0);
+  const totalCost = agents.reduce((s, a) => s + a.cost, 0);
+
   const handledPlans = useRef<Set<string>>(new Set());
 
   const spawnPlan = async (msg: DirectorMessage) => {
@@ -110,13 +113,15 @@ export function App() {
     if (path) setWorkspace(path);
   };
 
-  const isHome = active === 'director' || active === 'agents';
+  const isHome = active === 'agents';
 
   return (
     <div className="app">
       <TopBar
         workspace={workspace}
         model={settings?.defaultModel ?? 'claude-sonnet-4-6'}
+        totalTokens={totalTokens}
+        totalCost={totalCost}
         onChangeWorkspace={changeWorkspace}
       />
       <div className="body">
@@ -148,6 +153,7 @@ export function App() {
               agents={agents}
               selectedId={selectedId}
               expanded={expanded}
+              workspace={workspace}
               onSelect={setSelectedId}
               onToggle={toggle}
             />

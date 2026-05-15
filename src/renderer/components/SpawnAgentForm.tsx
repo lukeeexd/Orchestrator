@@ -13,11 +13,13 @@ const ROLES: { id: AgentRole; label: string; tint: string }[] = [
 interface Props {
   onCancel: () => void;
   onSpawned: () => void;
+  /** Pre-fill the workspace input from the global workspace. User can override. */
+  defaultWorkspace: string;
 }
 
-export function SpawnAgentForm({ onCancel, onSpawned }: Props) {
+export function SpawnAgentForm({ onCancel, onSpawned, defaultWorkspace }: Props) {
   const [role, setRole] = useState<AgentRole>('coder');
-  const [workspace, setWorkspace] = useState('');
+  const [workspace, setWorkspace] = useState(defaultWorkspace);
   const [task, setTask] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
