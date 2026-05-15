@@ -68,6 +68,7 @@ export function App() {
     activeId: activeProjectId,
     setActive: setActiveProject,
     create: createProject,
+    setWorkspace: setProjectWorkspace,
   } = useProjects();
   const activeProject: Project | null =
     projects.find((p) => p.id === activeProjectId) ?? null;
@@ -250,10 +251,10 @@ export function App() {
         model={settings?.defaultModel ?? 'claude-sonnet-4-6'}
         totalTokens={totalTokens}
         totalCost={totalCost}
-        onChangeWorkspace={() => {
-          // For projects, the workspace is a project property — use the
-          // new-project dialog or rename UI to change it. Click does nothing
-          // for now to avoid confusing implicit edits to the active project.
+        onChangeWorkspace={async () => {
+          if (!activeProjectId) return;
+          const { path } = await window.api.pickWorkspace();
+          if (path) await setProjectWorkspace(activeProjectId, path);
         }}
       />
       <ProjectTabs

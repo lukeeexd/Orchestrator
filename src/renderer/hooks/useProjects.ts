@@ -7,6 +7,7 @@ interface UseProjectsResult {
   setActive: (id: string) => Promise<void>;
   create: (name: string, workspace: string) => Promise<Project>;
   rename: (id: string, name: string) => Promise<void>;
+  setWorkspace: (id: string, workspace: string) => Promise<void>;
   remove: (id: string) => Promise<void>;
   reload: () => Promise<void>;
 }
@@ -57,6 +58,14 @@ export function useProjects(): UseProjectsResult {
     [reload],
   );
 
+  const setWorkspace = useCallback(
+    async (id: string, workspace: string) => {
+      await window.api.setProjectWorkspace(id, workspace);
+      await reload();
+    },
+    [reload],
+  );
+
   const remove = useCallback(
     async (id: string) => {
       await window.api.deleteProject(id);
@@ -65,5 +74,14 @@ export function useProjects(): UseProjectsResult {
     [reload],
   );
 
-  return { projects, activeId, setActive, create, rename, remove, reload };
+  return {
+    projects,
+    activeId,
+    setActive,
+    create,
+    rename,
+    setWorkspace,
+    remove,
+    reload,
+  };
 }

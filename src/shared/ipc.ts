@@ -29,6 +29,7 @@ export const IpcChannels = {
   ProjectCreate: 'project:create',
   ProjectSetActive: 'project:setActive',
   ProjectRename: 'project:rename',
+  ProjectSetWorkspace: 'project:setWorkspace',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
   // Renderer-bound streaming events:
@@ -155,6 +156,7 @@ export interface OrchestratorApi {
   createProject: (name: string, workspace: string) => Promise<Project>;
   setActiveProject: (id: string) => Promise<{ ok: true }>;
   renameProject: (id: string, name: string) => Promise<{ ok: true }>;
+  setProjectWorkspace: (id: string, workspace: string) => Promise<{ ok: true }>;
   deleteProject: (id: string) => Promise<{ ok: true }>;
   getActiveProjectId: () => Promise<string | null>;
   // Streams

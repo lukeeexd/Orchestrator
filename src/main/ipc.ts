@@ -31,6 +31,7 @@ import {
   listProjects,
   renameProject,
   setActiveProjectId,
+  setProjectWorkspace,
 } from './projects';
 
 const startedAt = Date.now();
@@ -81,6 +82,13 @@ export function registerIpcHandlers(): void {
     IpcChannels.ProjectRename,
     (_event, id: string, name: string): { ok: true } => {
       renameProject(id, name);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetWorkspace,
+    (_event, id: string, workspace: string): { ok: true } => {
+      setProjectWorkspace(id, workspace);
       return { ok: true };
     },
   );
