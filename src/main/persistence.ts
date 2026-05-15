@@ -274,6 +274,17 @@ export function loadAgents(): Agent[] {
   return out;
 }
 
+export function deleteAgent(id: string): void {
+  const db = getDb();
+  const a = db.prepare(`DELETE FROM agents WHERE id = ?`);
+  a.run([id]);
+  a.free();
+  const l = db.prepare(`DELETE FROM log_lines WHERE agent_id = ?`);
+  l.run([id]);
+  l.free();
+  scheduleSave();
+}
+
 /**
  * Mark any agents that were in flight when the app closed as failed —
  * we can't resume their SDK sessions.

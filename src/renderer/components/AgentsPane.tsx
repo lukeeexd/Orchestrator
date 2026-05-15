@@ -55,6 +55,7 @@ export function AgentsPane({
               onSelect={() => onSelect(a.id)}
               onToggle={() => onToggle(a.id)}
               onAbort={() => void window.api.abortAgent(a.id)}
+              onRemove={() => void window.api.removeAgent(a.id)}
             />
           ))}
         </div>

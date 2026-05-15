@@ -12,6 +12,7 @@ import type { Agent, DirectorMessage, SpawnAgentRequest } from '../shared/types'
 import { readSettings, writeSettings } from './settings';
 import { spawnAgent, registry, awaitCompletion } from './agents/runner';
 import * as director from './director/runner';
+import { deleteAgent } from './persistence';
 
 const startedAt = Date.now();
 
@@ -67,6 +68,18 @@ export function registerIpcHandlers(): void {
     IpcChannels.AgentAbort,
     (_event, id: string): { ok: boolean } => {
       return { ok: registry.abort(id) };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentRemove,
+    (_event, id: string): { ok: boolean } => {
+      const ok = registry.remove(id);
+      if (ok) {
+        deleteAgent(id);
+        broadcast(IpcChannels.AgentEventRemove, { agentId: id });
+      }
+      return { ok };
     },
   );
 

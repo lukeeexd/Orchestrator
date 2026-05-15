@@ -39,6 +39,15 @@ export function abortAll(): void {
   for (const e of entries.values()) e.controller.abort();
 }
 
+export function remove(id: string): boolean {
+  const e = entries.get(id);
+  if (!e) return false;
+  // Make sure nothing's still running before we drop the entry.
+  e.controller.abort();
+  entries.delete(id);
+  return true;
+}
+
 /**
  * Reload agents from disk at startup. Restored agents have a no-op
  * controller because we can't resume their SDK sessions — any that

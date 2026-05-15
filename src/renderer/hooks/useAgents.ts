@@ -47,11 +47,23 @@ export function useAgents(): UseAgentsResult {
       );
     });
 
+    const offRemove = window.api.onAgentRemove(({ agentId }) => {
+      setAgents((prev) => prev.filter((a) => a.id !== agentId));
+      setSelectedId((prev) => (prev === agentId ? null : prev));
+      setExpanded((prev) => {
+        if (!(agentId in prev)) return prev;
+        const next = { ...prev };
+        delete next[agentId];
+        return next;
+      });
+    });
+
     return () => {
       mounted = false;
       offAgent();
       offLog();
       offPatch();
+      offRemove();
     };
   }, []);
 

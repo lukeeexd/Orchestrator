@@ -6,6 +6,7 @@ import {
   type AgentEventAgentPayload,
   type AgentEventLogPayload,
   type AgentEventPatchPayload,
+  type AgentEventRemovePayload,
   type AppPingResponse,
   type DirectorEventMessagePayload,
   type DirectorEventPatchPayload,
@@ -42,6 +43,8 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.AgentSpawn, req) as Promise<SpawnAgentResponse>,
   abortAgent: (id) =>
     ipcRenderer.invoke(IpcChannels.AgentAbort, id) as Promise<{ ok: boolean }>,
+  removeAgent: (id) =>
+    ipcRenderer.invoke(IpcChannels.AgentRemove, id) as Promise<{ ok: boolean }>,
   pickWorkspace: () =>
     ipcRenderer.invoke(IpcChannels.AgentPickWorkspace) as Promise<PickWorkspaceResponse>,
 
@@ -61,6 +64,8 @@ const api: OrchestratorApi = {
   onLog: (cb) => subscribe<AgentEventLogPayload>(IpcChannels.AgentEventLog, cb),
   onPatch: (cb) =>
     subscribe<AgentEventPatchPayload>(IpcChannels.AgentEventPatch, cb),
+  onAgentRemove: (cb) =>
+    subscribe<AgentEventRemovePayload>(IpcChannels.AgentEventRemove, cb),
   onDirectorMessage: (cb) =>
     subscribe<DirectorEventMessagePayload>(
       IpcChannels.DirectorEventMessage,

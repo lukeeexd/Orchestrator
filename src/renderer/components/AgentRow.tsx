@@ -17,6 +17,7 @@ interface Props {
   onSelect: () => void;
   onToggle: () => void;
   onAbort: () => void;
+  onRemove: () => void;
 }
 
 export function AgentRow({
@@ -26,8 +27,9 @@ export function AgentRow({
   onSelect,
   onToggle,
   onAbort,
+  onRemove,
 }: Props) {
-  const showPauseIcon = agent.status === 'running' || agent.status === 'waiting';
+  const isRunning = agent.status === 'running' || agent.status === 'waiting';
   return (
     <div className={'agent' + (selected ? ' selected' : '')}>
       <div className="agent-head" onClick={onSelect}>
@@ -69,16 +71,29 @@ export function AgentRow({
           <span className="val">${agent.cost.toFixed(2)}</span>
         </span>
         <span className="agent-actions">
-          <button
-            className="icon-btn"
-            title={showPauseIcon ? 'Abort' : 'Done'}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (showPauseIcon) onAbort();
-            }}
-          >
-            <Icon name={showPauseIcon ? 'stop' : 'check'} size={11} />
-          </button>
+          {isRunning ? (
+            <button
+              className="icon-btn"
+              title="Abort"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAbort();
+              }}
+            >
+              <Icon name="stop" size={11} />
+            </button>
+          ) : (
+            <button
+              className="icon-btn"
+              title="Remove from list"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove();
+              }}
+            >
+              <Icon name="x" size={11} />
+            </button>
+          )}
         </span>
       </div>
 

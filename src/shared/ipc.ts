@@ -14,6 +14,7 @@ export const IpcChannels = {
   AgentList: 'agent:list',
   AgentSpawn: 'agent:spawn',
   AgentAbort: 'agent:abort',
+  AgentRemove: 'agent:remove',
   AgentPickWorkspace: 'agent:pickWorkspace',
   DirectorList: 'director:list',
   DirectorSend: 'director:send',
@@ -23,6 +24,7 @@ export const IpcChannels = {
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
   AgentEventPatch: 'agent:event:patch',
+  AgentEventRemove: 'agent:event:remove',
   DirectorEventMessage: 'director:event:message',
   DirectorEventPatch: 'director:event:patch',
 } as const;
@@ -72,6 +74,10 @@ export interface AgentEventPatchPayload {
   patch: Partial<Agent>;
 }
 
+export interface AgentEventRemovePayload {
+  agentId: string;
+}
+
 export interface DirectorEventMessagePayload {
   message: DirectorMessage;
 }
@@ -97,6 +103,7 @@ export interface OrchestratorApi {
   listAgents: () => Promise<Agent[]>;
   spawnAgent: (req: SpawnAgentRequest) => Promise<SpawnAgentResponse>;
   abortAgent: (id: string) => Promise<{ ok: boolean }>;
+  removeAgent: (id: string) => Promise<{ ok: boolean }>;
   pickWorkspace: () => Promise<PickWorkspaceResponse>;
   listDirectorMessages: () => Promise<DirectorMessage[]>;
   sendToDirector: (body: string, mode: DirectorMode) => Promise<{ ok: true }>;
@@ -105,6 +112,7 @@ export interface OrchestratorApi {
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;
   onPatch: (cb: (p: AgentEventPatchPayload) => void) => () => void;
+  onAgentRemove: (cb: (p: AgentEventRemovePayload) => void) => () => void;
   onDirectorMessage: (cb: (p: DirectorEventMessagePayload) => void) => () => void;
   onDirectorPatch: (cb: (p: DirectorEventPatchPayload) => void) => () => void;
 }
