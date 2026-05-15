@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Agent, AgentRole, LogLine, SpawnAgentRequest } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
-import { createWorktree } from './worktree';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';
 import { readSettings } from '../settings';
@@ -56,8 +55,6 @@ export async function spawnAgent(
   const id = randomUUID();
   const controller = new AbortController();
 
-  const wt = createWorktree(req.workspace, name);
-
   // settings.defaultModel overrides each role's hardcoded model — gives
   // the user one knob to flip Opus / Sonnet / Haiku across the whole fleet.
   const effectiveModel = readSettings().defaultModel || role.model;
@@ -76,7 +73,6 @@ export async function spawnAgent(
     elapsed: '00:00',
     model: effectiveModel,
     workspace: req.workspace,
-    worktreePath: wt.isWorktree ? wt.workdir : null,
     spawnedBy: req.spawnedBy ?? 'user',
     log: [],
     startedAt: Date.now(),
@@ -94,7 +90,7 @@ export async function spawnAgent(
   completions.set(id, donePromise);
 
   // Fire-and-forget the async run; events stream via sinks.
-  run(id, req, wt.workdir, settings, controller, sinks)
+  run(id, req, req.workspace, settings, controller, sinks)
     .catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       sinks.onLog(id, { ts: nowTs(), kind: 'error', msg: `runner crashed: ${msg}` });

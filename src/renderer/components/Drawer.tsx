@@ -308,14 +308,6 @@ function ConfigTab({ agent }: { agent: Agent }) {
           <code>{agent.workspace}</code>
         </span>
       </div>
-      {agent.worktreePath && (
-        <div className="field">
-          <span className="lbl">Worktree</span>
-          <span className="v">
-            <code>{agent.worktreePath}</code>
-          </span>
-        </div>
-      )}
       <div className="field">
         <span className="lbl">Limits</span>
         <span className="v">budgets &amp; wall-clock land in M5</span>

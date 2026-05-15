@@ -26,7 +26,7 @@ This file is the source of truth for what the project is, where it stands, and w
 | Frontend shell | Electron Forge + Vite + React + TypeScript | TS-first because the Claude Agent SDK is TS |
 | Agent runtime | `@anthropic-ai/claude-agent-sdk` | One in-process session per agent |
 | Storage | `sql.js` (WASM SQLite, main process only) | Originally `better-sqlite3`; swapped because native rebuild needs a Python + MSVC toolchain not present on the dev machine. WASM is portable and fine for single-user scale. Revisit if perf bites. |
-| Per-agent isolation | Git worktrees on the user's target repo | No auto-PR / auto-merge in v1 |
+| Per-agent isolation | None — sequential agents share the workspace | Original M2 plan used git worktrees; dropped after M4 once we made spawning sequential. Worktrees prevented downstream agents from reading what upstream agents had written. |
 | Repo target | User points the app at a folder; agents work there | Manual merge back in v1 |
 | API keys | Plain JSON in user data dir | Move to OS keychain in v1.1 |
 | Branch model | `dev` → `main`, mirrors KnittingApp | Releases tagged on main |

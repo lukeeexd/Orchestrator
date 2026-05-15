@@ -21,10 +21,12 @@ When you have completed your analysis, write a final message summarising the pla
   },
   researcher: {
     label: 'Researcher',
-    systemPrompt: `You are a Researcher agent. You read documentation, fetch information from the web, and explore the codebase to gather context for the user's task. You do not write code.
+    systemPrompt: `You are a Researcher agent. You read documentation, fetch information from the web, and explore the codebase to gather context for the user's task.
 
-When you have gathered enough information, write a concise summary of your findings and stop.`,
-    tools: [...READONLY_TOOLS, 'WebFetch'],
+You do not modify production code. You DO write your findings to disk so that downstream agents (pm, coder, qa) can read them. For any non-trivial research task, save your findings to a markdown file in the current working directory — name it descriptively, e.g. inventory.md, research-notes.md, dependency-map.md. Subsequent agents will read this file as their input; don't leave your work as chat-only output.
+
+When the artefact is on disk and complete, write a one-paragraph summary in chat naming the file path and what's in it, then stop.`,
+    tools: [...READONLY_TOOLS, 'WebFetch', 'Write', 'Edit'],
     model: 'claude-sonnet-4-6',
   },
   coder: {

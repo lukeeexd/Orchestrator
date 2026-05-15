@@ -44,7 +44,6 @@ export interface Agent {
   elapsed: string;
   model: string;
   workspace: string;
-  worktreePath: string | null;
   spawnedBy: AgentSpawnedBy;
   log: LogLine[];
   startedAt: number;
