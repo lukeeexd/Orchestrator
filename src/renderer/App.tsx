@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useLocalStorageState } from './hooks/useLocalStorageState';
 import { useAgents } from './hooks/useAgents';
+import { useDirector } from './hooks/useDirector';
 import { TopBar } from './components/TopBar';
 import { LeftRail, type RailScreen } from './components/LeftRail';
 import { StatusBar } from './components/StatusBar';
@@ -52,6 +53,7 @@ export function App() {
     460,
   );
   const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents();
+  const { messages, send, busy } = useDirector();
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
 
   const isHome = active === 'director' || active === 'agents';
@@ -68,7 +70,12 @@ export function App() {
 
         {isHome ? (
           <>
-            <DirectorPane width={dirW} />
+            <DirectorPane
+              width={dirW}
+              messages={messages}
+              busy={busy}
+              onSend={send}
+            />
             <ResizeHandle
               value={dirW}
               onChange={setDirW}

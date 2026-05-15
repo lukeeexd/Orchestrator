@@ -1,14 +1,17 @@
 import { ipcMain, app, BrowserWindow, dialog } from 'electron';
 import {
   IpcChannels,
+  type AcceptPlanRequest,
+  type AcceptPlanResponse,
   type AppPingResponse,
+  type PickWorkspaceResponse,
   type Settings,
   type SpawnAgentResponse,
-  type PickWorkspaceResponse,
 } from '../shared/ipc';
-import type { Agent, SpawnAgentRequest } from '../shared/types';
+import type { Agent, DirectorMessage, SpawnAgentRequest } from '../shared/types';
 import { readSettings, writeSettings } from './settings';
 import { spawnAgent, registry } from './agents/runner';
+import * as director from './director/runner';
 
 const startedAt = Date.now();
 
@@ -19,6 +22,14 @@ function broadcast(channel: string, payload: unknown): void {
 }
 
 export function registerIpcHandlers(): void {
+  // Wire the Director's sinks to broadcast events to the renderer.
+  director.setSinks({
+    onMessage: (message) =>
+      broadcast(IpcChannels.DirectorEventMessage, { message }),
+    onPatch: (id, patch) =>
+      broadcast(IpcChannels.DirectorEventPatch, { id, patch }),
+  });
+
   ipcMain.handle(IpcChannels.AppPing, (): AppPingResponse => {
     return { ok: true, version: app.getVersion(), startedAt };
   });
@@ -65,13 +76,66 @@ export function registerIpcHandlers(): void {
       const win = BrowserWindow.fromWebContents(event.sender);
       if (!win) return { path: null };
       const result = await dialog.showOpenDialog(win, {
-        title: 'Choose workspace folder for the agent',
+        title: 'Choose workspace folder',
         properties: ['openDirectory'],
       });
       if (result.canceled || result.filePaths.length === 0) {
         return { path: null };
       }
       return { path: result.filePaths[0] };
+    },
+  );
+
+  ipcMain.handle(IpcChannels.DirectorList, (): DirectorMessage[] => {
+    return director.listMessages();
+  });
+
+  ipcMain.handle(
+    IpcChannels.DirectorSend,
+    (_event, body: string): { ok: true } => {
+      director.sendFromUser(body);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(IpcChannels.DirectorAbort, (): { ok: true } => {
+    director.abort();
+    return { ok: true };
+  });
+
+  ipcMain.handle(
+    IpcChannels.DirectorAcceptPlan,
+    async (
+      _event,
+      req: AcceptPlanRequest,
+    ): Promise<AcceptPlanResponse> => {
+      const sinks = {
+        onAgent: (agent: Agent) =>
+          broadcast(IpcChannels.AgentEventAgent, { agent }),
+        onLog: (agentId: string, line: import('../shared/types').LogLine) =>
+          broadcast(IpcChannels.AgentEventLog, { agentId, line }),
+        onPatch: (agentId: string, patch: Partial<Agent>) =>
+          broadcast(IpcChannels.AgentEventPatch, { agentId, patch }),
+      };
+      const spawned: { id: string; name: string }[] = [];
+      for (const row of req.rows) {
+        const r = await spawnAgent(
+          {
+            role: row.role,
+            task: row.task,
+            workspace: req.workspace,
+            spawnedBy: 'director',
+          },
+          sinks,
+        );
+        const e = registry.get(r.agentId);
+        spawned.push({ id: r.agentId, name: e?.agent.name ?? row.name });
+      }
+      director.acknowledgePlanAccepted(
+        req.rows,
+        spawned.map((s) => s.name),
+      );
+      return { spawnedAgentIds: spawned.map((s) => s.id) };
     },
   );
 }

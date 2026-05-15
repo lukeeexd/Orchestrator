@@ -5,6 +5,7 @@ import { createWorktree } from './worktree';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';
 import { readSettings } from '../settings';
+import * as director from '../director/runner';
 
 export interface RunnerSinks {
   onAgent: (agent: Agent) => void;
@@ -61,6 +62,7 @@ export async function spawnAgent(
     model: role.model,
     workspace: req.workspace,
     worktreePath: wt.isWorktree ? wt.workdir : null,
+    spawnedBy: req.spawnedBy ?? 'user',
     log: [],
     startedAt: Date.now(),
   };
@@ -184,6 +186,12 @@ async function run(
             tokens,
             cost,
           });
+          const entry = registry.get(agentId);
+          if (entry && entry.agent.spawnedBy === 'director') {
+            const summary =
+              (result as unknown as { result?: string }).result ?? '';
+            director.notifyAgentDone(entry.agent.name, summary);
+          }
         } else {
           const errMsg = (result.errors ?? [result.subtype]).join(' · ');
           sinks.onLog(agentId, { ts: nowTs(), kind: 'error', msg: errMsg });

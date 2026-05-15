@@ -300,6 +300,22 @@ body.resizing * { cursor: col-resize !important; }
   overflow: hidden;
 }
 .composer-input:focus-within { border-color: var(--accent-line); }
+
+.composer-textarea {
+  background: var(--sub);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit; font-size: 12px;
+  color: var(--text);
+  min-height: 56px;
+  resize: vertical;
+  outline: none;
+  width: 100%;
+}
+.composer-textarea:focus { border-color: var(--accent-line); }
+.composer-textarea::placeholder { color: var(--muted); }
+.composer-textarea:disabled { opacity: 0.6; }
 .composer-input .placeholder { color: var(--muted); }
 .composer-input .caret {
   display: inline-block;
@@ -329,6 +345,54 @@ body.resizing * { cursor: col-resize !important; }
   flex-shrink: 0;
 }
 .composer-bar .spacer { flex: 1; }
+
+/* ── Plan card (rendered inside a director message) ───────── */
+.dir-plan {
+  margin-top: 8px;
+  background: var(--sub);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.dir-plan-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.dir-plan-head .badge {
+  margin-left: auto;
+  padding: 1px 5px; border-radius: 3px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.plan-row {
+  display: grid;
+  grid-template-columns: 22px 16px 90px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+  padding: 3px 0;
+}
+.plan-row .num {
+  color: var(--muted-2);
+  font-size: 10px;
+}
+.plan-row .tree {
+  color: var(--muted-2);
+  font-family: var(--mono);
+}
+.plan-row .who {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 
 /* ── Agents workspace ──────────────────────────────────────── */
 .agents-pane { flex: 1; min-width: 0; }

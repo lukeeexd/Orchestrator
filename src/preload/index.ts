@@ -1,16 +1,24 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import {
   IpcChannels,
+  type AcceptPlanRequest,
+  type AcceptPlanResponse,
   type AgentEventAgentPayload,
   type AgentEventLogPayload,
   type AgentEventPatchPayload,
   type AppPingResponse,
+  type DirectorEventMessagePayload,
+  type DirectorEventPatchPayload,
   type OrchestratorApi,
   type PickWorkspaceResponse,
   type Settings,
   type SpawnAgentResponse,
 } from '../shared/ipc';
-import type { Agent, SpawnAgentRequest } from '../shared/types';
+import type {
+  Agent,
+  DirectorMessage,
+  SpawnAgentRequest,
+} from '../shared/types';
 
 function subscribe<T>(
   channel: string,
@@ -37,10 +45,29 @@ const api: OrchestratorApi = {
   pickWorkspace: () =>
     ipcRenderer.invoke(IpcChannels.AgentPickWorkspace) as Promise<PickWorkspaceResponse>,
 
+  listDirectorMessages: () =>
+    ipcRenderer.invoke(IpcChannels.DirectorList) as Promise<DirectorMessage[]>,
+  sendToDirector: (body) =>
+    ipcRenderer.invoke(IpcChannels.DirectorSend, body) as Promise<{ ok: true }>,
+  acceptPlan: (req: AcceptPlanRequest) =>
+    ipcRenderer.invoke(
+      IpcChannels.DirectorAcceptPlan,
+      req,
+    ) as Promise<AcceptPlanResponse>,
+  abortDirector: () =>
+    ipcRenderer.invoke(IpcChannels.DirectorAbort) as Promise<{ ok: true }>,
+
   onAgent: (cb) => subscribe<AgentEventAgentPayload>(IpcChannels.AgentEventAgent, cb),
   onLog: (cb) => subscribe<AgentEventLogPayload>(IpcChannels.AgentEventLog, cb),
   onPatch: (cb) =>
     subscribe<AgentEventPatchPayload>(IpcChannels.AgentEventPatch, cb),
+  onDirectorMessage: (cb) =>
+    subscribe<DirectorEventMessagePayload>(
+      IpcChannels.DirectorEventMessage,
+      cb,
+    ),
+  onDirectorPatch: (cb) =>
+    subscribe<DirectorEventPatchPayload>(IpcChannels.DirectorEventPatch, cb),
 };
 
 contextBridge.exposeInMainWorld('api', api);

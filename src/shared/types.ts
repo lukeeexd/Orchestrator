@@ -28,6 +28,8 @@ export interface LogLine {
   msg: string | ToolCall;
 }
 
+export type AgentSpawnedBy = 'user' | 'director';
+
 export interface Agent {
   id: string;
   role: AgentRole;
@@ -43,14 +45,36 @@ export interface Agent {
   model: string;
   workspace: string;
   worktreePath: string | null;
+  spawnedBy: AgentSpawnedBy;
   log: LogLine[];
   startedAt: number;
+}
+
+export interface PlanRow {
+  i: number;
+  role: AgentRole;
+  name: string;
+  task: string;
+}
+
+export type DirectorWho = 'user' | 'director' | 'system';
+
+export interface DirectorMessage {
+  id: string;
+  who: DirectorWho;
+  name: string;
+  time: string;
+  body: string;
+  plan?: PlanRow[];
+  planAccepted?: boolean;
+  live?: boolean;
 }
 
 export interface SpawnAgentRequest {
   role: AgentRole;
   task: string;
   workspace: string;
+  spawnedBy?: AgentSpawnedBy;
 }
 
 export interface SpawnAgentResponse {

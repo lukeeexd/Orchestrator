@@ -1,4 +1,10 @@
-import type { Agent, LogLine, SpawnAgentRequest } from './types';
+import type {
+  Agent,
+  DirectorMessage,
+  LogLine,
+  PlanRow,
+  SpawnAgentRequest,
+} from './types';
 
 export const IpcChannels = {
   AppPing: 'app:ping',
@@ -8,10 +14,16 @@ export const IpcChannels = {
   AgentSpawn: 'agent:spawn',
   AgentAbort: 'agent:abort',
   AgentPickWorkspace: 'agent:pickWorkspace',
+  DirectorList: 'director:list',
+  DirectorSend: 'director:send',
+  DirectorAcceptPlan: 'director:acceptPlan',
+  DirectorAbort: 'director:abort',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
   AgentEventPatch: 'agent:event:patch',
+  DirectorEventMessage: 'director:event:message',
+  DirectorEventPatch: 'director:event:patch',
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];
@@ -53,6 +65,24 @@ export interface AgentEventPatchPayload {
   patch: Partial<Agent>;
 }
 
+export interface DirectorEventMessagePayload {
+  message: DirectorMessage;
+}
+
+export interface DirectorEventPatchPayload {
+  id: string;
+  patch: Partial<DirectorMessage>;
+}
+
+export interface AcceptPlanRequest {
+  rows: PlanRow[];
+  workspace: string;
+}
+
+export interface AcceptPlanResponse {
+  spawnedAgentIds: string[];
+}
+
 export interface OrchestratorApi {
   ping: () => Promise<AppPingResponse>;
   getSettings: () => Promise<Settings>;
@@ -61,9 +91,15 @@ export interface OrchestratorApi {
   spawnAgent: (req: SpawnAgentRequest) => Promise<SpawnAgentResponse>;
   abortAgent: (id: string) => Promise<{ ok: boolean }>;
   pickWorkspace: () => Promise<PickWorkspaceResponse>;
+  listDirectorMessages: () => Promise<DirectorMessage[]>;
+  sendToDirector: (body: string) => Promise<{ ok: true }>;
+  acceptPlan: (req: AcceptPlanRequest) => Promise<AcceptPlanResponse>;
+  abortDirector: () => Promise<{ ok: true }>;
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;
   onPatch: (cb: (p: AgentEventPatchPayload) => void) => () => void;
+  onDirectorMessage: (cb: (p: DirectorEventMessagePayload) => void) => () => void;
+  onDirectorPatch: (cb: (p: DirectorEventPatchPayload) => void) => () => void;
 }
 
 declare global {

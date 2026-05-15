@@ -14,7 +14,7 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current milestone | **M4 — not started** |
+| Current milestone | **M4 — smoke-testing** |
 | Last updated | 2026-05-15 |
 | Repo | `github.com/lukeeexd/Orchestrator` (private). Branches: `main` (release), `dev` (working). |
 
@@ -99,14 +99,15 @@ The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeho
 - [x] Action buttons: **Pause** (functional — aborts the SDK abort-controller). **Redirect** / **Fork** / **Approve** rendered but disabled with hover tooltips pointing at the milestone where each lands
 - [x] **Spike result**: SDK exports `forkSession(sessionId)` (line 622 of sdk.d.ts) and `query({ options: { resume: sessionId } })`. Fork = `forkSession` → new session id → spawn new agent with that resume id + branched worktree. Feasible; defer the wiring to a M3.5 follow-up
 
-### M4 — Director  *(not started)*
+### M4 — Director  *(shipped; smoke pending)*
 
-- [ ] Director system prompt (planner-supervisor role)
-- [ ] `propose_plan` tool: emits structured `PlanRow[]`; UI intercepts and renders the plan card
-- [ ] Plan card editable in the Director pane; on confirm Director gets a `plan_accepted` user message
-- [ ] `spawn_agent` tool: Director calls it once per row of the accepted plan
-- [ ] System messages render in the Director chat ("Spawned 6 agents · pm-01 running")
-- [ ] HANDOFF flow: agent calls `complete_task` → emits `HANDOFF` log line → Director notified next turn
+- [x] Director system prompt (planner-supervisor role) in `src/main/director/prompt.ts`
+- [x] Plan emission via **structured output** rather than MCP tool — Director outputs a fenced `orchestrator-plan` JSON block; UI auto-detects + renders a card. Same UX, far less plumbing for v1. Real MCP tools deferred.
+- [x] Plan card with Accept button (no in-place editing in v1). On Accept the UI calls `pickWorkspace()` then `acceptPlan({ rows, workspace })`.
+- [x] `acceptPlan` IPC spawns each row via the existing M2 runner with `spawnedBy: 'director'`; pushes a "Plan accepted. Spawned: …" message back to the Director session.
+- [x] System messages render in the chat (`who: 'system'`, name in cyan)
+- [x] HANDOFF flow: when a Director-spawned agent's `result` event fires, `director.notifyAgentDone(name, summary)` queues a `[handoff]` user message into the Director session — Director sees it on the next turn and replies.
+- [x] Multi-turn via `query({ options: { resume: sessionId } })` — one Director session per app lifetime; message queue serialises user inputs and handoff notifications so we never overlap turns.
 
 ### M5 — Budgets + polish  *(not started)*
 
