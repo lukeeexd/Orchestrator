@@ -1,4 +1,5 @@
-import type { AgentRole, PlanRow } from '../../shared/types';
+import { useState } from 'react';
+import type { AgentRole, DirectorMode, PlanRow } from '../../shared/types';
 
 const ROLE_TINT: Record<AgentRole, string> = {
   pm: '#4ade80',
@@ -11,23 +12,45 @@ const ROLE_TINT: Record<AgentRole, string> = {
 interface Props {
   rows: PlanRow[];
   accepted: boolean;
+  mode: DirectorMode;
+  onSpawn: () => Promise<void>;
 }
 
-export function PlanCard({ rows, accepted }: Props) {
+export function PlanCard({ rows, accepted, mode, onSpawn }: Props) {
+  const [busy, setBusy] = useState(false);
+
+  const handleSpawn = async () => {
+    setBusy(true);
+    try {
+      await onSpawn();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="dir-plan">
       <div className="dir-plan-head">
         <span>Plan</span>
-        <span
-          className="badge"
-          style={
-            accepted
-              ? undefined
-              : { background: 'var(--sub-2)', color: 'var(--muted)' }
-          }
-        >
-          {accepted ? 'accepted' : 'spawning…'}
-        </span>
+        {accepted ? (
+          <span className="badge">accepted</span>
+        ) : mode === 'manual' ? (
+          <button
+            className="tb-btn primary"
+            style={{ height: 20, marginLeft: 'auto' }}
+            disabled={busy}
+            onClick={handleSpawn}
+          >
+            {busy ? 'Spawning…' : 'Spawn this'}
+          </button>
+        ) : (
+          <span
+            className="badge"
+            style={{ background: 'var(--sub-2)', color: 'var(--muted)' }}
+          >
+            spawning…
+          </span>
+        )}
       </div>
       {rows.map((p, i) => (
         <div className="plan-row" key={`${p.name}-${i}`}>

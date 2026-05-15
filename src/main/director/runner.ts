@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
-import type { DirectorMessage, PlanRow } from '../../shared/types';
+import type { DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
 import { readSettings } from '../settings';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractPlan } from './parse';
@@ -12,8 +12,8 @@ export interface DirectorSinks {
 }
 
 type QueueEntry =
-  | { kind: 'user'; body: string }
-  | { kind: 'system'; body: string };
+  | { kind: 'user'; body: string; mode: DirectorMode }
+  | { kind: 'system'; body: string; mode: DirectorMode };
 
 const messages: DirectorMessage[] = [];
 const queue: QueueEntry[] = [];
@@ -45,7 +45,10 @@ export function setSinks(s: DirectorSinks): void {
   sinks = s;
 }
 
-export function sendFromUser(body: string): void {
+let currentMode: DirectorMode = 'auto';
+
+export function sendFromUser(body: string, mode: DirectorMode): void {
+  currentMode = mode;
   pushMessage({
     id: randomUUID(),
     who: 'user',
@@ -53,7 +56,7 @@ export function sendFromUser(body: string): void {
     time: timeOnly(),
     body,
   });
-  queue.push({ kind: 'user', body });
+  queue.push({ kind: 'user', body, mode });
   void pump();
 }
 
@@ -71,7 +74,7 @@ export function notifyAgentDone(agentName: string, summary: string): void {
   // Don't render the raw handoff text in chat — render the short system msg
   // above for the user, and queue the longer text as the actual prompt to
   // the Director session.
-  queue.push({ kind: 'system', body });
+  queue.push({ kind: 'system', body, mode: currentMode });
   void pump();
 }
 
@@ -86,14 +89,14 @@ async function pump(): Promise<void> {
     while (queue.length > 0) {
       const next = queue.shift();
       if (!next) break;
-      await runTurn(next.body);
+      await runTurn(next.body, next.mode);
     }
   } finally {
     busy = false;
   }
 }
 
-async function runTurn(promptBody: string): Promise<void> {
+async function runTurn(promptBody: string, mode: DirectorMode): Promise<void> {
   const settings = readSettings();
   const env: Record<string, string | undefined> = { ...process.env };
   if (settings.oauthToken) {
@@ -135,7 +138,7 @@ async function runTurn(promptBody: string): Promise<void> {
 
   try {
     const q = sdk.query({
-      prompt: promptBody,
+      prompt: `[mode: ${mode}] ${promptBody}`,
       options: queryOptions,
     });
 
@@ -202,6 +205,7 @@ export function acknowledgePlanAccepted(
   queue.push({
     kind: 'system',
     body: `Plan accepted. Spawned agents:\n${lines}\n\nReply with "ok" or any additional guidance.`,
+    mode: currentMode,
   });
   void pump();
 }

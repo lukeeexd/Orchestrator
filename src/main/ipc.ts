@@ -92,8 +92,12 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IpcChannels.DirectorSend,
-    (_event, body: string): { ok: true } => {
-      director.sendFromUser(body);
+    (
+      _event,
+      body: string,
+      mode: import('../shared/types').DirectorMode,
+    ): { ok: true } => {
+      director.sendFromUser(body, mode);
       return { ok: true };
     },
   );

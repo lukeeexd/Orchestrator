@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { DirectorMessage, DirectorMode } from '../shared/types';
 import { useLocalStorageState } from './hooks/useLocalStorageState';
 import { useAgents } from './hooks/useAgents';
 import { useDirector } from './hooks/useDirector';
@@ -56,42 +57,51 @@ export function App() {
     'orchestrator.workspace',
     '',
   );
+  const [mode, setMode] = useLocalStorageState<DirectorMode>(
+    'orchestrator.directorMode',
+    'auto',
+  );
   const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents();
   const { messages, send, busy } = useDirector();
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
 
   const handledPlans = useRef<Set<string>>(new Set());
 
+  const spawnPlan = async (msg: DirectorMessage) => {
+    if (!msg.plan || msg.planAccepted) return;
+    if (handledPlans.current.has(msg.id)) return;
+    handledPlans.current.add(msg.id);
+    let ws = workspace;
+    if (!ws) {
+      const { path } = await window.api.pickWorkspace();
+      if (!path) {
+        handledPlans.current.delete(msg.id);
+        return;
+      }
+      ws = path;
+      setWorkspace(ws);
+    }
+    try {
+      await window.api.acceptPlan({ rows: msg.plan, workspace: ws });
+    } catch (e) {
+      console.error('[orchestrator] spawn failed', e);
+      handledPlans.current.delete(msg.id);
+    }
+  };
+
+  // Auto-spawn plans in 'auto' mode. In 'manual' mode the user clicks
+  // "Spawn this" on the plan card if they want it.
   useEffect(() => {
+    if (mode !== 'auto') return;
     void (async () => {
       for (const msg of messages) {
-        if (
-          !msg.plan ||
-          msg.planAccepted ||
-          handledPlans.current.has(msg.id)
-        ) {
-          continue;
-        }
-        handledPlans.current.add(msg.id);
-        let ws = workspace;
-        if (!ws) {
-          const { path } = await window.api.pickWorkspace();
-          if (!path) {
-            handledPlans.current.delete(msg.id);
-            return;
-          }
-          ws = path;
-          setWorkspace(ws);
-        }
-        try {
-          await window.api.acceptPlan({ rows: msg.plan, workspace: ws });
-        } catch (e) {
-          console.error('[orchestrator] auto-spawn failed', e);
-          handledPlans.current.delete(msg.id);
+        if (msg.plan && !msg.planAccepted) {
+          await spawnPlan(msg);
         }
       }
     })();
-  }, [messages, workspace, setWorkspace]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, mode, workspace]);
 
   const changeWorkspace = async () => {
     const { path } = await window.api.pickWorkspace();
@@ -116,7 +126,10 @@ export function App() {
               width={dirW}
               messages={messages}
               busy={busy}
+              mode={mode}
+              onModeChange={setMode}
               onSend={send}
+              onSpawnPlan={spawnPlan}
             />
             <ResizeHandle
               value={dirW}

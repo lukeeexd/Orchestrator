@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { DirectorMessage } from '../../shared/types';
+import type { DirectorMessage, DirectorMode } from '../../shared/types';
 
 interface UseDirectorResult {
   messages: DirectorMessage[];
-  send: (body: string) => Promise<void>;
+  send: (body: string, mode: DirectorMode) => Promise<void>;
   busy: boolean;
 }
 
@@ -44,10 +44,10 @@ export function useDirector(): UseDirectorResult {
     };
   }, []);
 
-  const send = useCallback(async (body: string) => {
+  const send = useCallback(async (body: string, mode: DirectorMode) => {
     if (!body.trim()) return;
     setBusy(true);
-    await window.api.sendToDirector(body);
+    await window.api.sendToDirector(body, mode);
   }, []);
 
   return { messages, send, busy };

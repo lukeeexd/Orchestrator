@@ -1,6 +1,7 @@
 import type {
   Agent,
   DirectorMessage,
+  DirectorMode,
   LogLine,
   PlanRow,
   SpawnAgentRequest,
@@ -92,7 +93,7 @@ export interface OrchestratorApi {
   abortAgent: (id: string) => Promise<{ ok: boolean }>;
   pickWorkspace: () => Promise<PickWorkspaceResponse>;
   listDirectorMessages: () => Promise<DirectorMessage[]>;
-  sendToDirector: (body: string) => Promise<{ ok: true }>;
+  sendToDirector: (body: string, mode: DirectorMode) => Promise<{ ok: true }>;
   acceptPlan: (req: AcceptPlanRequest) => Promise<AcceptPlanResponse>;
   abortDirector: () => Promise<{ ok: true }>;
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;

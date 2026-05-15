@@ -47,8 +47,8 @@ const api: OrchestratorApi = {
 
   listDirectorMessages: () =>
     ipcRenderer.invoke(IpcChannels.DirectorList) as Promise<DirectorMessage[]>,
-  sendToDirector: (body) =>
-    ipcRenderer.invoke(IpcChannels.DirectorSend, body) as Promise<{ ok: true }>,
+  sendToDirector: (body, mode) =>
+    ipcRenderer.invoke(IpcChannels.DirectorSend, body, mode) as Promise<{ ok: true }>,
   acceptPlan: (req: AcceptPlanRequest) =>
     ipcRenderer.invoke(
       IpcChannels.DirectorAcceptPlan,

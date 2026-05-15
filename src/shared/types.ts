@@ -57,6 +57,8 @@ export interface PlanRow {
   task: string;
 }
 
+export type DirectorMode = 'auto' | 'manual';
+
 export type DirectorWho = 'user' | 'director' | 'system';
 
 export interface DirectorMessage {

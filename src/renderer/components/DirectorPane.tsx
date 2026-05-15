@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import type { DirectorMessage } from '../../shared/types';
+import type { DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
 import { Icon } from './Icon';
 import { PlanCard } from './PlanCard';
 
@@ -7,17 +7,28 @@ interface Props {
   width: number;
   messages: DirectorMessage[];
   busy: boolean;
-  onSend: (body: string) => Promise<void>;
+  mode: DirectorMode;
+  onModeChange: (next: DirectorMode) => void;
+  onSend: (body: string, mode: DirectorMode) => Promise<void>;
+  onSpawnPlan: (msg: DirectorMessage) => Promise<void>;
 }
 
-export function DirectorPane({ width, messages, busy, onSend }: Props) {
+export function DirectorPane({
+  width,
+  messages,
+  busy,
+  mode,
+  onModeChange,
+  onSend,
+  onSpawnPlan,
+}: Props) {
   return (
     <div className="pane director" style={{ width }}>
       <div className="pane-head">
         <span className="title">
           <b>Director</b>
         </span>
-        <span className="meta">claude-sonnet-4-6</span>
+        <ModeToggle mode={mode} onChange={onModeChange} />
         <span className="spacer" />
         {busy && (
           <span className="meta" style={{ color: 'var(--accent)' }}>
@@ -30,17 +41,42 @@ export function DirectorPane({ width, messages, busy, onSend }: Props) {
       </div>
 
       {messages.length === 0 ? (
-        <EmptyChat />
+        <EmptyChat mode={mode} />
       ) : (
-        <Chat messages={messages} />
+        <Chat messages={messages} mode={mode} onSpawnPlan={onSpawnPlan} />
       )}
 
-      <Composer busy={busy} onSend={onSend} />
+      <Composer busy={busy} mode={mode} onSend={(body) => onSend(body, mode)} />
     </div>
   );
 }
 
-function EmptyChat() {
+function ModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: DirectorMode;
+  onChange: (next: DirectorMode) => void;
+}) {
+  return (
+    <div className="mode-toggle" title="Auto: Director plans and auto-spawns. Manual: Director advises only.">
+      <button
+        className={mode === 'auto' ? 'on' : ''}
+        onClick={() => onChange('auto')}
+      >
+        auto
+      </button>
+      <button
+        className={mode === 'manual' ? 'on' : ''}
+        onClick={() => onChange('manual')}
+      >
+        manual
+      </button>
+    </div>
+  );
+}
+
+function EmptyChat({ mode }: { mode: DirectorMode }) {
   return (
     <div className="empty">
       <div className="empty-glyph">
@@ -48,9 +84,9 @@ function EmptyChat() {
       </div>
       <div className="empty-title">Awaiting your first task</div>
       <div className="empty-body">
-        Describe what you want built, refactored, or investigated. The
-        Director will plan the work and propose a fleet of agents to
-        carry it out.
+        {mode === 'auto'
+          ? 'Describe what you want built. The Director will plan the work and auto-spawn the agents.'
+          : 'Describe what you want built. The Director will advise on roles + approach — you spawn the agents yourself from the workspace pane.'}
       </div>
       <div className="empty-hints">
         <span className="empty-hint">
@@ -67,7 +103,15 @@ function EmptyChat() {
   );
 }
 
-function Chat({ messages }: { messages: DirectorMessage[] }) {
+function Chat({
+  messages,
+  mode,
+  onSpawnPlan,
+}: {
+  messages: DirectorMessage[];
+  mode: DirectorMode;
+  onSpawnPlan: (msg: DirectorMessage) => Promise<void>;
+}) {
   const tailRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     tailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -76,14 +120,22 @@ function Chat({ messages }: { messages: DirectorMessage[] }) {
   return (
     <div className="chat">
       {messages.map((m) => (
-        <Message key={m.id} message={m} />
+        <Message key={m.id} message={m} mode={mode} onSpawn={onSpawnPlan} />
       ))}
       <div ref={tailRef} />
     </div>
   );
 }
 
-function Message({ message }: { message: DirectorMessage }) {
+function Message({
+  message,
+  mode,
+  onSpawn,
+}: {
+  message: DirectorMessage;
+  mode: DirectorMode;
+  onSpawn: (msg: DirectorMessage) => Promise<void>;
+}) {
   return (
     <div className="msg">
       <div className={'msg-head ' + message.who}>
@@ -104,6 +156,8 @@ function Message({ message }: { message: DirectorMessage }) {
         <PlanCard
           rows={message.plan}
           accepted={message.planAccepted === true}
+          mode={mode}
+          onSpawn={() => onSpawn(message)}
         />
       )}
     </div>
@@ -112,9 +166,11 @@ function Message({ message }: { message: DirectorMessage }) {
 
 function Composer({
   busy,
+  mode,
   onSend,
 }: {
   busy: boolean;
+  mode: DirectorMode;
   onSend: (body: string) => Promise<void>;
 }) {
   const [text, setText] = useState('');
@@ -140,7 +196,11 @@ function Composer({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="Tell the Director what to do next…"
+        placeholder={
+          mode === 'auto'
+            ? 'Describe a task — Director will plan & auto-spawn…'
+            : 'Ask the Director for advice…'
+        }
         rows={3}
         disabled={busy}
       />
