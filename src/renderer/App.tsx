@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useLocalStorageState } from './hooks/useLocalStorageState';
+import { useAgents } from './hooks/useAgents';
 import { TopBar } from './components/TopBar';
 import { LeftRail, type RailScreen } from './components/LeftRail';
 import { StatusBar } from './components/StatusBar';
@@ -50,6 +51,7 @@ export function App() {
     'orchestrator.drawerW',
     460,
   );
+  const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents();
 
   const isHome = active === 'director' || active === 'agents';
 
@@ -57,7 +59,11 @@ export function App() {
     <div className="app">
       <TopBar />
       <div className="body">
-        <LeftRail active={active} agentCount={0} onSelect={setActive} />
+        <LeftRail
+          active={active}
+          agentCount={agents.length}
+          onSelect={setActive}
+        />
 
         {isHome ? (
           <>
@@ -69,7 +75,13 @@ export function App() {
               max={640}
               edge="left"
             />
-            <AgentsPane />
+            <AgentsPane
+              agents={agents}
+              selectedId={selectedId}
+              expanded={expanded}
+              onSelect={setSelectedId}
+              onToggle={toggle}
+            />
             <ResizeHandle
               value={drawerW}
               onChange={setDrawerW}
