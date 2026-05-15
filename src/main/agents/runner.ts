@@ -496,7 +496,10 @@ async function consumeQuery(
           cost: finalCost,
         });
         const entry = registry.get(agentId);
-        if (entry && entry.agent.spawnedBy === 'director') {
+        // Notify the Director on every completion — user-spawned, Director-
+        // spawned, or redirected. Director sees the live fleet block on each
+        // turn and can decide whether to comment briefly or stay quiet.
+        if (entry) {
           const summary = result.result ?? '';
           director.notifyAgentDone(entry.agent.name, summary);
         }
