@@ -33,6 +33,25 @@ export function readSettings(): Settings {
   try {
     const raw = fs.readFileSync(p, 'utf8');
     const parsed = JSON.parse(raw) as Partial<Settings>;
+
+    // One-time migration: the v1.0 defaults were ($1 / 100k / 600s) and
+    // surprised users who'd never set a budget. If we see all three at
+    // exactly those values, assume they're untouched legacy defaults and
+    // flip to unlimited. Writes back so the migration runs once.
+    if (
+      parsed.defaultBudgetUsd === 1.0 &&
+      parsed.defaultBudgetTokens === 100_000 &&
+      parsed.defaultBudgetSeconds === 600
+    ) {
+      parsed.defaultBudgetUsd = 0;
+      parsed.defaultBudgetTokens = 0;
+      parsed.defaultBudgetSeconds = 0;
+      const merged: Settings = { ...DEFAULTS, ...parsed };
+      fs.writeFileSync(p, JSON.stringify(merged, null, 2), 'utf8');
+      cached = merged;
+      return cached;
+    }
+
     cached = { ...DEFAULTS, ...parsed };
   } catch {
     cached = { ...DEFAULTS };
