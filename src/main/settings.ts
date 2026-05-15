@@ -5,6 +5,7 @@ import type { Settings } from '../shared/ipc';
 
 const DEFAULTS: Settings = {
   apiKey: '',
+  oauthToken: '',
   defaultModel: 'claude-sonnet-4-6',
 };
 

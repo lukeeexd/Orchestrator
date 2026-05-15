@@ -69,19 +69,9 @@ export async function spawnAgent(
   sinks.onAgent(agent);
 
   const settings = readSettings();
-  if (!settings.apiKey) {
-    const line: LogLine = {
-      ts: nowTs(),
-      kind: 'error',
-      msg: `ANTHROPIC_API_KEY is empty. Edit settings.json to add it, then spawn again.`,
-    };
-    sinks.onLog(id, line);
-    sinks.onPatch(id, { status: 'error', statusLabel: 'No API key' });
-    return { agentId: id };
-  }
 
   // Fire-and-forget the async run; events stream via sinks.
-  run(id, req, wt.workdir, settings.apiKey, controller, sinks).catch((err: unknown) => {
+  run(id, req, wt.workdir, settings, controller, sinks).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
     sinks.onLog(id, { ts: nowTs(), kind: 'error', msg: `runner crashed: ${msg}` });
     sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
@@ -94,11 +84,24 @@ async function run(
   agentId: string,
   req: SpawnAgentRequest,
   workdir: string,
-  apiKey: string,
+  settings: { apiKey: string; oauthToken: string },
   controller: AbortController,
   sinks: RunnerSinks,
 ): Promise<void> {
   const role = ROLES[req.role];
+
+  // Auth resolution, in order of precedence:
+  // 1. Explicit OAuth token from settings → CLAUDE_CODE_OAUTH_TOKEN
+  // 2. Explicit API key from settings → ANTHROPIC_API_KEY
+  // 3. Nothing — fall through to the SDK's auto-discovery from ~/.claude
+  //    (works if you're already logged in via Claude Code CLI)
+  const env: Record<string, string | undefined> = { ...process.env };
+  if (settings.oauthToken) {
+    env.CLAUDE_CODE_OAUTH_TOKEN = settings.oauthToken;
+    delete env.ANTHROPIC_API_KEY;
+  } else if (settings.apiKey) {
+    env.ANTHROPIC_API_KEY = settings.apiKey;
+  }
 
   // SDK is ESM-only — load it dynamically from our CJS context.
   const sdk = await import('@anthropic-ai/claude-agent-sdk');
@@ -121,7 +124,7 @@ async function run(
       prompt: req.task,
       options: {
         cwd: workdir,
-        env: { ...process.env, ANTHROPIC_API_KEY: apiKey },
+        env,
         abortController: controller,
         permissionMode: 'bypassPermissions',
         agent: 'main',

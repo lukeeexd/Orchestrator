@@ -23,7 +23,10 @@ export interface AppPingResponse {
 }
 
 export interface Settings {
+  /** Anthropic Console API key (sk-ant-...). For Pro/Team plans, leave empty and use oauthToken or auto-discovery. */
   apiKey: string;
+  /** Long-lived OAuth token from `claude setup-token`. Takes precedence over apiKey when set. */
+  oauthToken: string;
   defaultModel: string;
 }
 
