@@ -151,19 +151,25 @@ export function SettingsScreen() {
 
           <div className="field">
             <span className="lbl">Default model</span>
-            <input
-              className="text-input"
-              list="known-models"
+            <select
+              className="text-input settings-select"
               value={draft.defaultModel}
               onChange={(e) => patch('defaultModel', e.target.value)}
-              spellCheck={false}
-              autoComplete="off"
-            />
-            <datalist id="known-models">
+            >
+              {/* If the saved value isn't one of the known ids, surface it
+                  as a "custom" entry so we don't silently lose it on save. */}
+              {!KNOWN_MODELS.includes(draft.defaultModel) &&
+                draft.defaultModel && (
+                  <option value={draft.defaultModel}>
+                    {draft.defaultModel} (custom)
+                  </option>
+                )}
               {KNOWN_MODELS.map((m) => (
-                <option key={m} value={m} />
+                <option key={m} value={m}>
+                  {m}
+                </option>
               ))}
-            </datalist>
+            </select>
           </div>
         </section>
 
