@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { app } from 'electron';
-import type { DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
+import type {
+  DirectorMessage,
+  DirectorMode,
+  EffortLevel,
+  PlanRow,
+} from '../../shared/types';
+import { DEFAULT_EFFORT } from '../../shared/efforts';
 import { readSettings } from '../settings';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractDirectives } from './parse';
@@ -230,12 +236,16 @@ class DirectorSession {
     };
     this.pushMessage(directorMessage);
 
-    // Per-project Director model wins over the global default.
+    // Per-project Director model + effort win over the global defaults.
     const project = getProject(this.projectId);
     const directorModel =
       project?.directorModel ||
       settings.defaultModel ||
       'claude-sonnet-4-6';
+    const directorEffort: EffortLevel =
+      project?.directorEffort ||
+      settings.defaultEffort ||
+      DEFAULT_EFFORT;
 
     const queryOptions = {
       cwd: app.getPath('userData'),
@@ -249,6 +259,7 @@ class DirectorSession {
           prompt: DIRECTOR_SYSTEM_PROMPT,
           tools: [] as string[],
           model: directorModel,
+          effort: directorEffort,
         },
       },
       ...(this.sessionId ? { resume: this.sessionId } : {}),

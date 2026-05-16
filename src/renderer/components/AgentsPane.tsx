@@ -1,4 +1,4 @@
-import type { Agent } from '../../shared/types';
+import type { Agent, EffortLevel } from '../../shared/types';
 import { Icon } from './Icon';
 import { AgentRow } from './AgentRow';
 import { SpawnAgentForm } from './SpawnAgentForm';
@@ -10,6 +10,7 @@ interface Props {
   workspace: string;
   projectId: string;
   defaultModel: string;
+  defaultEffort: EffortLevel;
   spawning: boolean;
   setSpawning: (next: boolean) => void;
   onSelect: (id: string) => void;
@@ -23,6 +24,7 @@ export function AgentsPane({
   workspace,
   projectId,
   defaultModel,
+  defaultEffort,
   spawning,
   setSpawning,
   onSelect,
@@ -72,6 +74,7 @@ export function AgentsPane({
           projectId={projectId}
           defaultWorkspace={workspace}
           defaultModel={defaultModel}
+          defaultEffort={defaultEffort}
           onCancel={() => setSpawning(false)}
           onSpawned={() => setSpawning(false)}
         />

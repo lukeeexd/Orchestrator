@@ -5,10 +5,17 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
-import type { Agent, DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
+import type {
+  Agent,
+  DirectorMessage,
+  DirectorMode,
+  EffortLevel,
+  PlanRow,
+} from '../../shared/types';
 import { Icon } from './Icon';
 import { PlanCard } from './PlanCard';
 import { ModelPicker } from './ModelPicker';
+import { EffortPicker } from './EffortPicker';
 
 const ROLE_TINT: Record<Agent['role'], string> = {
   pm: '#4ade80',
@@ -25,8 +32,10 @@ interface Props {
   busy: boolean;
   mode: DirectorMode;
   model: string;
+  effort: EffortLevel;
   onModeChange: (next: DirectorMode) => void;
   onModelChange: (next: string) => void;
+  onEffortChange: (next: EffortLevel) => void;
   onSend: (
     body: string,
     mode: DirectorMode,
@@ -49,8 +58,10 @@ export function DirectorPane({
   busy,
   mode,
   model,
+  effort,
   onModeChange,
   onModelChange,
+  onEffortChange,
   onSend,
   onSpawnPlan,
 }: Props) {
@@ -62,6 +73,7 @@ export function DirectorPane({
         </span>
         <ModeToggle mode={mode} onChange={onModeChange} />
         <ModelPicker value={model} onChange={onModelChange} compact />
+        <EffortPicker value={effort} onChange={onEffortChange} compact />
         <span className="spacer" />
         {busy && (
           <span className="meta" style={{ color: 'var(--accent)' }}>

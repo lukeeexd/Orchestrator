@@ -3,11 +3,13 @@ import type {
   Agent,
   AgentBudget,
   AgentRole,
+  EffortLevel,
   LogLine,
   RedirectAgentRequest,
   SpawnAgentRequest,
 } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
+import { DEFAULT_EFFORT } from '../../shared/efforts';
 import { estimateCost } from '../../shared/rates';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';
@@ -105,12 +107,13 @@ export async function spawnAgent(
   const id = randomUUID();
   const controller = new AbortController();
 
-  // Model cascade: explicit per-spawn override → settings.defaultModel →
-  // the role's hardcoded default. Lets users pick a model per agent
-  // without touching global settings.
+  // Cascade per-spawn → settings → role/SDK default for model + effort.
+  // Lets users pick both per agent without editing global settings.
   const baseSettings = readSettings();
   const effectiveModel =
     req.model || baseSettings.defaultModel || role.model;
+  const effectiveEffort: EffortLevel =
+    req.effort || baseSettings.defaultEffort || DEFAULT_EFFORT;
   const budget: AgentBudget = {
     usd: req.budget?.usd ?? baseSettings.defaultBudgetUsd,
     tokens: req.budget?.tokens ?? baseSettings.defaultBudgetTokens,
@@ -131,6 +134,7 @@ export async function spawnAgent(
     cost: 0,
     elapsed: '00:00',
     model: effectiveModel,
+    effort: effectiveEffort,
     workspace: req.workspace,
     budget,
     spawnedBy: req.spawnedBy ?? 'user',
@@ -181,7 +185,14 @@ async function run(
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
   try {
-    const effectiveModel = settings.defaultModel || role.model;
+    // The agent's model + effort were resolved in spawnAgent and saved
+    // to the registry. Read from there so we honour per-spawn overrides
+    // (and any setAgentModel / setAgentEffort changes that landed between
+    // spawnAgent and this point).
+    const entry = registry.get(agentId);
+    const effectiveModel = entry?.agent.model || settings.defaultModel || role.model;
+    const effectiveEffort: EffortLevel =
+      entry?.agent.effort || DEFAULT_EFFORT;
     const attachmentBlock =
       req.attachments && req.attachments.length > 0
         ? inlineAttachments(req.attachments)
@@ -208,6 +219,7 @@ ${req.task}`;
             prompt: role.systemPrompt,
             tools: role.tools,
             model: effectiveModel,
+            effort: effectiveEffort,
           },
         },
       },
@@ -257,7 +269,15 @@ export async function redirectAgent(
   });
   completions.set(req.agentId, donePromise);
 
-  runRedirect(req.agentId, req.body, req.attachments, req.model, controller, sinks)
+  runRedirect(
+    req.agentId,
+    req.body,
+    req.attachments,
+    req.model,
+    req.effort,
+    controller,
+    sinks,
+  )
     .catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       sinks.onLog(req.agentId, {
@@ -280,6 +300,7 @@ async function runRedirect(
   body: string,
   attachments: string[] | undefined,
   modelOverride: string | undefined,
+  effortOverride: EffortLevel | undefined,
   controller: AbortController,
   sinks: RunnerSinks,
 ): Promise<void> {
@@ -290,16 +311,24 @@ async function runRedirect(
   const sdk = await import('@anthropic-ai/claude-agent-sdk');
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
-  // If the redirect comes with a new model, persist it on the agent so
-  // future redirects + the drawer's Config tab show the latest. The SDK
-  // call below explicitly passes the model in the agent definition so
-  // the resumed turn actually uses it (rather than inheriting the
+  // If the redirect comes with a new model/effort, persist it on the
+  // agent so future redirects + the Drawer's Config tab show the latest.
+  // The SDK call below explicitly passes both in the agent definition so
+  // the resumed turn actually uses them (rather than inheriting the
   // session's original).
   const role = ROLES[entry.agent.role];
   const effectiveModel = modelOverride || entry.agent.model;
-  if (modelOverride && modelOverride !== entry.agent.model) {
-    registry.patch(agentId, { model: effectiveModel });
-    sinks.onPatch(agentId, { model: effectiveModel });
+  const effectiveEffort: EffortLevel =
+    effortOverride || entry.agent.effort || DEFAULT_EFFORT;
+  const modelChanged = !!modelOverride && modelOverride !== entry.agent.model;
+  const effortChanged =
+    !!effortOverride && effortOverride !== entry.agent.effort;
+  if (modelChanged || effortChanged) {
+    const patch: Partial<typeof entry.agent> = {};
+    if (modelChanged) patch.model = effectiveModel;
+    if (effortChanged) patch.effort = effectiveEffort;
+    registry.patch(agentId, patch);
+    sinks.onPatch(agentId, patch);
   }
 
   try {
@@ -308,13 +337,14 @@ async function runRedirect(
     const prompt = `${attachmentBlock}Continuing task. New instruction:
 ${body}`;
 
+    const parts: string[] = [];
+    if (modelChanged) parts.push(`model → ${effectiveModel}`);
+    if (effortChanged) parts.push(`effort → ${effectiveEffort}`);
     sinks.onLog(agentId, {
       ts: nowTs(),
       kind: 'note',
       msg: `Redirected — resuming session ${entry.agent.sessionId}${
-        modelOverride && modelOverride !== entry.agent.model
-          ? ` · model → ${effectiveModel}`
-          : ''
+        parts.length > 0 ? ` · ${parts.join(', ')}` : ''
       }`,
     });
 
@@ -327,7 +357,8 @@ ${body}`;
         permissionMode: 'bypassPermissions',
         resume: entry.agent.sessionId,
         // Pass the agent config explicitly so the resumed turn uses
-        // our chosen model + tools, not whatever the saved session had.
+        // our chosen model + tools + effort, not whatever the saved
+        // session had.
         agent: 'main',
         agents: {
           main: {
@@ -335,6 +366,7 @@ ${body}`;
             prompt: role.systemPrompt,
             tools: role.tools,
             model: effectiveModel,
+            effort: effectiveEffort,
           },
         },
       },

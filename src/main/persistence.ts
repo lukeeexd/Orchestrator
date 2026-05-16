@@ -4,6 +4,7 @@ import type {
   LogLine,
   ToolCall,
 } from '../shared/types';
+import { DEFAULT_EFFORT, isEffortLevel } from '../shared/efforts';
 import { getDb, scheduleSave } from './db';
 
 let messageOrdering = 0;
@@ -192,8 +193,8 @@ export function saveAgent(a: Agent): void {
       (id, ordering, role, role_label, name, status, status_label, step, task,
        tokens, cost, elapsed, model, workspace,
        budget_usd, budget_tokens, budget_seconds,
-       spawned_by, started_at, session_id, project_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       spawned_by, started_at, session_id, project_id, effort)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     a.id,
@@ -217,6 +218,7 @@ export function saveAgent(a: Agent): void {
     a.startedAt,
     a.sessionId ?? null,
     a.projectId,
+    a.effort,
   ]);
   stmt.free();
   scheduleSave();
@@ -233,6 +235,8 @@ export function patchAgent(id: string, patch: Partial<Agent>): void {
   if (patch.cost !== undefined) { sets.push('cost = ?'); values.push(patch.cost); }
   if (patch.elapsed !== undefined) { sets.push('elapsed = ?'); values.push(patch.elapsed); }
   if (patch.sessionId !== undefined) { sets.push('session_id = ?'); values.push(patch.sessionId); }
+  if (patch.model !== undefined) { sets.push('model = ?'); values.push(patch.model); }
+  if (patch.effort !== undefined) { sets.push('effort = ?'); values.push(patch.effort); }
   if (sets.length === 0) return;
   values.push(id);
   const stmt = db.prepare(
@@ -262,13 +266,14 @@ export function loadAgents(): Agent[] {
   const res = db.exec(`
     SELECT id, ordering, role, role_label, name, status, status_label, step, task,
            tokens, cost, elapsed, model, workspace,
-           budget_usd, budget_tokens, budget_seconds, spawned_by, started_at, session_id, project_id
+           budget_usd, budget_tokens, budget_seconds, spawned_by, started_at, session_id, project_id, effort
     FROM agents ORDER BY ordering ASC
   `);
   if (res.length === 0) return [];
   const out: Agent[] = [];
   for (const row of res[0].values) {
     const sid = row[19];
+    const effortRaw = row[21];
     out.push({
       id: asStr(row[0]),
       projectId: asStr(row[20]),
@@ -293,6 +298,9 @@ export function loadAgents(): Agent[] {
       log: [],
       startedAt: asInt(row[18]),
       sessionId: typeof sid === 'string' && sid.length > 0 ? sid : undefined,
+      // Agents stored before schema v8 don't have an effort column; fall
+      // back to DEFAULT_EFFORT rather than carrying NULL through to the SDK.
+      effort: isEffortLevel(effortRaw) ? effortRaw : DEFAULT_EFFORT,
     });
     agentOrdering = Math.max(agentOrdering, asInt(row[1]));
   }

@@ -53,6 +53,10 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.AgentSetModel, id, model) as Promise<{
       ok: boolean;
     }>,
+  setAgentEffort: (id, effort) =>
+    ipcRenderer.invoke(IpcChannels.AgentSetEffort, id, effort) as Promise<{
+      ok: boolean;
+    }>,
   pickWorkspace: () =>
     ipcRenderer.invoke(IpcChannels.AgentPickWorkspace) as Promise<PickWorkspaceResponse>,
   pickAttachments: () =>
@@ -116,6 +120,12 @@ const api: OrchestratorApi = {
       IpcChannels.ProjectSetDirectorModel,
       id,
       model,
+    ) as Promise<{ ok: true }>,
+  setProjectDirectorEffort: (id, effort) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetDirectorEffort,
+      id,
+      effort,
     ) as Promise<{ ok: true }>,
   deleteProject: (id) =>
     ipcRenderer.invoke(IpcChannels.ProjectDelete, id) as Promise<{ ok: true }>,

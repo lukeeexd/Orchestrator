@@ -31,9 +31,12 @@ import {
   listProjects,
   renameProject,
   setActiveProjectId,
+  setProjectDirectorEffort,
   setProjectDirectorModel,
   setProjectWorkspace,
 } from './projects';
+import { isEffortLevel } from '../shared/efforts';
+import type { EffortLevel } from '../shared/types';
 
 const startedAt = Date.now();
 
@@ -118,6 +121,13 @@ export function registerIpcHandlers(): void {
     IpcChannels.ProjectSetDirectorModel,
     (_event, id: string, model: string): { ok: true } => {
       setProjectDirectorModel(id, model);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetDirectorEffort,
+    (_event, id: string, effort: EffortLevel | null): { ok: true } => {
+      setProjectDirectorEffort(id, isEffortLevel(effort) ? effort : null);
       return { ok: true };
     },
   );
@@ -207,6 +217,17 @@ export function registerIpcHandlers(): void {
       const updated = registry.patch(id, { model });
       if (!updated) return { ok: false };
       agentSinks.onPatch(id, { model });
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentSetEffort,
+    (_event, id: string, effort: EffortLevel): { ok: boolean } => {
+      if (!isEffortLevel(effort)) return { ok: false };
+      const updated = registry.patch(id, { effort });
+      if (!updated) return { ok: false };
+      agentSinks.onPatch(id, { effort });
       return { ok: true };
     },
   );

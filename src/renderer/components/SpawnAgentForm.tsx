@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { AgentRole } from '../../shared/types';
+import type { AgentRole, EffortLevel } from '../../shared/types';
 import { Icon } from './Icon';
 import { ModelPicker } from './ModelPicker';
+import { EffortPicker } from './EffortPicker';
 
 const ROLES: { id: AgentRole; label: string; tint: string }[] = [
   { id: 'pm', label: 'Project Manager', tint: '#4ade80' },
@@ -18,6 +19,8 @@ interface Props {
   defaultWorkspace: string;
   /** Pre-fill the model from the project's Director model. */
   defaultModel: string;
+  /** Pre-fill the effort from the project's Director effort. */
+  defaultEffort: EffortLevel;
   projectId: string;
 }
 
@@ -33,11 +36,13 @@ export function SpawnAgentForm({
   onSpawned,
   defaultWorkspace,
   defaultModel,
+  defaultEffort,
   projectId,
 }: Props) {
   const [role, setRole] = useState<AgentRole>('coder');
   const [workspace, setWorkspace] = useState(defaultWorkspace);
   const [model, setModel] = useState(defaultModel);
+  const [effort, setEffort] = useState<EffortLevel>(defaultEffort);
   const [task, setTask] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +115,8 @@ export function SpawnAgentForm({
         role,
         workspace,
         task,
-        ...(model && model !== defaultModel ? { model } : { model }),
+        ...(model ? { model } : {}),
+        ...(effort ? { effort } : {}),
         ...(hasBudget ? { budget } : {}),
         ...(okAttachments.length > 0 ? { attachments: okAttachments } : {}),
       });
@@ -174,6 +180,11 @@ export function SpawnAgentForm({
           <div className="field">
             <span className="lbl">Model</span>
             <ModelPicker value={model} onChange={setModel} />
+          </div>
+
+          <div className="field">
+            <span className="lbl">Reasoning effort</span>
+            <EffortPicker value={effort} onChange={setEffort} />
           </div>
 
           <div className="field">

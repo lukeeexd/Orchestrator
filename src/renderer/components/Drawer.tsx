@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import type { Agent, AgentRole } from '../../shared/types';
+import type { Agent, AgentRole, EffortLevel } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { Icon } from './Icon';
 import { LogLineRow } from './LogLineRow';
 import { ModelPicker } from './ModelPicker';
+import { EffortPicker } from './EffortPicker';
 
 const ROLE_TINT: Record<AgentRole, string> = {
   pm: '#4ade80',
@@ -141,6 +142,7 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
         <RedirectForm
           agentId={agent.id}
           currentModel={agent.model}
+          currentEffort={agent.effort}
           onClose={() => setRedirectOpen(false)}
         />
       )}
@@ -151,14 +153,17 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
 function RedirectForm({
   agentId,
   currentModel,
+  currentEffort,
   onClose,
 }: {
   agentId: string;
   currentModel: string;
+  currentEffort: EffortLevel;
   onClose: () => void;
 }) {
   const [body, setBody] = useState('');
   const [model, setModel] = useState(currentModel);
+  const [effort, setEffort] = useState<EffortLevel>(currentEffort);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -172,6 +177,7 @@ function RedirectForm({
         agentId,
         body: trimmed,
         ...(model !== currentModel ? { model } : {}),
+        ...(effort !== currentEffort ? { effort } : {}),
       });
       if (!res.ok) {
         setError(res.error ?? 'redirect failed');
@@ -190,6 +196,10 @@ function RedirectForm({
       <div className="redirect-model-row">
         <span className="lbl">Model</span>
         <ModelPicker value={model} onChange={setModel} compact />
+      </div>
+      <div className="redirect-model-row">
+        <span className="lbl">Effort</span>
+        <EffortPicker value={effort} onChange={setEffort} compact />
       </div>
       <textarea
         className="text-input task-input"
@@ -404,6 +414,23 @@ function ConfigTab({ agent }: { agent: Agent }) {
           {(agent.status === 'running' || agent.status === 'waiting') && (
             <div className="meta" style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)' }}>
               Active session keeps its current model. New value applies on next redirect.
+            </div>
+          )}
+        </span>
+      </div>
+      <div className="field">
+        <span className="lbl">Reasoning effort</span>
+        <span className="v">
+          <EffortPicker
+            value={agent.effort}
+            compact
+            onChange={(e) => {
+              if (e !== agent.effort) void window.api.setAgentEffort(agent.id, e);
+            }}
+          />
+          {(agent.status === 'running' || agent.status === 'waiting') && (
+            <div className="meta" style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)' }}>
+              Active session keeps its current effort. New value applies on next redirect.
             </div>
           )}
         </span>

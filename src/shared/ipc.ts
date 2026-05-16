@@ -19,6 +19,7 @@ export const IpcChannels = {
   AgentRemove: 'agent:remove',
   AgentRedirect: 'agent:redirect',
   AgentSetModel: 'agent:setModel',
+  AgentSetEffort: 'agent:setEffort',
   AgentPickWorkspace: 'agent:pickWorkspace',
   AttachmentPick: 'attachment:pick',
   DirectorList: 'director:list',
@@ -32,6 +33,7 @@ export const IpcChannels = {
   ProjectRename: 'project:rename',
   ProjectSetWorkspace: 'project:setWorkspace',
   ProjectSetDirectorModel: 'project:setDirectorModel',
+  ProjectSetDirectorEffort: 'project:setDirectorEffort',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
@@ -60,6 +62,8 @@ export interface Settings {
   /** Long-lived OAuth token from `claude setup-token`. Takes precedence over apiKey when set. */
   oauthToken: string;
   defaultModel: string;
+  /** Reasoning effort applied to Director and agents unless overridden. Defaults to 'high'. */
+  defaultEffort: import('./types').EffortLevel;
   /** Per-agent dollar cap. 0 = unlimited. */
   defaultBudgetUsd: number;
   /** Per-agent token cap (input + output). 0 = unlimited. */
@@ -138,6 +142,10 @@ export interface OrchestratorApi {
   removeAgent: (id: string) => Promise<{ ok: boolean }>;
   redirectAgent: (req: RedirectAgentRequest) => Promise<{ ok: boolean; error?: string }>;
   setAgentModel: (id: string, model: string) => Promise<{ ok: boolean }>;
+  setAgentEffort: (
+    id: string,
+    effort: import('./types').EffortLevel,
+  ) => Promise<{ ok: boolean }>;
   pickWorkspace: () => Promise<PickWorkspaceResponse>;
   pickAttachments: () => Promise<PickAttachmentsResponse>;
   listDirectorMessages: (projectId: string) => Promise<DirectorMessage[]>;
@@ -162,6 +170,10 @@ export interface OrchestratorApi {
   setActiveProject: (id: string) => Promise<{ ok: true }>;
   renameProject: (id: string, name: string) => Promise<{ ok: true }>;
   setProjectDirectorModel: (id: string, model: string) => Promise<{ ok: true }>;
+  setProjectDirectorEffort: (
+    id: string,
+    effort: import('./types').EffortLevel,
+  ) => Promise<{ ok: true }>;
   setProjectWorkspace: (id: string, workspace: string) => Promise<{ ok: true }>;
   deleteProject: (id: string) => Promise<{ ok: true }>;
   getActiveProjectId: () => Promise<string | null>;

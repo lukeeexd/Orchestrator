@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Settings } from '../../shared/ipc';
 import { Icon } from './Icon';
 import { ModelPicker } from './ModelPicker';
+import { EffortPicker } from './EffortPicker';
 
 export function SettingsScreen() {
   const [draft, setDraft] = useState<Settings | null>(null);
@@ -138,10 +139,14 @@ export function SettingsScreen() {
         </section>
 
         <section className="settings-section">
-          <h3 className="settings-h">Model</h3>
+          <h3 className="settings-h">Model &amp; effort</h3>
           <p className="settings-help">
-            Default model used by the Director and any new agent spawn.
-            Per-agent overrides aren&apos;t in v1 yet.
+            Defaults used by the Director and any new agent spawn. Both can
+            be overridden per project (Director header) or per agent (spawn
+            form / Drawer Config tab). Effort levels mirror Claude Code:
+            <code>low</code>/<code>medium</code>/<code>high</code> on all
+            models, <code>xhigh</code>/<code>max</code> on Opus 4.6/4.7 +
+            Sonnet 4.6.
           </p>
 
           <div className="field">
@@ -149,6 +154,14 @@ export function SettingsScreen() {
             <ModelPicker
               value={draft.defaultModel}
               onChange={(v) => patch('defaultModel', v)}
+            />
+          </div>
+
+          <div className="field">
+            <span className="lbl">Default effort</span>
+            <EffortPicker
+              value={draft.defaultEffort}
+              onChange={(v) => patch('defaultEffort', v)}
             />
           </div>
         </section>

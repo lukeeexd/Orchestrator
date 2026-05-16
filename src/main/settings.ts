@@ -2,11 +2,13 @@ import { app } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { Settings } from '../shared/ipc';
+import { DEFAULT_EFFORT, isEffortLevel } from '../shared/efforts';
 
 const DEFAULTS: Settings = {
   apiKey: '',
   oauthToken: '',
   defaultModel: 'claude-sonnet-4-6',
+  defaultEffort: DEFAULT_EFFORT,
   // Budgets default to 0 (unlimited). Caps are opt-in — set a non-zero
   // value here (or per spawn) to enforce one. The old $1 / 100k / 600s
   // safety belts were too restrictive (a single Opus 4.7 turn easily
@@ -56,7 +58,14 @@ export function readSettings(): Settings {
       return cached;
     }
 
-    cached = { ...DEFAULTS, ...parsed };
+    const merged: Settings = { ...DEFAULTS, ...parsed };
+    // Guard against a hand-edited or older settings.json with an invalid
+    // effort string. Fall back to DEFAULT_EFFORT instead of pushing a bad
+    // value through to the SDK.
+    if (!isEffortLevel(merged.defaultEffort)) {
+      merged.defaultEffort = DEFAULT_EFFORT;
+    }
+    cached = merged;
   } catch {
     cached = { ...DEFAULTS };
   }

@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { DirectorMessage, DirectorMode, Project } from '../shared/types';
+import type {
+  DirectorMessage,
+  DirectorMode,
+  EffortLevel,
+  Project,
+} from '../shared/types';
+import { DEFAULT_EFFORT } from '../shared/efforts';
 import { useLocalStorageState } from './hooks/useLocalStorageState';
 import { useAgents } from './hooks/useAgents';
 import { useDirector } from './hooks/useDirector';
@@ -71,6 +77,7 @@ export function App() {
     create: createProject,
     setWorkspace: setProjectWorkspace,
     setDirectorModel: setProjectDirectorModel,
+    setDirectorEffort: setProjectDirectorEffort,
     remove: removeProject,
   } = useProjects();
   const activeProject: Project | null =
@@ -78,6 +85,9 @@ export function App() {
   const workspace = activeProject?.workspace ?? '';
   const fallbackModel = settings?.defaultModel ?? 'claude-sonnet-4-6';
   const directorModel = activeProject?.directorModel || fallbackModel;
+  const fallbackEffort: EffortLevel = settings?.defaultEffort ?? DEFAULT_EFFORT;
+  const directorEffort: EffortLevel =
+    activeProject?.directorEffort || fallbackEffort;
 
   const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents(
     activeProjectId,
@@ -286,9 +296,13 @@ export function App() {
               busy={busy}
               mode={mode}
               model={directorModel}
+              effort={directorEffort}
               onModeChange={setMode}
               onModelChange={(m) => {
                 if (activeProjectId) void setProjectDirectorModel(activeProjectId, m);
+              }}
+              onEffortChange={(e) => {
+                if (activeProjectId) void setProjectDirectorEffort(activeProjectId, e);
               }}
               onSend={send}
               onSpawnPlan={spawnPlan}
@@ -307,6 +321,7 @@ export function App() {
               workspace={workspace}
               projectId={activeProjectId}
               defaultModel={directorModel}
+              defaultEffort={directorEffort}
               spawning={spawning}
               setSpawning={setSpawning}
               onSelect={setSelectedId}
