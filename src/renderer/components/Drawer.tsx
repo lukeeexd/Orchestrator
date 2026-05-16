@@ -394,7 +394,18 @@ function ConfigTab({ agent }: { agent: Agent }) {
       <div className="field">
         <span className="lbl">Model</span>
         <span className="v">
-          <code>{agent.model}</code>
+          <ModelPicker
+            value={agent.model}
+            compact
+            onChange={(m) => {
+              if (m && m !== agent.model) void window.api.setAgentModel(agent.id, m);
+            }}
+          />
+          {(agent.status === 'running' || agent.status === 'waiting') && (
+            <div className="meta" style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)' }}>
+              Active session keeps its current model. New value applies on next redirect.
+            </div>
+          )}
         </span>
       </div>
       <div className="field">

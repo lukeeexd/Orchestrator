@@ -49,6 +49,10 @@ const api: OrchestratorApi = {
       ok: boolean;
       error?: string;
     }>,
+  setAgentModel: (id, model) =>
+    ipcRenderer.invoke(IpcChannels.AgentSetModel, id, model) as Promise<{
+      ok: boolean;
+    }>,
   pickWorkspace: () =>
     ipcRenderer.invoke(IpcChannels.AgentPickWorkspace) as Promise<PickWorkspaceResponse>,
   pickAttachments: () =>

@@ -18,6 +18,7 @@ export const IpcChannels = {
   AgentAbort: 'agent:abort',
   AgentRemove: 'agent:remove',
   AgentRedirect: 'agent:redirect',
+  AgentSetModel: 'agent:setModel',
   AgentPickWorkspace: 'agent:pickWorkspace',
   AttachmentPick: 'attachment:pick',
   DirectorList: 'director:list',
@@ -136,6 +137,7 @@ export interface OrchestratorApi {
   abortAgent: (id: string) => Promise<{ ok: boolean }>;
   removeAgent: (id: string) => Promise<{ ok: boolean }>;
   redirectAgent: (req: RedirectAgentRequest) => Promise<{ ok: boolean; error?: string }>;
+  setAgentModel: (id: string, model: string) => Promise<{ ok: boolean }>;
   pickWorkspace: () => Promise<PickWorkspaceResponse>;
   pickAttachments: () => Promise<PickAttachmentsResponse>;
   listDirectorMessages: (projectId: string) => Promise<DirectorMessage[]>;

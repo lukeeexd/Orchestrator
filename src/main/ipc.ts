@@ -202,6 +202,16 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IpcChannels.AgentSetModel,
+    (_event, id: string, model: string): { ok: boolean } => {
+      const updated = registry.patch(id, { model });
+      if (!updated) return { ok: false };
+      agentSinks.onPatch(id, { model });
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
     IpcChannels.AgentPickWorkspace,
     async (event): Promise<PickWorkspaceResponse> => {
       const win = BrowserWindow.fromWebContents(event.sender);
