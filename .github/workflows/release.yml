@@ -2,7 +2,7 @@ name: Release
 
 # Fires whenever a tag matching v* is pushed (e.g. v0.1.1, v1.0.0).
 # Builds the Windows installer in CI and attaches it to a GitHub Release
-# created at the same tag, with auto-generated notes from commits since
+# created at the same tag, with notes built from the commit log since
 # the previous tag.
 on:
   push:
@@ -10,8 +10,15 @@ on:
       - 'v*'
 
 permissions:
-  # Needed by softprops/action-gh-release to create/update the Release.
+  # Needed by softprops/action-gh-release to create / update the Release.
   contents: write
+
+env:
+  # softprops/action-gh-release still ships as v2 (no v3 with Node 24 yet).
+  # This env var forces all JS actions on the runner onto Node 24, which
+  # silences the Node 20 deprecation warnings GitHub will start enforcing
+  # in June 2026.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   build-windows:
@@ -20,10 +27,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          # Need the full history so `git describe` can find the previous
+          # tag when building release notes.
+          fetch-depth: 0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: npm
@@ -45,6 +56,45 @@ jobs:
           $size = (Get-Item $exe).Length / 1MB
           Write-Host "Installer size: $($size.ToString('F1')) MB"
 
+      - name: Generate release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          # Find the tag pointing at the parent of this tag's commit, if any.
+          # 2>$null suppresses git's "no names found" stderr on the first release.
+          $prev = git describe --tags --abbrev=0 "$tag^" 2>$null
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrEmpty($prev)) {
+            $body = "Initial release."
+          } else {
+            $log = git log --pretty=format:"- %s (%h)" "$prev..$tag"
+            # Drop noisy entries — version bumps and merge commits don't
+            # tell a user anything they didn't already know.
+            $filtered = ($log -split "`n" | Where-Object {
+              $_ -notmatch "^- chore: bump" -and $_ -notmatch "^- Merge "
+            }) -join "`n"
+            if ([string]::IsNullOrWhiteSpace($filtered)) {
+              $filtered = "_No user-facing changes (version bump + housekeeping only)._"
+            }
+            $url = "https://github.com/${{ github.repository }}/compare/$prev...$tag"
+            $body = @"
+## Changes since $prev
+
+$filtered
+
+**Full Changelog**: $url
+"@
+          }
+          Write-Host "----- Release notes preview -----"
+          Write-Host $body
+          Write-Host "---------------------------------"
+          # Multiline outputs use the delimiter syntax. New random delim per
+          # run so body content can never collide with it.
+          $delim = "EOF_" + [Guid]::NewGuid().ToString("N")
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "body<<$delim"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value $body
+          Add-Content -Path $env:GITHUB_OUTPUT -Value $delim
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -53,7 +103,7 @@ jobs:
           # (v1.1+), add them here as well.
           files: out/make/squirrel.windows/x64/Orchestrator-Setup.exe
           name: Orchestrator ${{ github.ref_name }}
-          generate_release_notes: true
-          # Mark prereleases for tags like v0.1.0-beta.1. Stable tags
-          # (v1.0.0) become full releases.
+          body: ${{ steps.notes.outputs.body }}
+          # Tags containing a hyphen (e.g. v0.2.0-beta.1) auto-flagged as
+          # prerelease. Stable tags (v1.0.0) become full releases.
           prerelease: ${{ contains(github.ref_name, '-') }}
