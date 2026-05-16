@@ -9,6 +9,7 @@ import type {
 } from '../../shared/types';
 import { DEFAULT_EFFORT } from '../../shared/efforts';
 import { resolveModel } from '../../shared/models';
+import { runClaudeQuery } from '../cli/spawn';
 import { readSettings } from '../settings';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractDirectives } from './parse';
@@ -224,7 +225,6 @@ class DirectorSession {
     }
 
     this.controller = new AbortController();
-    const sdk = await import('@anthropic-ai/claude-agent-sdk');
 
     const directorMessage: DirectorMessage = {
       id: randomUUID(),
@@ -253,36 +253,29 @@ class DirectorSession {
       DEFAULT_EFFORT;
     const resolved = resolveModel(directorModel);
 
-    const queryOptions = {
-      cwd: app.getPath('userData'),
-      env,
-      abortController: this.controller,
-      permissionMode: 'bypassPermissions' as const,
-      agent: 'director',
-      agents: {
-        director: {
-          description: 'Orchestrator director — plans and supervises agents.',
-          prompt: DIRECTOR_SYSTEM_PROMPT,
-          tools: [] as string[],
-          model: resolved.model,
-          effort: directorEffort,
-        },
-      },
-      ...(this.sessionId ? { resume: this.sessionId } : {}),
-      ...(resolved.betas
-        ? { betas: resolved.betas as ('context-1m-2025-08-07')[] }
-        : {}),
-    };
-
     try {
       const attachmentBlock =
         attachments && attachments.length > 0
           ? inlineAttachments(attachments)
           : '';
       const agentBlock = this.buildFleetBlock();
-      const q = sdk.query({
+      const q = runClaudeQuery({
+        cwd: app.getPath('userData'),
+        env,
         prompt: `[mode: ${mode}]\n${agentBlock}${attachmentBlock}${promptBody}`,
-        options: queryOptions,
+        abortController: this.controller,
+        agent: 'director',
+        agents: {
+          director: {
+            description: 'Orchestrator director — plans and supervises agents.',
+            prompt: DIRECTOR_SYSTEM_PROMPT,
+            tools: [] as string[],
+            model: resolved.model,
+            effort: directorEffort,
+          },
+        },
+        ...(this.sessionId ? { resume: this.sessionId } : {}),
+        betas: resolved.betas,
       });
 
       let bodyBuf = '';

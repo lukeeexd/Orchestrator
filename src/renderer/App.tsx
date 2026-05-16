@@ -22,6 +22,7 @@ import { ResizeHandle } from './components/ResizeHandle';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { ToolsScreen } from './components/ToolsScreen';
+import { CliMissingGate } from './components/CliMissingGate';
 import {
   ProjectTabs,
   NewProjectForm,
@@ -65,6 +66,13 @@ export function App() {
   const [agentCountByProject, setAgentCountByProject] = useState<
     Record<string, number>
   >({});
+  // Whether the claude CLI is available on PATH. `null` while we're still
+  // probing for the first time; `false` shows the blocking install gate.
+  const [cliAvailable, setCliAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void window.api.getClaudeCliStatus().then((s) => setCliAvailable(s.available));
+  }, []);
 
   const { settings } = useSettings();
   const {
@@ -417,6 +425,9 @@ export function App() {
             />
           );
         })()}
+      {cliAvailable === false && (
+        <CliMissingGate onResolved={() => setCliAvailable(true)} />
+      )}
     </div>
   );
 }

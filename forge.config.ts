@@ -10,24 +10,19 @@ const config: ForgeConfig = {
   packagerConfig: {
     name: 'Orchestrator',
     executableName: 'Orchestrator',
-    // asar is disabled deliberately: the Claude Agent SDK spawns its native
-    // claude.exe binary via child_process.spawn, and spawn() doesn't have
-    // the asar-transparent path translation that fs.* does. With asar on,
-    // the SDK gets a "resources\app.asar\...\claude.exe — exists but failed
-    // to launch" error because the path is still inside an archive.
-    // Disabling asar means the binary sits as a real file Windows can spawn.
-    asar: false,
+    // asar is back on now that the bundled Claude Agent SDK is gone. We
+    // shell out to the user's installed `claude` CLI via child_process.spawn
+    // — no native binary lives inside our bundle anymore, so the
+    // asar-can't-spawn-from-archive problem is moot. sql.js still needs to
+    // be planted (its UMD wrapper doesn't bundle cleanly under Vite); fs.*
+    // reads through asar transparently so it stays happy after archiving.
     afterCopy: [
       (buildPath, _electronVersion, _platform, _arch, callback) => {
         try {
-          const copyPkg = (pkg: string) => {
-            const src = path.resolve(__dirname, 'node_modules', pkg);
-            const dst = path.join(buildPath, 'node_modules', pkg);
-            fs.mkdirSync(path.dirname(dst), { recursive: true });
-            fs.cpSync(src, dst, { recursive: true });
-          };
-          copyPkg('@anthropic-ai/claude-agent-sdk-win32-x64');
-          copyPkg('sql.js');
+          const src = path.resolve(__dirname, 'node_modules', 'sql.js');
+          const dst = path.join(buildPath, 'node_modules', 'sql.js');
+          fs.mkdirSync(path.dirname(dst), { recursive: true });
+          fs.cpSync(src, dst, { recursive: true });
           callback();
         } catch (e) {
           callback(e as Error);
@@ -71,9 +66,10 @@ const config: ForgeConfig = {
       [FuseV1Options.EnableCookieEncryption]: true,
       [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
       [FuseV1Options.EnableNodeCliInspectArguments]: false,
-      // asar is disabled, so the integrity / asar-only fuses can't apply.
-      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
-      [FuseV1Options.OnlyLoadAppFromAsar]: false,
+      // asar is on again — integrity validation + only-load-from-asar both
+      // protect against tampering with bundled JS at install/runtime.
+      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+      [FuseV1Options.OnlyLoadAppFromAsar]: true,
     }),
   ],
 };

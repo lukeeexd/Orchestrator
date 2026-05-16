@@ -40,6 +40,7 @@ export const IpcChannels = {
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
+  AppCliStatus: 'app:cliStatus',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
@@ -193,6 +194,10 @@ export interface OrchestratorApi {
   deleteProject: (id: string) => Promise<{ ok: true }>;
   getActiveProjectId: () => Promise<string | null>;
   showSettingsFile: () => Promise<{ ok: boolean }>;
+  getClaudeCliStatus: () => Promise<{
+    available: boolean;
+    version: string | null;
+  }>;
   // Streams
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;
