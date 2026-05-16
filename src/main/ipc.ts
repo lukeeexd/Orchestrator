@@ -1,4 +1,4 @@
-import { ipcMain, app, BrowserWindow, dialog } from 'electron';
+import { ipcMain, app, BrowserWindow, dialog, shell } from 'electron';
 import {
   IpcChannels,
   type AcceptPlanRequest,
@@ -14,7 +14,7 @@ import type {
   Project,
   SpawnAgentRequest,
 } from '../shared/types';
-import { readSettings, writeSettings } from './settings';
+import { readSettings, writeSettings, settingsFilePath } from './settings';
 import {
   spawnAgent,
   redirectAgent,
@@ -28,11 +28,16 @@ import {
   createProject,
   deleteProject,
   getActiveProjectId,
+  getProject,
   listProjects,
   renameProject,
   setActiveProjectId,
+  setProjectDirectorEffort,
+  setProjectDirectorModel,
   setProjectWorkspace,
 } from './projects';
+import { isEffortLevel } from '../shared/efforts';
+import type { EffortLevel } from '../shared/types';
 
 const startedAt = Date.now();
 
@@ -57,7 +62,28 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IpcChannels.SettingsGet, (): Settings => readSettings());
   ipcMain.handle(
     IpcChannels.SettingsSet,
-    (_event, next: Partial<Settings>): Settings => writeSettings(next),
+    (_event, next: Partial<Settings>): Settings => {
+      const merged = writeSettings(next);
+      broadcast(IpcChannels.SettingsEventChanged, merged);
+      return merged;
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AppShowSettingsFile,
+    async (): Promise<{ ok: boolean }> => {
+      const p = settingsFilePath();
+      // shell.showItemInFolder requires the file to exist; create on first
+      // open if a user clicks before saving anything.
+      try {
+        const fs = await import('node:fs');
+        if (!fs.existsSync(p)) writeSettings({});
+        shell.showItemInFolder(p);
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
+    },
   );
 
   // ─────────────────────────── Projects ───────────────────────────
@@ -89,6 +115,20 @@ export function registerIpcHandlers(): void {
     IpcChannels.ProjectSetWorkspace,
     (_event, id: string, workspace: string): { ok: true } => {
       setProjectWorkspace(id, workspace);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetDirectorModel,
+    (_event, id: string, model: string): { ok: true } => {
+      setProjectDirectorModel(id, model);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetDirectorEffort,
+    (_event, id: string, effort: EffortLevel | null): { ok: true } => {
+      setProjectDirectorEffort(id, isEffortLevel(effort) ? effort : null);
       return { ok: true };
     },
   );
@@ -169,6 +209,27 @@ export function registerIpcHandlers(): void {
       req: import('../shared/types').RedirectAgentRequest,
     ): Promise<{ ok: boolean; error?: string }> => {
       return redirectAgent(req, agentSinks);
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentSetModel,
+    (_event, id: string, model: string): { ok: boolean } => {
+      const updated = registry.patch(id, { model });
+      if (!updated) return { ok: false };
+      agentSinks.onPatch(id, { model });
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentSetEffort,
+    (_event, id: string, effort: EffortLevel): { ok: boolean } => {
+      if (!isEffortLevel(effort)) return { ok: false };
+      const updated = registry.patch(id, { effort });
+      if (!updated) return { ok: false };
+      agentSinks.onPatch(id, { effort });
+      return { ok: true };
     },
   );
 
@@ -256,6 +317,32 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IpcChannels.DirectorAcceptPlan,
     async (_event, req: AcceptPlanRequest): Promise<AcceptPlanResponse> => {
+      // Director auto-spawns inherit the Director's effective model +
+      // effort — using the same cascade the Director itself uses
+      // (per-project override → settings.defaultDirectorModel/Effort →
+      // settings.defaultModel/Effort). Just reading project.directorModel
+      // wasn't enough: when the user leaves the Director on the global
+      // defaults, project.directorModel is null and agents fall through
+      // to the cheap agent defaults — so an Opus 4.7 1M xhigh Director
+      // would quietly spawn Sonnet 4.6 high workers.
+      const project = getProject(req.projectId);
+      const cascadeSettings = readSettings();
+      const resolvedDirectorModel =
+        project?.directorModel ||
+        cascadeSettings.defaultDirectorModel ||
+        cascadeSettings.defaultModel;
+      const resolvedDirectorEffort =
+        project?.directorEffort ||
+        cascadeSettings.defaultDirectorEffort ||
+        cascadeSettings.defaultEffort;
+      const directorOverrides: {
+        model?: string;
+        effort?: import('../shared/types').EffortLevel;
+      } = {
+        ...(resolvedDirectorModel ? { model: resolvedDirectorModel } : {}),
+        ...(resolvedDirectorEffort ? { effort: resolvedDirectorEffort } : {}),
+      };
+
       const spawned: { id: string; name: string }[] = [];
       const firstId =
         req.rows.length > 0
@@ -266,6 +353,7 @@ export function registerIpcHandlers(): void {
                 task: req.rows[0].task,
                 workspace: req.workspace,
                 spawnedBy: 'director',
+                ...directorOverrides,
               },
               agentSinks,
             )
@@ -299,6 +387,7 @@ export function registerIpcHandlers(): void {
               task: row.task,
               workspace: req.workspace,
               spawnedBy: 'director',
+              ...directorOverrides,
             },
             agentSinks,
           );

@@ -105,8 +105,10 @@ export function Icon({
     case 'settings':
       return (
         <svg {...common}>
-          <circle cx="8" cy="8" r="2" />
-          <path d="M8 1.5v2M8 12.5v2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M1.5 8h2M12.5 8h2M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4" />
+          <path d="M2 4h12M2 8h12M2 12h12" />
+          <circle cx="5" cy="4" r="1.5" fill="var(--bg)" />
+          <circle cx="10" cy="8" r="1.5" fill="var(--bg)" />
+          <circle cx="7" cy="12" r="1.5" fill="var(--bg)" />
         </svg>
       );
     case 'play':

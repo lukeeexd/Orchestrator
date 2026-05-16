@@ -3,11 +3,14 @@ import type {
   Agent,
   AgentBudget,
   AgentRole,
+  EffortLevel,
   LogLine,
   RedirectAgentRequest,
   SpawnAgentRequest,
 } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
+import { DEFAULT_EFFORT } from '../../shared/efforts';
+import { resolveModel } from '../../shared/models';
 import { estimateCost } from '../../shared/rates';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';
@@ -39,18 +42,16 @@ export interface RunnerSinks {
   onPatch: (agentId: string, patch: Partial<Agent>) => void;
 }
 
-let agentCounter: Record<AgentRole, number> = {
-  pm: 0,
-  researcher: 0,
-  coder: 0,
-  qa: 0,
-  devops: 0,
-};
-
-function nextName(role: AgentRole): string {
-  agentCounter = { ...agentCounter, [role]: agentCounter[role] + 1 };
-  const n = agentCounter[role].toString().padStart(2, '0');
-  return `${role === 'researcher' ? 'research' : role}-${n}`;
+function nextName(role: AgentRole, projectId: string): string {
+  const prefix = role === 'researcher' ? 'research' : role;
+  const re = new RegExp(`^${prefix}-(\\d+)$`);
+  let max = 0;
+  for (const a of registry.listForProject(projectId)) {
+    const m = a.name.match(re);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  const n = (max + 1).toString().padStart(2, '0');
+  return `${prefix}-${n}`;
 }
 
 function elapsed(startedAt: number): string {
@@ -103,14 +104,17 @@ export async function spawnAgent(
   sinks: RunnerSinks,
 ): Promise<{ agentId: string }> {
   const role = ROLES[req.role];
-  const name = nextName(req.role);
+  const name = nextName(req.role, req.projectId);
   const id = randomUUID();
   const controller = new AbortController();
 
-  // settings.defaultModel overrides each role's hardcoded model — gives
-  // the user one knob to flip Opus / Sonnet / Haiku across the whole fleet.
+  // Cascade per-spawn → settings → role/SDK default for model + effort.
+  // Lets users pick both per agent without editing global settings.
   const baseSettings = readSettings();
-  const effectiveModel = baseSettings.defaultModel || role.model;
+  const effectiveModel =
+    req.model || baseSettings.defaultModel || role.model;
+  const effectiveEffort: EffortLevel =
+    req.effort || baseSettings.defaultEffort || DEFAULT_EFFORT;
   const budget: AgentBudget = {
     usd: req.budget?.usd ?? baseSettings.defaultBudgetUsd,
     tokens: req.budget?.tokens ?? baseSettings.defaultBudgetTokens,
@@ -131,6 +135,7 @@ export async function spawnAgent(
     cost: 0,
     elapsed: '00:00',
     model: effectiveModel,
+    effort: effectiveEffort,
     workspace: req.workspace,
     budget,
     spawnedBy: req.spawnedBy ?? 'user',
@@ -181,7 +186,16 @@ async function run(
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
   try {
-    const effectiveModel = settings.defaultModel || role.model;
+    // The agent's model + effort were resolved in spawnAgent and saved
+    // to the registry. Read from there so we honour per-spawn overrides
+    // (and any setAgentModel / setAgentEffort changes that landed between
+    // spawnAgent and this point).
+    const entry = registry.get(agentId);
+    const effectiveModel = entry?.agent.model || settings.defaultModel || role.model;
+    const effectiveEffort: EffortLevel =
+      entry?.agent.effort || DEFAULT_EFFORT;
+    // Pseudo-ids like `*-1m` resolve to a base model id + a beta header.
+    const resolved = resolveModel(effectiveModel);
     const attachmentBlock =
       req.attachments && req.attachments.length > 0
         ? inlineAttachments(req.attachments)
@@ -207,9 +221,13 @@ ${req.task}`;
             description: `${role.label} for the Orchestrator app`,
             prompt: role.systemPrompt,
             tools: role.tools,
-            model: effectiveModel,
+            model: resolved.model,
+            effort: effectiveEffort,
           },
         },
+        ...(resolved.betas
+          ? { betas: resolved.betas as ('context-1m-2025-08-07')[] }
+          : {}),
       },
     });
 
@@ -257,7 +275,15 @@ export async function redirectAgent(
   });
   completions.set(req.agentId, donePromise);
 
-  runRedirect(req.agentId, req.body, req.attachments, controller, sinks)
+  runRedirect(
+    req.agentId,
+    req.body,
+    req.attachments,
+    req.model,
+    req.effort,
+    controller,
+    sinks,
+  )
     .catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       sinks.onLog(req.agentId, {
@@ -279,6 +305,8 @@ async function runRedirect(
   agentId: string,
   body: string,
   attachments: string[] | undefined,
+  modelOverride: string | undefined,
+  effortOverride: EffortLevel | undefined,
   controller: AbortController,
   sinks: RunnerSinks,
 ): Promise<void> {
@@ -289,16 +317,42 @@ async function runRedirect(
   const sdk = await import('@anthropic-ai/claude-agent-sdk');
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
+  // If the redirect comes with a new model/effort, persist it on the
+  // agent so future redirects + the Drawer's Config tab show the latest.
+  // The SDK call below explicitly passes both in the agent definition so
+  // the resumed turn actually uses them (rather than inheriting the
+  // session's original).
+  const role = ROLES[entry.agent.role];
+  const effectiveModel = modelOverride || entry.agent.model;
+  const effectiveEffort: EffortLevel =
+    effortOverride || entry.agent.effort || DEFAULT_EFFORT;
+  const modelChanged = !!modelOverride && modelOverride !== entry.agent.model;
+  const effortChanged =
+    !!effortOverride && effortOverride !== entry.agent.effort;
+  if (modelChanged || effortChanged) {
+    const patch: Partial<typeof entry.agent> = {};
+    if (modelChanged) patch.model = effectiveModel;
+    if (effortChanged) patch.effort = effectiveEffort;
+    registry.patch(agentId, patch);
+    sinks.onPatch(agentId, patch);
+  }
+  const resolved = resolveModel(effectiveModel);
+
   try {
     const attachmentBlock =
       attachments && attachments.length > 0 ? inlineAttachments(attachments) : '';
     const prompt = `${attachmentBlock}Continuing task. New instruction:
 ${body}`;
 
+    const parts: string[] = [];
+    if (modelChanged) parts.push(`model → ${effectiveModel}`);
+    if (effortChanged) parts.push(`effort → ${effectiveEffort}`);
     sinks.onLog(agentId, {
       ts: nowTs(),
       kind: 'note',
-      msg: `Redirected — resuming session ${entry.agent.sessionId}`,
+      msg: `Redirected — resuming session ${entry.agent.sessionId}${
+        parts.length > 0 ? ` · ${parts.join(', ')}` : ''
+      }`,
     });
 
     const q = sdk.query({
@@ -309,10 +363,26 @@ ${body}`;
         abortController: controller,
         permissionMode: 'bypassPermissions',
         resume: entry.agent.sessionId,
+        // Pass the agent config explicitly so the resumed turn uses
+        // our chosen model + tools + effort, not whatever the saved
+        // session had.
+        agent: 'main',
+        agents: {
+          main: {
+            description: `${role.label} for the Orchestrator app`,
+            prompt: role.systemPrompt,
+            tools: role.tools,
+            model: resolved.model,
+            effort: effectiveEffort,
+          },
+        },
+        ...(resolved.betas
+          ? { betas: resolved.betas as ('context-1m-2025-08-07')[] }
+          : {}),
       },
     });
 
-    await consumeQuery(agentId, q, controller, entry.agent.model, sinks);
+    await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
     clearInterval(elapsedTimer);
   }

@@ -18,6 +18,8 @@ export const IpcChannels = {
   AgentAbort: 'agent:abort',
   AgentRemove: 'agent:remove',
   AgentRedirect: 'agent:redirect',
+  AgentSetModel: 'agent:setModel',
+  AgentSetEffort: 'agent:setEffort',
   AgentPickWorkspace: 'agent:pickWorkspace',
   AttachmentPick: 'attachment:pick',
   DirectorList: 'director:list',
@@ -30,8 +32,11 @@ export const IpcChannels = {
   ProjectSetActive: 'project:setActive',
   ProjectRename: 'project:rename',
   ProjectSetWorkspace: 'project:setWorkspace',
+  ProjectSetDirectorModel: 'project:setDirectorModel',
+  ProjectSetDirectorEffort: 'project:setDirectorEffort',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
+  AppShowSettingsFile: 'app:showSettingsFile',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
@@ -40,6 +45,7 @@ export const IpcChannels = {
   DirectorEventMessage: 'director:event:message',
   DirectorEventPatch: 'director:event:patch',
   ProjectEventActiveChanged: 'project:event:activeChanged',
+  SettingsEventChanged: 'settings:event:changed',
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];
@@ -55,7 +61,14 @@ export interface Settings {
   apiKey: string;
   /** Long-lived OAuth token from `claude setup-token`. Takes precedence over apiKey when set. */
   oauthToken: string;
+  /** Model used by spawned agents unless the spawn overrides it. */
   defaultModel: string;
+  /** Reasoning effort applied to spawned agents unless overridden. Defaults to 'high'. */
+  defaultEffort: import('./types').EffortLevel;
+  /** Model used by the Director when the project hasn't picked one. */
+  defaultDirectorModel: string;
+  /** Effort used by the Director when the project hasn't picked one. */
+  defaultDirectorEffort: import('./types').EffortLevel;
   /** Per-agent dollar cap. 0 = unlimited. */
   defaultBudgetUsd: number;
   /** Per-agent token cap (input + output). 0 = unlimited. */
@@ -133,6 +146,11 @@ export interface OrchestratorApi {
   abortAgent: (id: string) => Promise<{ ok: boolean }>;
   removeAgent: (id: string) => Promise<{ ok: boolean }>;
   redirectAgent: (req: RedirectAgentRequest) => Promise<{ ok: boolean; error?: string }>;
+  setAgentModel: (id: string, model: string) => Promise<{ ok: boolean }>;
+  setAgentEffort: (
+    id: string,
+    effort: import('./types').EffortLevel,
+  ) => Promise<{ ok: boolean }>;
   pickWorkspace: () => Promise<PickWorkspaceResponse>;
   pickAttachments: () => Promise<PickAttachmentsResponse>;
   listDirectorMessages: (projectId: string) => Promise<DirectorMessage[]>;
@@ -156,9 +174,15 @@ export interface OrchestratorApi {
   createProject: (name: string, workspace: string) => Promise<Project>;
   setActiveProject: (id: string) => Promise<{ ok: true }>;
   renameProject: (id: string, name: string) => Promise<{ ok: true }>;
+  setProjectDirectorModel: (id: string, model: string) => Promise<{ ok: true }>;
+  setProjectDirectorEffort: (
+    id: string,
+    effort: import('./types').EffortLevel,
+  ) => Promise<{ ok: true }>;
   setProjectWorkspace: (id: string, workspace: string) => Promise<{ ok: true }>;
   deleteProject: (id: string) => Promise<{ ok: true }>;
   getActiveProjectId: () => Promise<string | null>;
+  showSettingsFile: () => Promise<{ ok: boolean }>;
   // Streams
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;
@@ -167,6 +191,7 @@ export interface OrchestratorApi {
   onDirectorMessage: (cb: (p: DirectorEventMessagePayload) => void) => () => void;
   onDirectorPatch: (cb: (p: DirectorEventPatchPayload) => void) => () => void;
   onActiveProjectChanged: (cb: (p: ProjectActiveChangedPayload) => void) => () => void;
+  onSettingsChanged: (cb: (p: Settings) => void) => () => void;
 }
 
 declare global {

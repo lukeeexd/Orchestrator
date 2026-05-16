@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Project } from '../../shared/types';
+import type { EffortLevel, Project } from '../../shared/types';
 
 interface UseProjectsResult {
   projects: Project[];
@@ -8,6 +8,8 @@ interface UseProjectsResult {
   create: (name: string, workspace: string) => Promise<Project>;
   rename: (id: string, name: string) => Promise<void>;
   setWorkspace: (id: string, workspace: string) => Promise<void>;
+  setDirectorModel: (id: string, model: string) => Promise<void>;
+  setDirectorEffort: (id: string, effort: EffortLevel) => Promise<void>;
   remove: (id: string) => Promise<void>;
   reload: () => Promise<void>;
 }
@@ -66,6 +68,22 @@ export function useProjects(): UseProjectsResult {
     [reload],
   );
 
+  const setDirectorModel = useCallback(
+    async (id: string, model: string) => {
+      await window.api.setProjectDirectorModel(id, model);
+      await reload();
+    },
+    [reload],
+  );
+
+  const setDirectorEffort = useCallback(
+    async (id: string, effort: EffortLevel) => {
+      await window.api.setProjectDirectorEffort(id, effort);
+      await reload();
+    },
+    [reload],
+  );
+
   const remove = useCallback(
     async (id: string) => {
       await window.api.deleteProject(id);
@@ -81,6 +99,8 @@ export function useProjects(): UseProjectsResult {
     create,
     rename,
     setWorkspace,
+    setDirectorModel,
+    setDirectorEffort,
     remove,
     reload,
   };

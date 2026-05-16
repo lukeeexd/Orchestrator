@@ -28,11 +28,18 @@ export interface LogLine {
   msg: string | ToolCall;
 }
 
+/** Reasoning effort levels supported by the Agent SDK. Default is 'high'. */
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export interface Project {
   id: string;
   name: string;
   workspace: string;
   createdAt: number;
+  /** Per-project override for the Director's model. Falls back to settings.defaultModel. */
+  directorModel?: string;
+  /** Per-project override for the Director's reasoning effort. Falls back to settings.defaultEffort. */
+  directorEffort?: EffortLevel;
 }
 
 export type AgentSpawnedBy = 'user' | 'director';
@@ -57,6 +64,7 @@ export interface Agent {
   cost: number;
   elapsed: string;
   model: string;
+  effort: EffortLevel;
   workspace: string;
   budget: AgentBudget;
   spawnedBy: AgentSpawnedBy;
@@ -69,6 +77,10 @@ export interface Agent {
 export interface RedirectAgentRequest {
   agentId: string;
   body: string;
+  /** Override the model for this turn (and going forward). Falls back to agent's existing model. */
+  model?: string;
+  /** Override the reasoning effort for this turn (and going forward). Falls back to agent's existing effort. */
+  effort?: EffortLevel;
   attachments?: string[];
 }
 
@@ -113,6 +125,10 @@ export interface SpawnAgentRequest {
   role: AgentRole;
   task: string;
   workspace: string;
+  /** Override the model the agent runs on. Falls back to settings.defaultModel. */
+  model?: string;
+  /** Override the reasoning effort. Falls back to settings.defaultEffort. */
+  effort?: EffortLevel;
   spawnedBy?: AgentSpawnedBy;
   budget?: Partial<AgentBudget>;
   attachments?: string[];

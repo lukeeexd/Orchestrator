@@ -133,6 +133,27 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 7,
+    up: (db) => {
+      // Per-project Director model override. NULL means "fall through
+      // to settings.defaultModel".
+      db.exec(`ALTER TABLE projects ADD COLUMN director_model TEXT;`);
+    },
+  },
+  {
+    version: 8,
+    up: (db) => {
+      // Reasoning effort: per-project Director override + per-agent
+      // current effort. NULL on agents.effort means "fall through to
+      // settings.defaultEffort" at runtime; we never backfill a fixed
+      // value so the global default can keep moving.
+      db.exec(`
+        ALTER TABLE projects ADD COLUMN director_effort TEXT;
+        ALTER TABLE agents ADD COLUMN effort TEXT;
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

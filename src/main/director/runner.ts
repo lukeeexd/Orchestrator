@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { app } from 'electron';
-import type { DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
+import type {
+  DirectorMessage,
+  DirectorMode,
+  EffortLevel,
+  PlanRow,
+} from '../../shared/types';
+import { DEFAULT_EFFORT } from '../../shared/efforts';
+import { resolveModel } from '../../shared/models';
 import { readSettings } from '../settings';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractDirectives } from './parse';
@@ -9,6 +16,7 @@ import { nowTs } from '../agents/classifier';
 import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
 import * as registry from '../agents/registry';
+import { getProject } from '../projects';
 
 export interface DirectorSinks {
   onMessage: (projectId: string, msg: DirectorMessage) => void;
@@ -229,6 +237,22 @@ class DirectorSession {
     };
     this.pushMessage(directorMessage);
 
+    // Per-project Director model + effort win over the global Director
+    // defaults, which are separate from the agent defaults — the Director
+    // gets a heavier model out of the box.
+    const project = getProject(this.projectId);
+    const directorModel =
+      project?.directorModel ||
+      settings.defaultDirectorModel ||
+      settings.defaultModel ||
+      'claude-opus-4-7-1m';
+    const directorEffort: EffortLevel =
+      project?.directorEffort ||
+      settings.defaultDirectorEffort ||
+      settings.defaultEffort ||
+      DEFAULT_EFFORT;
+    const resolved = resolveModel(directorModel);
+
     const queryOptions = {
       cwd: app.getPath('userData'),
       env,
@@ -240,10 +264,14 @@ class DirectorSession {
           description: 'Orchestrator director — plans and supervises agents.',
           prompt: DIRECTOR_SYSTEM_PROMPT,
           tools: [] as string[],
-          model: settings.defaultModel || 'claude-sonnet-4-6',
+          model: resolved.model,
+          effort: directorEffort,
         },
       },
       ...(this.sessionId ? { resume: this.sessionId } : {}),
+      ...(resolved.betas
+        ? { betas: resolved.betas as ('context-1m-2025-08-07')[] }
+        : {}),
     };
 
     try {

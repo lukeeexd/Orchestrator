@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { DirectorMessage, DirectorMode, Project } from '../shared/types';
+import type {
+  DirectorMessage,
+  DirectorMode,
+  EffortLevel,
+  Project,
+} from '../shared/types';
+import { DEFAULT_EFFORT } from '../shared/efforts';
 import { useLocalStorageState } from './hooks/useLocalStorageState';
 import { useAgents } from './hooks/useAgents';
 import { useDirector } from './hooks/useDirector';
@@ -13,6 +19,7 @@ import { AgentsPane } from './components/AgentsPane';
 import { Drawer } from './components/Drawer';
 import { ResizeHandle } from './components/ResizeHandle';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
+import { SettingsScreen } from './components/SettingsScreen';
 import {
   ProjectTabs,
   NewProjectForm,
@@ -20,7 +27,7 @@ import {
 } from './components/ProjectTabs';
 
 const PLACEHOLDERS: Record<
-  Exclude<RailScreen, 'agents'>,
+  Exclude<RailScreen, 'agents' | 'settings'>,
   { title: string; icon: Parameters<typeof PlaceholderScreen>[0]['icon']; body: string }
 > = {
   templates: {
@@ -43,11 +50,6 @@ const PLACEHOLDERS: Record<
     icon: 'history',
     body: 'Past sessions, searchable. Replay an old run, fork from any point, or audit what an agent did.',
   },
-  settings: {
-    title: 'Settings',
-    icon: 'settings',
-    body: 'API key, model preferences, theme, keyboard shortcuts. For v1 the API key lives in a JSON file under the user-data directory.',
-  },
 };
 
 export function App() {
@@ -67,18 +69,36 @@ export function App() {
     Record<string, number>
   >({});
 
-  const settings = useSettings();
+  const { settings } = useSettings();
   const {
     projects,
     activeId: activeProjectId,
     setActive: setActiveProject,
     create: createProject,
     setWorkspace: setProjectWorkspace,
+    setDirectorModel: setProjectDirectorModel,
+    setDirectorEffort: setProjectDirectorEffort,
     remove: removeProject,
   } = useProjects();
   const activeProject: Project | null =
     projects.find((p) => p.id === activeProjectId) ?? null;
   const workspace = activeProject?.workspace ?? '';
+  const fallbackModel = settings?.defaultModel ?? 'claude-sonnet-4-6';
+  const directorFallbackModel =
+    settings?.defaultDirectorModel || fallbackModel;
+  const directorModel = activeProject?.directorModel || directorFallbackModel;
+  const fallbackEffort: EffortLevel = settings?.defaultEffort ?? DEFAULT_EFFORT;
+  const directorFallbackEffort: EffortLevel =
+    settings?.defaultDirectorEffort ?? fallbackEffort;
+  const directorEffort: EffortLevel =
+    activeProject?.directorEffort || directorFallbackEffort;
+  // Spawn-form pre-fill stays on the agent defaults — we don't want a
+  // 1M-context Opus Director to silently pre-select Opus for every new
+  // worker the user spawns by hand. If the user pinned a project-level
+  // Director model/effort, we honour that intent and pre-fill with it.
+  const spawnDefaultModel = activeProject?.directorModel || fallbackModel;
+  const spawnDefaultEffort: EffortLevel =
+    activeProject?.directorEffort || fallbackEffort;
 
   const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents(
     activeProjectId,
@@ -286,7 +306,15 @@ export function App() {
               agents={agents}
               busy={busy}
               mode={mode}
+              model={directorModel}
+              effort={directorEffort}
               onModeChange={setMode}
+              onModelChange={(m) => {
+                if (activeProjectId) void setProjectDirectorModel(activeProjectId, m);
+              }}
+              onEffortChange={(e) => {
+                if (activeProjectId) void setProjectDirectorEffort(activeProjectId, e);
+              }}
               onSend={send}
               onSpawnPlan={spawnPlan}
             />
@@ -303,6 +331,8 @@ export function App() {
               expanded={expanded}
               workspace={workspace}
               projectId={activeProjectId}
+              defaultModel={spawnDefaultModel}
+              defaultEffort={spawnDefaultEffort}
               spawning={spawning}
               setSpawning={setSpawning}
               onSelect={setSelectedId}
@@ -321,6 +351,8 @@ export function App() {
               onAbort={(id) => void window.api.abortAgent(id)}
             />
           </>
+        ) : active === 'settings' ? (
+          <SettingsScreen />
         ) : (
           <PlaceholderScreen
             {...(active === 'agents'

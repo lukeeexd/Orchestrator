@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Project } from '../shared/types';
+import type { EffortLevel, Project } from '../shared/types';
+import { isEffortLevel } from '../shared/efforts';
 import { getDb, scheduleSave } from './db';
 
 function asStr(v: unknown, fallback = ''): string {
@@ -13,15 +14,48 @@ function asInt(v: unknown, fallback = 0): number {
 export function listProjects(): Project[] {
   const db = getDb();
   const res = db.exec(
-    `SELECT id, name, workspace, created_at FROM projects ORDER BY created_at ASC`,
+    `SELECT id, name, workspace, created_at, director_model, director_effort FROM projects ORDER BY created_at ASC`,
   );
   if (res.length === 0) return [];
-  return res[0].values.map((row) => ({
-    id: asStr(row[0]),
-    name: asStr(row[1]),
-    workspace: asStr(row[2]),
-    createdAt: asInt(row[3]),
-  }));
+  return res[0].values.map((row) => {
+    const dm = row[4];
+    const de = row[5];
+    return {
+      id: asStr(row[0]),
+      name: asStr(row[1]),
+      workspace: asStr(row[2]),
+      createdAt: asInt(row[3]),
+      directorModel: typeof dm === 'string' && dm.length > 0 ? dm : undefined,
+      directorEffort: isEffortLevel(de) ? de : undefined,
+    };
+  });
+}
+
+export function getProject(id: string): Project | null {
+  return listProjects().find((p) => p.id === id) ?? null;
+}
+
+export function setProjectDirectorModel(id: string, model: string): void {
+  const db = getDb();
+  const stmt = db.prepare(
+    `UPDATE projects SET director_model = ? WHERE id = ?`,
+  );
+  stmt.run([model.trim() || null, id]);
+  stmt.free();
+  scheduleSave();
+}
+
+export function setProjectDirectorEffort(
+  id: string,
+  effort: EffortLevel | null,
+): void {
+  const db = getDb();
+  const stmt = db.prepare(
+    `UPDATE projects SET director_effort = ? WHERE id = ?`,
+  );
+  stmt.run([effort && isEffortLevel(effort) ? effort : null, id]);
+  stmt.free();
+  scheduleSave();
 }
 
 export function createProject(name: string, workspace: string): Project {

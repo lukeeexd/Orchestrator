@@ -49,6 +49,14 @@ const api: OrchestratorApi = {
       ok: boolean;
       error?: string;
     }>,
+  setAgentModel: (id, model) =>
+    ipcRenderer.invoke(IpcChannels.AgentSetModel, id, model) as Promise<{
+      ok: boolean;
+    }>,
+  setAgentEffort: (id, effort) =>
+    ipcRenderer.invoke(IpcChannels.AgentSetEffort, id, effort) as Promise<{
+      ok: boolean;
+    }>,
   pickWorkspace: () =>
     ipcRenderer.invoke(IpcChannels.AgentPickWorkspace) as Promise<PickWorkspaceResponse>,
   pickAttachments: () =>
@@ -107,10 +115,26 @@ const api: OrchestratorApi = {
       id,
       workspace,
     ) as Promise<{ ok: true }>,
+  setProjectDirectorModel: (id, model) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetDirectorModel,
+      id,
+      model,
+    ) as Promise<{ ok: true }>,
+  setProjectDirectorEffort: (id, effort) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetDirectorEffort,
+      id,
+      effort,
+    ) as Promise<{ ok: true }>,
   deleteProject: (id) =>
     ipcRenderer.invoke(IpcChannels.ProjectDelete, id) as Promise<{ ok: true }>,
   getActiveProjectId: () =>
     ipcRenderer.invoke(IpcChannels.ProjectGetActive) as Promise<string | null>,
+  showSettingsFile: () =>
+    ipcRenderer.invoke(IpcChannels.AppShowSettingsFile) as Promise<{
+      ok: boolean;
+    }>,
 
   onAgent: (cb) => subscribe<AgentEventAgentPayload>(IpcChannels.AgentEventAgent, cb),
   onLog: (cb) => subscribe<AgentEventLogPayload>(IpcChannels.AgentEventLog, cb),
@@ -130,6 +154,8 @@ const api: OrchestratorApi = {
       IpcChannels.ProjectEventActiveChanged,
       cb,
     ),
+  onSettingsChanged: (cb) =>
+    subscribe<Settings>(IpcChannels.SettingsEventChanged, cb),
 };
 
 contextBridge.exposeInMainWorld('api', api);

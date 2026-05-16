@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import type { Agent, AgentRole } from '../../shared/types';
+import type { Agent, AgentRole, EffortLevel } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { Icon } from './Icon';
 import { LogLineRow } from './LogLineRow';
+import { ModelPicker } from './ModelPicker';
+import { EffortPicker } from './EffortPicker';
 
 const ROLE_TINT: Record<AgentRole, string> = {
   pm: '#4ade80',
@@ -12,7 +14,18 @@ const ROLE_TINT: Record<AgentRole, string> = {
   devops: '#f97316',
 };
 
-const CONTEXT_CAP = 200_000;
+const CONTEXT_CAP_DEFAULT = 200_000;
+const CONTEXT_CAP_1M = 1_000_000;
+
+function contextCapFor(model: string): number {
+  return model.endsWith('-1m') ? CONTEXT_CAP_1M : CONTEXT_CAP_DEFAULT;
+}
+
+function formatCap(cap: number): string {
+  return cap >= 1_000_000
+    ? `${(cap / 1_000_000).toFixed(0)}M`
+    : `${cap / 1000}k`;
+}
 
 type TabId = 'logs' | 'tools' | 'memory' | 'context' | 'config';
 
@@ -139,6 +152,8 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
       {redirectOpen && (
         <RedirectForm
           agentId={agent.id}
+          currentModel={agent.model}
+          currentEffort={agent.effort}
           onClose={() => setRedirectOpen(false)}
         />
       )}
@@ -148,12 +163,18 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
 
 function RedirectForm({
   agentId,
+  currentModel,
+  currentEffort,
   onClose,
 }: {
   agentId: string;
+  currentModel: string;
+  currentEffort: EffortLevel;
   onClose: () => void;
 }) {
   const [body, setBody] = useState('');
+  const [model, setModel] = useState(currentModel);
+  const [effort, setEffort] = useState<EffortLevel>(currentEffort);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -163,7 +184,12 @@ function RedirectForm({
     setBusy(true);
     setError(null);
     try {
-      const res = await window.api.redirectAgent({ agentId, body: trimmed });
+      const res = await window.api.redirectAgent({
+        agentId,
+        body: trimmed,
+        ...(model !== currentModel ? { model } : {}),
+        ...(effort !== currentEffort ? { effort } : {}),
+      });
       if (!res.ok) {
         setError(res.error ?? 'redirect failed');
         return;
@@ -178,6 +204,14 @@ function RedirectForm({
 
   return (
     <div className="redirect-form">
+      <div className="redirect-model-row">
+        <span className="lbl">Model</span>
+        <ModelPicker value={model} onChange={setModel} compact />
+      </div>
+      <div className="redirect-model-row">
+        <span className="lbl">Effort</span>
+        <EffortPicker value={effort} onChange={setEffort} compact />
+      </div>
       <textarea
         className="text-input task-input"
         value={body}
@@ -246,7 +280,11 @@ function LogsTab({ agent }: { agent: Agent }) {
       </div>
       <div className="field">
         <span className="lbl">Spawned by</span>
-        <span className="v">you · direct spawn (Director lands in M4)</span>
+        <span className="v">
+          {agent.spawnedBy === 'director'
+            ? 'director · auto-spawned from plan'
+            : 'you · manual spawn'}
+        </span>
       </div>
       <div className="field">
         <span className="lbl">Last {tail.length} log lines</span>
@@ -323,20 +361,22 @@ function ToolsTab({ agent }: { agent: Agent }) {
 function MemoryTab() {
   return (
     <div className="inline-empty">
-      Memory pins land in M5 (via the SDK's memory tool). For now an agent's
-      working notes live only in its log.
+      Memory pins via the SDK&apos;s memory tool aren&apos;t wired up yet
+      (deferred from v1). For now an agent&apos;s working notes live only in
+      its log.
     </div>
   );
 }
 
 function ContextTab({ agent }: { agent: Agent }) {
   const used = agent.tokens;
-  const pct = Math.min(100, Math.round((used / CONTEXT_CAP) * 100));
+  const cap = contextCapFor(agent.model);
+  const pct = Math.min(100, Math.round((used / cap) * 100));
   return (
     <>
       <div className="field">
         <span className="lbl">
-          Context window · {(used / 1000).toFixed(1)}k / {CONTEXT_CAP / 1000}k ·{' '}
+          Context window · {(used / 1000).toFixed(1)}k / {formatCap(cap)} ·{' '}
           {pct}%
         </span>
         <div className="ctx-bar">
@@ -377,7 +417,35 @@ function ConfigTab({ agent }: { agent: Agent }) {
       <div className="field">
         <span className="lbl">Model</span>
         <span className="v">
-          <code>{agent.model}</code>
+          <ModelPicker
+            value={agent.model}
+            compact
+            onChange={(m) => {
+              if (m && m !== agent.model) void window.api.setAgentModel(agent.id, m);
+            }}
+          />
+          {(agent.status === 'running' || agent.status === 'waiting') && (
+            <div className="meta" style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)' }}>
+              Active session keeps its current model. New value applies on next redirect.
+            </div>
+          )}
+        </span>
+      </div>
+      <div className="field">
+        <span className="lbl">Reasoning effort</span>
+        <span className="v">
+          <EffortPicker
+            value={agent.effort}
+            compact
+            onChange={(e) => {
+              if (e !== agent.effort) void window.api.setAgentEffort(agent.id, e);
+            }}
+          />
+          {(agent.status === 'running' || agent.status === 'waiting') && (
+            <div className="meta" style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)' }}>
+              Active session keeps its current effort. New value applies on next redirect.
+            </div>
+          )}
         </span>
       </div>
       <div className="field">
