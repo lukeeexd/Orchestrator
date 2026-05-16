@@ -3,6 +3,7 @@ import type {
   AgentStatus,
   SpendAgentRow,
   SpendBucket,
+  SpendDayBucket,
   SpendSummary,
 } from '../shared/types';
 import { ROLES } from '../shared/roles';
@@ -74,6 +75,7 @@ export function getSpendSummary(): SpendSummary {
   const projectBuckets = new Map<string, SpendBucket>();
   const modelBuckets = new Map<string, SpendBucket>();
   const roleBuckets = new Map<string, SpendBucket>();
+  const dayBuckets = new Map<string, SpendDayBucket>();
 
   const now = Date.now();
   const sevenDaysAgo = now - 7 * 24 * 3600 * 1000;
@@ -92,10 +94,40 @@ export function getSpendSummary(): SpendSummary {
       last30d.agentCount += 1;
       last30d.tokens += r.tokens;
       last30d.cost += r.cost;
+      const dayKey = localDayKey(r.startedAt);
+      const dayBucket = dayBuckets.get(dayKey);
+      if (dayBucket) {
+        dayBucket.agentCount += 1;
+        dayBucket.tokens += r.tokens;
+        dayBucket.cost += r.cost;
+      } else {
+        dayBuckets.set(dayKey, {
+          date: dayKey,
+          agentCount: 1,
+          tokens: r.tokens,
+          cost: r.cost,
+        });
+      }
     }
     accumulate(projectBuckets, r.projectId, projectNames.get(r.projectId) ?? '(deleted project)', r);
     accumulate(modelBuckets, r.model, MODEL_LABELS[r.model] ?? r.model, r);
     accumulate(roleBuckets, r.role, ROLES[r.role]?.label ?? r.role, r);
+  }
+
+  // Fill in zero-cost gap days so the bar chart shows a clean 30-day
+  // window instead of skipping over inactive days.
+  const byDay: SpendDayBucket[] = [];
+  for (let i = 29; i >= 0; i--) {
+    const ts = now - i * 24 * 3600 * 1000;
+    const key = localDayKey(ts);
+    byDay.push(
+      dayBuckets.get(key) ?? {
+        date: key,
+        agentCount: 0,
+        tokens: 0,
+        cost: 0,
+      },
+    );
   }
 
   // Top 20 most expensive agents — name + role + model + project so the
@@ -128,8 +160,22 @@ export function getSpendSummary(): SpendSummary {
     byProject: bucketsByCost(projectBuckets),
     byModel: bucketsByCost(modelBuckets),
     byRole: bucketsByCost(roleBuckets),
+    byDay,
     topAgents,
   };
+}
+
+/**
+ * Local-timezone YYYY-MM-DD key for bucketing. Local — not UTC — because
+ * "Tuesday's spend" should match what the user sees on their calendar,
+ * not a UTC sliding window that wraps in the middle of their workday.
+ */
+function localDayKey(ts: number): string {
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = (d.getMonth() + 1).toString().padStart(2, '0');
+  const day = d.getDate().toString().padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function accumulate(

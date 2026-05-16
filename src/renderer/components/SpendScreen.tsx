@@ -3,6 +3,7 @@ import type {
   AgentRole,
   SpendAgentRow,
   SpendBucket,
+  SpendDayBucket,
   SpendSummary,
 } from '../../shared/types';
 import { Icon } from './Icon';
@@ -115,6 +116,11 @@ export function SpendScreen() {
               tokens={data.lifetime.tokens}
             />
           </div>
+        </section>
+
+        <section className="settings-section">
+          <h3 className="settings-h">Daily cost · last 30 days</h3>
+          <DailyChart days={data.byDay} />
         </section>
 
         <section className="settings-section">
@@ -234,6 +240,97 @@ function BucketTable({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function DailyChart({ days }: { days: SpendDayBucket[] }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const maxCost = days.reduce((m, d) => Math.max(m, d.cost), 0);
+  // Layout: 30 bars across a fixed-aspect viewBox. Width 300 (10 units per
+  // bar, 1 unit gap), height 80. The renderer's CSS scales it to the
+  // section's width via width: 100%.
+  const W = 300;
+  const H = 80;
+  const N = days.length;
+  const barGap = 1;
+  const barW = (W - (N - 1) * barGap) / N;
+
+  // Avoid dividing by zero when every day is $0 — show flat empty bars
+  // with a hint message instead of a misleading uniformly-tall chart.
+  const allZero = maxCost === 0;
+
+  // Pick "axis" labels at the start, middle, end of the window. Calendar
+  // dates rather than relative ("30d ago") since the chart spans more
+  // than a couple of days.
+  const labelFor = (i: number) => {
+    const d = new Date(days[i].date + 'T00:00:00');
+    return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  };
+
+  const hover = hoverIdx != null ? days[hoverIdx] : null;
+
+  return (
+    <div className="daily-chart">
+      <div className="daily-chart-frame">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          preserveAspectRatio="none"
+          className="daily-chart-svg"
+        >
+          {days.map((d, i) => {
+            const h = allZero ? 0 : Math.max(1, (d.cost / maxCost) * (H - 8));
+            const x = i * (barW + barGap);
+            const y = H - h;
+            const isHover = hoverIdx === i;
+            return (
+              <rect
+                key={d.date}
+                x={x}
+                y={y}
+                width={barW}
+                height={h}
+                rx={1}
+                fill={
+                  d.cost === 0
+                    ? 'var(--border-2)'
+                    : isHover
+                    ? 'var(--accent)'
+                    : 'rgba(74, 222, 128, 0.55)'
+                }
+                onMouseEnter={() => setHoverIdx(i)}
+                onMouseLeave={() => setHoverIdx(null)}
+              >
+                <title>
+                  {labelFor(i)} · {fmt$(d.cost)} · {d.agentCount} agent
+                  {d.agentCount === 1 ? '' : 's'}
+                </title>
+              </rect>
+            );
+          })}
+        </svg>
+        <div className="daily-chart-axis">
+          <span>{labelFor(0)}</span>
+          <span>{labelFor(Math.floor(N / 2))}</span>
+          <span>{labelFor(N - 1)}</span>
+        </div>
+      </div>
+      <div className="daily-chart-readout">
+        {hover ? (
+          <>
+            <strong>{labelFor(hoverIdx ?? 0)}</strong>
+            <span className="meta">
+              {fmt$(hover.cost)} · {hover.agentCount} agent
+              {hover.agentCount === 1 ? '' : 's'} · {fmtTokens(hover.tokens)} tokens
+            </span>
+          </>
+        ) : allZero ? (
+          <span className="meta">No spend in the last 30 days.</span>
+        ) : (
+          <span className="meta">Hover a bar to see that day&apos;s detail.</span>
+        )}
+      </div>
     </div>
   );
 }

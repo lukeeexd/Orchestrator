@@ -183,6 +183,14 @@ export interface SpendAgentRow {
   startedAt: number;
 }
 
+export interface SpendDayBucket {
+  /** Local-time YYYY-MM-DD. Days with zero spend are included as gap-fillers. */
+  date: string;
+  agentCount: number;
+  tokens: number;
+  cost: number;
+}
+
 export interface SpendSummary {
   /** Aggregate totals across every agent in every project — lifetime. */
   lifetime: { agentCount: number; tokens: number; cost: number };
@@ -196,6 +204,8 @@ export interface SpendSummary {
   byModel: SpendBucket[];
   /** One row per role, sorted by cost descending. */
   byRole: SpendBucket[];
+  /** Trailing 30 days, one entry per day, ascending. Zero-spend days included so the chart doesn't have gaps. */
+  byDay: SpendDayBucket[];
   /** Top 20 most expensive agents, all-time. */
   topAgents: SpendAgentRow[];
 }
