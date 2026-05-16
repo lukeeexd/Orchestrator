@@ -22,7 +22,14 @@ env:
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    # Pinned explicitly to windows-2025 instead of windows-latest. GitHub's
+    # been emitting deprecation notices that windows-latest is being
+    # redirected to a new variant (windows-2025-vs2026) on June 15, 2026.
+    # We don't need VS 2026 specifically — just Node + Electron Forge — so
+    # pinning to the current stable image now means the build won't move
+    # under us when the alias flips. Bump explicitly if/when we need a
+    # newer image (or, e.g., a different MSVC for any native deps we add).
+    runs-on: windows-2025
     timeout-minutes: 30
 
     steps:
