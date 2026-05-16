@@ -350,8 +350,9 @@ function ToolsTab({ agent }: { agent: Agent }) {
 function MemoryTab() {
   return (
     <div className="inline-empty">
-      Memory pins land in M5 (via the SDK's memory tool). For now an agent's
-      working notes live only in its log.
+      Memory pins via the SDK&apos;s memory tool aren&apos;t wired up yet
+      (deferred from v1). For now an agent&apos;s working notes live only in
+      its log.
     </div>
   );
 }
