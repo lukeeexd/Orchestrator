@@ -3,6 +3,7 @@ import type {
   DirectorMessage,
   DirectorMode,
   EffortLevel,
+  PlanRow,
   Project,
 } from '../shared/types';
 import { DEFAULT_EFFORT } from '../shared/efforts';
@@ -174,8 +175,13 @@ export function App() {
   const handledPlans = useRef<Set<string>>(new Set());
   const handledRedirects = useRef<Set<string>>(new Set());
 
-  const spawnPlan = async (msg: DirectorMessage) => {
-    if (!msg.plan || msg.planAccepted || !activeProjectId) return;
+  const spawnPlan = async (
+    msg: DirectorMessage,
+    rows?: PlanRow[],
+  ) => {
+    const effectiveRows = rows ?? msg.plan;
+    if (!effectiveRows || msg.planAccepted || !activeProjectId) return;
+    if (effectiveRows.length === 0) return;
     if (handledPlans.current.has(msg.id)) return;
     handledPlans.current.add(msg.id);
     let ws = workspace;
@@ -190,7 +196,7 @@ export function App() {
     try {
       await window.api.acceptPlan({
         projectId: activeProjectId,
-        rows: msg.plan,
+        rows: effectiveRows,
         workspace: ws,
       });
     } catch (e) {
@@ -231,11 +237,17 @@ export function App() {
     }
   };
 
+  // Auto mode used to spawn plans the moment they landed. That meant a
+  // 6-agent plan you didn't expect could already be three agents deep
+  // before you finished reading it. Now plans always wait for an explicit
+  // confirm (with optional inline edits) from the PlanCard. The auto-mode
+  // bit still controls downstream orchestration — Director-issued
+  // redirects fire automatically here, and once you click Spawn the
+  // backend sequences the agents itself.
   useEffect(() => {
     if (mode !== 'auto' || !activeProjectId) return;
     void (async () => {
       for (const msg of messages) {
-        if (msg.plan && !msg.planAccepted) await spawnPlan(msg);
         if (msg.redirect && !msg.redirectFired) {
           await fireRedirect(
             msg.id,
