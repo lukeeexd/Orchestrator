@@ -160,6 +160,10 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
       import('../shared/types').SpendSummary
     >,
+  listHistory: () =>
+    ipcRenderer.invoke(IpcChannels.HistoryList) as Promise<
+      import('../shared/types').HistoryRow[]
+    >,
 
   onAgent: (cb) => subscribe<AgentEventAgentPayload>(IpcChannels.AgentEventAgent, cb),
   onLog: (cb) => subscribe<AgentEventLogPayload>(IpcChannels.AgentEventLog, cb),

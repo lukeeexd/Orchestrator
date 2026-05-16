@@ -17,6 +17,7 @@ import type {
 import { readSettings, writeSettings, settingsFilePath } from './settings';
 import { getClaudeCliStatus } from './cli/status';
 import { getSpendSummary } from './spend';
+import { listHistory } from './history';
 import {
   spawnAgent,
   redirectAgent,
@@ -81,6 +82,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IpcChannels.SpendGet,
     (): import('../shared/types').SpendSummary => getSpendSummary(),
+  );
+
+  ipcMain.handle(
+    IpcChannels.HistoryList,
+    (): import('../shared/types').HistoryRow[] => listHistory(),
   );
 
   ipcMain.handle(

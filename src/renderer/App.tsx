@@ -23,6 +23,7 @@ import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { ToolsScreen } from './components/ToolsScreen';
 import { SpendScreen } from './components/SpendScreen';
+import { HistoryScreen } from './components/HistoryScreen';
 import { CliMissingGate } from './components/CliMissingGate';
 import {
   ProjectTabs,
@@ -31,18 +32,13 @@ import {
 } from './components/ProjectTabs';
 
 const PLACEHOLDERS: Record<
-  Exclude<RailScreen, 'agents' | 'settings' | 'tools' | 'cost'>,
+  Exclude<RailScreen, 'agents' | 'settings' | 'tools' | 'cost' | 'history'>,
   { title: string; icon: Parameters<typeof PlaceholderScreen>[0]['icon']; body: string }
 > = {
   templates: {
     title: 'Templates',
     icon: 'templates',
     body: 'Saved agent fleets. Pick a template, the Director spawns the matching agents with their system prompts and tool allow-lists already wired.',
-  },
-  history: {
-    title: 'Runs',
-    icon: 'history',
-    body: 'Past sessions, searchable. Replay an old run, fork from any point, or audit what an agent did.',
   },
 };
 
@@ -380,6 +376,17 @@ export function App() {
           />
         ) : active === 'cost' ? (
           <SpendScreen />
+        ) : active === 'history' ? (
+          <HistoryScreen
+            projects={projects}
+            onOpenAgent={async (projectId, agentId) => {
+              if (projectId !== activeProjectId) {
+                await setActiveProject(projectId);
+              }
+              setSelectedId(agentId);
+              setActive('agents');
+            }}
+          />
         ) : (
           <PlaceholderScreen
             {...(active === 'agents'

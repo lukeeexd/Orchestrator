@@ -183,6 +183,25 @@ export interface SpendAgentRow {
   startedAt: number;
 }
 
+export interface HistoryRow {
+  id: string;
+  name: string;
+  role: AgentRole;
+  roleLabel: string;
+  status: AgentStatus;
+  statusLabel: string;
+  model: string;
+  task: string;
+  tokens: number;
+  cost: number;
+  startedAt: number;
+  elapsed: string;
+  projectId: string;
+  projectName: string;
+  spawnedBy: AgentSpawnedBy;
+  forkedFromName?: string;
+}
+
 export interface SpendDayBucket {
   /** Local-time YYYY-MM-DD. Days with zero spend are included as gap-fillers. */
   date: string;

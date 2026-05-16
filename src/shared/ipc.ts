@@ -43,6 +43,7 @@ export const IpcChannels = {
   AppShowSettingsFile: 'app:showSettingsFile',
   AppCliStatus: 'app:cliStatus',
   SpendGet: 'spend:get',
+  HistoryList: 'history:list',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
@@ -203,6 +204,7 @@ export interface OrchestratorApi {
     version: string | null;
   }>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
+  listHistory: () => Promise<import('./types').HistoryRow[]>;
   // Streams
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;
