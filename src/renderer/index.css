@@ -1319,3 +1319,59 @@ body.resizing * { cursor: col-resize !important; }
   border-radius: 5px;
   text-align: center;
 }
+
+/* ───────────────────────────── Tools grid ───────────────────────────── */
+.tools-grid {
+  display: flex;
+  flex-direction: column;
+  background: var(--sub);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.tools-row {
+  display: grid;
+  grid-template-columns: 180px repeat(8, 1fr) 80px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.tools-row:last-child { border-bottom: 0; }
+.tools-row.tools-header {
+  background: var(--sub-2);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tools-tool-head {
+  text-align: center;
+  padding: 8px 4px;
+  border-left: 1px solid var(--border);
+}
+.tools-tool-head.danger { color: var(--waiting); }
+.tools-role-cell {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text);
+  border-right: 1px solid var(--border);
+}
+.tools-role-name { font-weight: 500; }
+.tools-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  border-left: 1px solid var(--border);
+  cursor: pointer;
+}
+.tools-cell input { cursor: pointer; }
+.tools-cell.on { background: rgba(74, 222, 128, 0.05); }
+.tools-reset-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-left: 1px solid var(--border);
+}

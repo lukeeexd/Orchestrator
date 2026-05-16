@@ -18,6 +18,7 @@ import { readSettings, writeSettings, settingsFilePath } from './settings';
 import {
   spawnAgent,
   redirectAgent,
+  forkAgent,
   registry,
   awaitCompletion,
 } from './agents/runner';
@@ -34,6 +35,7 @@ import {
   setActiveProjectId,
   setProjectDirectorEffort,
   setProjectDirectorModel,
+  setProjectRoleTools,
   setProjectWorkspace,
 } from './projects';
 import { isEffortLevel } from '../shared/efforts';
@@ -133,6 +135,19 @@ export function registerIpcHandlers(): void {
     },
   );
   ipcMain.handle(
+    IpcChannels.ProjectSetRoleTools,
+    (
+      _event,
+      id: string,
+      roleTools: Partial<
+        Record<import('../shared/types').AgentRole, string[]>
+      > | null,
+    ): { ok: true } => {
+      setProjectRoleTools(id, roleTools);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
     IpcChannels.ProjectDelete,
     (_event, id: string): { ok: true } => {
       // Stop the Director session and remove agents for this project first.
@@ -209,6 +224,16 @@ export function registerIpcHandlers(): void {
       req: import('../shared/types').RedirectAgentRequest,
     ): Promise<{ ok: boolean; error?: string }> => {
       return redirectAgent(req, agentSinks);
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentFork,
+    async (
+      _event,
+      req: import('../shared/types').ForkAgentRequest,
+    ): Promise<{ ok: boolean; agentId?: string; error?: string }> => {
+      return forkAgent(req, agentSinks);
     },
   );
 

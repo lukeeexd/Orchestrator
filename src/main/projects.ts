@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { EffortLevel, Project } from '../shared/types';
+import type { AgentRole, EffortLevel, Project } from '../shared/types';
 import { isEffortLevel } from '../shared/efforts';
 import { getDb, scheduleSave } from './db';
 
@@ -14,12 +14,13 @@ function asInt(v: unknown, fallback = 0): number {
 export function listProjects(): Project[] {
   const db = getDb();
   const res = db.exec(
-    `SELECT id, name, workspace, created_at, director_model, director_effort FROM projects ORDER BY created_at ASC`,
+    `SELECT id, name, workspace, created_at, director_model, director_effort, role_tools FROM projects ORDER BY created_at ASC`,
   );
   if (res.length === 0) return [];
   return res[0].values.map((row) => {
     const dm = row[4];
     const de = row[5];
+    const rt = row[6];
     return {
       id: asStr(row[0]),
       name: asStr(row[1]),
@@ -27,8 +28,26 @@ export function listProjects(): Project[] {
       createdAt: asInt(row[3]),
       directorModel: typeof dm === 'string' && dm.length > 0 ? dm : undefined,
       directorEffort: isEffortLevel(de) ? de : undefined,
+      roleTools: parseRoleTools(rt),
     };
   });
+}
+
+function parseRoleTools(raw: unknown): Project['roleTools'] {
+  if (typeof raw !== 'string' || raw.length === 0) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    const out: Partial<Record<AgentRole, string[]>> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (Array.isArray(v) && v.every((x) => typeof x === 'string')) {
+        out[k as AgentRole] = v;
+      }
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function getProject(id: string): Project | null {
@@ -54,6 +73,27 @@ export function setProjectDirectorEffort(
     `UPDATE projects SET director_effort = ? WHERE id = ?`,
   );
   stmt.run([effort && isEffortLevel(effort) ? effort : null, id]);
+  stmt.free();
+  scheduleSave();
+}
+
+/**
+ * Replace the entire role-tools override map for a project. Passing
+ * `null` clears the override so every role falls back to its default
+ * tool set. Empty objects are also stored as NULL so a "reset" round-trips
+ * cleanly.
+ */
+export function setProjectRoleTools(
+  id: string,
+  roleTools: Partial<Record<AgentRole, string[]>> | null,
+): void {
+  const db = getDb();
+  const payload =
+    roleTools && Object.keys(roleTools).length > 0
+      ? JSON.stringify(roleTools)
+      : null;
+  const stmt = db.prepare(`UPDATE projects SET role_tools = ? WHERE id = ?`);
+  stmt.run([payload, id]);
   stmt.free();
   scheduleSave();
 }

@@ -5,6 +5,7 @@ import type {
   LogLine,
   PlanRow,
   Project,
+  ForkAgentRequest,
   RedirectAgentRequest,
   SpawnAgentRequest,
 } from './types';
@@ -18,6 +19,7 @@ export const IpcChannels = {
   AgentAbort: 'agent:abort',
   AgentRemove: 'agent:remove',
   AgentRedirect: 'agent:redirect',
+  AgentFork: 'agent:fork',
   AgentSetModel: 'agent:setModel',
   AgentSetEffort: 'agent:setEffort',
   AgentPickWorkspace: 'agent:pickWorkspace',
@@ -34,6 +36,7 @@ export const IpcChannels = {
   ProjectSetWorkspace: 'project:setWorkspace',
   ProjectSetDirectorModel: 'project:setDirectorModel',
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
+  ProjectSetRoleTools: 'project:setRoleTools',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
@@ -146,6 +149,9 @@ export interface OrchestratorApi {
   abortAgent: (id: string) => Promise<{ ok: boolean }>;
   removeAgent: (id: string) => Promise<{ ok: boolean }>;
   redirectAgent: (req: RedirectAgentRequest) => Promise<{ ok: boolean; error?: string }>;
+  forkAgent: (
+    req: ForkAgentRequest,
+  ) => Promise<{ ok: boolean; agentId?: string; error?: string }>;
   setAgentModel: (id: string, model: string) => Promise<{ ok: boolean }>;
   setAgentEffort: (
     id: string,
@@ -178,6 +184,10 @@ export interface OrchestratorApi {
   setProjectDirectorEffort: (
     id: string,
     effort: import('./types').EffortLevel,
+  ) => Promise<{ ok: true }>;
+  setProjectRoleTools: (
+    id: string,
+    roleTools: Partial<Record<import('./types').AgentRole, string[]>> | null,
   ) => Promise<{ ok: true }>;
   setProjectWorkspace: (id: string, workspace: string) => Promise<{ ok: true }>;
   deleteProject: (id: string) => Promise<{ ok: true }>;

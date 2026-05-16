@@ -193,8 +193,9 @@ export function saveAgent(a: Agent): void {
       (id, ordering, role, role_label, name, status, status_label, step, task,
        tokens, cost, elapsed, model, workspace,
        budget_usd, budget_tokens, budget_seconds,
-       spawned_by, started_at, session_id, project_id, effort)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       spawned_by, started_at, session_id, project_id, effort,
+       forked_from_id, forked_from_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     a.id,
@@ -219,6 +220,8 @@ export function saveAgent(a: Agent): void {
     a.sessionId ?? null,
     a.projectId,
     a.effort,
+    a.forkedFromId ?? null,
+    a.forkedFromName ?? null,
   ]);
   stmt.free();
   scheduleSave();
@@ -266,7 +269,8 @@ export function loadAgents(): Agent[] {
   const res = db.exec(`
     SELECT id, ordering, role, role_label, name, status, status_label, step, task,
            tokens, cost, elapsed, model, workspace,
-           budget_usd, budget_tokens, budget_seconds, spawned_by, started_at, session_id, project_id, effort
+           budget_usd, budget_tokens, budget_seconds, spawned_by, started_at, session_id, project_id, effort,
+           forked_from_id, forked_from_name
     FROM agents ORDER BY ordering ASC
   `);
   if (res.length === 0) return [];
@@ -274,6 +278,8 @@ export function loadAgents(): Agent[] {
   for (const row of res[0].values) {
     const sid = row[19];
     const effortRaw = row[21];
+    const forkedId = row[22];
+    const forkedName = row[23];
     out.push({
       id: asStr(row[0]),
       projectId: asStr(row[20]),
@@ -301,6 +307,14 @@ export function loadAgents(): Agent[] {
       // Agents stored before schema v8 don't have an effort column; fall
       // back to DEFAULT_EFFORT rather than carrying NULL through to the SDK.
       effort: isEffortLevel(effortRaw) ? effortRaw : DEFAULT_EFFORT,
+      forkedFromId:
+        typeof forkedId === 'string' && forkedId.length > 0
+          ? forkedId
+          : undefined,
+      forkedFromName:
+        typeof forkedName === 'string' && forkedName.length > 0
+          ? forkedName
+          : undefined,
     });
     agentOrdering = Math.max(agentOrdering, asInt(row[1]));
   }

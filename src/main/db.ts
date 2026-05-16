@@ -154,6 +154,29 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 9,
+    up: (db) => {
+      // Fork attribution: which agent (if any) this one was forked from.
+      // NULL for normal spawns. Name is denormalised so the Drawer can
+      // render "forked from coder-01" without joining back to the agents
+      // table (and so the attribution survives the parent being deleted).
+      db.exec(`
+        ALTER TABLE agents ADD COLUMN forked_from_id TEXT;
+        ALTER TABLE agents ADD COLUMN forked_from_name TEXT;
+      `);
+    },
+  },
+  {
+    version: 10,
+    up: (db) => {
+      // Per-project role-tool allow-list overrides. JSON-encoded map of
+      // `{ role: ["Tool1", "Tool2", ...] }`. Roles not present in the map
+      // fall back to the role's default tool set from shared/roles.ts at
+      // spawn time. NULL means "no overrides, use defaults for every role".
+      db.exec(`ALTER TABLE projects ADD COLUMN role_tools TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

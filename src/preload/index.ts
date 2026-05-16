@@ -49,6 +49,12 @@ const api: OrchestratorApi = {
       ok: boolean;
       error?: string;
     }>,
+  forkAgent: (req) =>
+    ipcRenderer.invoke(IpcChannels.AgentFork, req) as Promise<{
+      ok: boolean;
+      agentId?: string;
+      error?: string;
+    }>,
   setAgentModel: (id, model) =>
     ipcRenderer.invoke(IpcChannels.AgentSetModel, id, model) as Promise<{
       ok: boolean;
@@ -126,6 +132,12 @@ const api: OrchestratorApi = {
       IpcChannels.ProjectSetDirectorEffort,
       id,
       effort,
+    ) as Promise<{ ok: true }>,
+  setProjectRoleTools: (id, roleTools) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetRoleTools,
+      id,
+      roleTools,
     ) as Promise<{ ok: true }>,
   deleteProject: (id) =>
     ipcRenderer.invoke(IpcChannels.ProjectDelete, id) as Promise<{ ok: true }>,

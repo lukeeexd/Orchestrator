@@ -41,7 +41,7 @@ interface Props {
     mode: DirectorMode,
     attachments?: string[],
   ) => Promise<void>;
-  onSpawnPlan: (msg: DirectorMessage) => Promise<void>;
+  onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
 }
 
 interface AttachmentChip {
@@ -160,7 +160,7 @@ function Chat({
 }: {
   messages: DirectorMessage[];
   mode: DirectorMode;
-  onSpawnPlan: (msg: DirectorMessage) => Promise<void>;
+  onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
 }) {
   const tailRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -184,7 +184,7 @@ function Message({
 }: {
   message: DirectorMessage;
   mode: DirectorMode;
-  onSpawn: (msg: DirectorMessage) => Promise<void>;
+  onSpawn: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
 }) {
   return (
     <div className="msg">
@@ -216,7 +216,7 @@ function Message({
           rows={message.plan}
           accepted={message.planAccepted === true}
           mode={mode}
-          onSpawn={() => onSpawn(message)}
+          onSpawn={(rows) => onSpawn(message, rows)}
         />
       )}
       {message.redirect && (
