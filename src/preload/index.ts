@@ -97,6 +97,10 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.DirectorAbort, projectId) as Promise<{
       ok: true;
     }>,
+  wipeDirector: (projectId) =>
+    ipcRenderer.invoke(IpcChannels.DirectorWipe, projectId) as Promise<{
+      ok: true;
+    }>,
 
   // Projects
   listProjects: () =>
@@ -152,6 +156,22 @@ const api: OrchestratorApi = {
       available: boolean;
       version: string | null;
     }>,
+  getSpendSummary: () =>
+    ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
+      import('../shared/types').SpendSummary
+    >,
+  listHistory: () =>
+    ipcRenderer.invoke(IpcChannels.HistoryList) as Promise<
+      import('../shared/types').HistoryRow[]
+    >,
+
+  restartToUpdate: () =>
+    ipcRenderer.invoke(IpcChannels.UpdaterRestart) as Promise<void>,
+  onUpdateDownloaded: (cb) =>
+    subscribe<{ version: string; notes: string }>(
+      IpcChannels.UpdaterEventDownloaded,
+      cb,
+    ),
 
   onAgent: (cb) => subscribe<AgentEventAgentPayload>(IpcChannels.AgentEventAgent, cb),
   onLog: (cb) => subscribe<AgentEventLogPayload>(IpcChannels.AgentEventLog, cb),
@@ -166,6 +186,8 @@ const api: OrchestratorApi = {
     ),
   onDirectorPatch: (cb) =>
     subscribe<DirectorEventPatchPayload>(IpcChannels.DirectorEventPatch, cb),
+  onDirectorCleared: (cb) =>
+    subscribe<{ projectId: string }>(IpcChannels.DirectorEventCleared, cb),
   onActiveProjectChanged: (cb) =>
     subscribe<ProjectActiveChangedPayload>(
       IpcChannels.ProjectEventActiveChanged,

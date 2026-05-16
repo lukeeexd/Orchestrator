@@ -9,6 +9,7 @@ import * as registry from './agents/registry';
 import { ensureDefaultProject, listProjects } from './projects';
 import { probeClaudeCli } from './cli/spawn';
 import { setClaudeCliStatus } from './cli/status';
+import { setupAutoUpdater } from './updater';
 
 if (started) {
   app.quit();
@@ -53,6 +54,7 @@ app.whenReady().then(async () => {
   director.hydrateAll(listProjects().map((p) => p.id));
   registry.hydrate();
   registerIpcHandlers();
+  setupAutoUpdater();
   createWindow();
 
   app.on('activate', () => {

@@ -71,6 +71,15 @@ export interface Agent {
   elapsed: string;
   model: string;
   effort: EffortLevel;
+  /**
+   * Per-model spend breakdown — captured from each CLI result event's
+   * modelUsage field and merged cumulatively across the agent's run +
+   * any subsequent redirects/forks. Lets the UI show which model
+   * actually burned the $ (often a mix of the chosen agent.model + a
+   * cheaper auxiliary model used internally by the CLI). Optional
+   * because pre-v0.5 agents in the DB don't have it.
+   */
+  modelUsage?: Record<string, { tokens: number; cost: number }>;
   workspace: string;
   budget: AgentBudget;
   spawnedBy: AgentSpawnedBy;
@@ -158,4 +167,73 @@ export interface SpawnAgentRequest {
 export interface SpawnAgentResponse {
   ok: true;
   agentId: string;
+}
+
+export interface SpendBucket {
+  /** Display label for the bucket (project name, model id, or role label). */
+  label: string;
+  /** Stable id — used by the renderer for keys and for "drill in" later. */
+  id: string;
+  agentCount: number;
+  tokens: number;
+  cost: number;
+}
+
+export interface SpendAgentRow {
+  id: string;
+  name: string;
+  role: AgentRole;
+  model: string;
+  status: AgentStatus;
+  projectId: string;
+  projectName: string;
+  cost: number;
+  tokens: number;
+  startedAt: number;
+}
+
+export interface HistoryRow {
+  id: string;
+  name: string;
+  role: AgentRole;
+  roleLabel: string;
+  status: AgentStatus;
+  statusLabel: string;
+  model: string;
+  task: string;
+  tokens: number;
+  cost: number;
+  startedAt: number;
+  elapsed: string;
+  projectId: string;
+  projectName: string;
+  spawnedBy: AgentSpawnedBy;
+  forkedFromName?: string;
+}
+
+export interface SpendDayBucket {
+  /** Local-time YYYY-MM-DD. Days with zero spend are included as gap-fillers. */
+  date: string;
+  agentCount: number;
+  tokens: number;
+  cost: number;
+}
+
+export interface SpendSummary {
+  /** Aggregate totals across every agent in every project — lifetime. */
+  lifetime: { agentCount: number; tokens: number; cost: number };
+  /** Same totals filtered to agents started in the trailing 7 days. */
+  last7d: { agentCount: number; tokens: number; cost: number };
+  /** Same totals filtered to agents started in the trailing 30 days. */
+  last30d: { agentCount: number; tokens: number; cost: number };
+  /** One row per project, sorted by cost descending. */
+  byProject: SpendBucket[];
+  /** One row per model (as stored on the agent), sorted by cost descending. */
+  byModel: SpendBucket[];
+  /** One row per role, sorted by cost descending. */
+  byRole: SpendBucket[];
+  /** Trailing 30 days, one entry per day, ascending. Zero-spend days included so the chart doesn't have gaps. */
+  byDay: SpendDayBucket[];
+  /** Top 20 most expensive agents, all-time. */
+  topAgents: SpendAgentRow[];
 }

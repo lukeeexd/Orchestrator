@@ -42,6 +42,7 @@ interface Props {
     attachments?: string[],
   ) => Promise<void>;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
+  onWipe: () => Promise<void>;
 }
 
 interface AttachmentChip {
@@ -64,7 +65,9 @@ export function DirectorPane({
   onEffortChange,
   onSend,
   onSpawnPlan,
+  onWipe,
 }: Props) {
+  const [confirmWipe, setConfirmWipe] = useState(false);
   return (
     <div className="pane director" style={{ width }}>
       <div className="pane-head">
@@ -80,8 +83,13 @@ export function DirectorPane({
             streaming
           </span>
         )}
-        <button className="icon-btn" title="More">
-          <Icon name="more" size={13} />
+        <button
+          className="icon-btn"
+          title="Wipe chat — drops messages + session memory. Agents stay."
+          onClick={() => setConfirmWipe(true)}
+          disabled={messages.length === 0}
+        >
+          <Icon name="x" size={13} />
         </button>
       </div>
 
@@ -97,6 +105,74 @@ export function DirectorPane({
         agents={agents}
         onSend={(body, attachments) => onSend(body, mode, attachments)}
       />
+      {confirmWipe && (
+        <ConfirmWipe
+          messageCount={messages.length}
+          onConfirm={async () => {
+            await onWipe();
+            setConfirmWipe(false);
+          }}
+          onCancel={() => setConfirmWipe(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ConfirmWipe({
+  messageCount,
+  onConfirm,
+  onCancel,
+}: {
+  messageCount: number;
+  onConfirm: () => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 420 }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>Wipe Director chat?</b>
+          </span>
+        </div>
+        <div className="modal-body" style={{ gap: 8 }}>
+          <p style={{ margin: 0, color: 'var(--text)', fontSize: 13 }}>
+            This drops {messageCount} message
+            {messageCount === 1 ? '' : 's'} and the Director&apos;s session
+            memory for this project. The next message starts fresh, with
+            no context from prior turns.
+          </p>
+          <p style={{ margin: 0, color: 'var(--muted)', fontSize: 11 }}>
+            Agents stay running. Project, workspace, and config are
+            untouched.
+          </p>
+        </div>
+        <div className="modal-foot">
+          <button className="tb-btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            className="tb-btn primary"
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onConfirm();
+              } finally {
+                setBusy(false);
+              }
+            }}
+            disabled={busy}
+          >
+            <Icon name="x" size={11} /> {busy ? 'Wiping…' : 'Wipe'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -15,6 +15,29 @@ function asInt(v: unknown, fallback = 0): number {
   return typeof v === 'number' ? v : fallback;
 }
 
+function parseModelUsage(
+  raw: unknown,
+): Record<string, { tokens: number; cost: number }> | undefined {
+  if (typeof raw !== 'string' || raw.length === 0) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    const out: Record<string, { tokens: number; cost: number }> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (v && typeof v === 'object') {
+        const entry = v as { tokens?: number; cost?: number };
+        out[k] = {
+          tokens: typeof entry.tokens === 'number' ? entry.tokens : 0,
+          cost: typeof entry.cost === 'number' ? entry.cost : 0,
+        };
+      }
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function asStr(v: unknown, fallback = ''): string {
   return typeof v === 'string' ? v : fallback;
 }
@@ -157,6 +180,22 @@ export function loadDirectorMessages(projectId: string): DirectorMessage[] {
 const sessionKey = (projectId: string) =>
   `project:${projectId}:director_session_id`;
 
+/**
+ * Drop every persisted Director artifact for one project: chat messages
+ * + the saved SDK session id. Leaves the project itself and its agents
+ * intact — this is the "clear chat" operation, not project deletion.
+ */
+export function wipeDirector(projectId: string): void {
+  const db = getDb();
+  const dm = db.prepare(`DELETE FROM director_messages WHERE project_id = ?`);
+  dm.run([projectId]);
+  dm.free();
+  const kv = db.prepare(`DELETE FROM kv WHERE key = ?`);
+  kv.run([sessionKey(projectId)]);
+  kv.free();
+  scheduleSave();
+}
+
 export function saveDirectorSessionId(
   projectId: string,
   sessionId: string,
@@ -194,8 +233,8 @@ export function saveAgent(a: Agent): void {
        tokens, cost, elapsed, model, workspace,
        budget_usd, budget_tokens, budget_seconds,
        spawned_by, started_at, session_id, project_id, effort,
-       forked_from_id, forked_from_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       forked_from_id, forked_from_name, model_usage)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     a.id,
@@ -222,6 +261,7 @@ export function saveAgent(a: Agent): void {
     a.effort,
     a.forkedFromId ?? null,
     a.forkedFromName ?? null,
+    a.modelUsage ? JSON.stringify(a.modelUsage) : null,
   ]);
   stmt.free();
   scheduleSave();
@@ -240,6 +280,10 @@ export function patchAgent(id: string, patch: Partial<Agent>): void {
   if (patch.sessionId !== undefined) { sets.push('session_id = ?'); values.push(patch.sessionId); }
   if (patch.model !== undefined) { sets.push('model = ?'); values.push(patch.model); }
   if (patch.effort !== undefined) { sets.push('effort = ?'); values.push(patch.effort); }
+  if (patch.modelUsage !== undefined) {
+    sets.push('model_usage = ?');
+    values.push(JSON.stringify(patch.modelUsage));
+  }
   if (sets.length === 0) return;
   values.push(id);
   const stmt = db.prepare(
@@ -270,7 +314,7 @@ export function loadAgents(): Agent[] {
     SELECT id, ordering, role, role_label, name, status, status_label, step, task,
            tokens, cost, elapsed, model, workspace,
            budget_usd, budget_tokens, budget_seconds, spawned_by, started_at, session_id, project_id, effort,
-           forked_from_id, forked_from_name
+           forked_from_id, forked_from_name, model_usage
     FROM agents ORDER BY ordering ASC
   `);
   if (res.length === 0) return [];
@@ -280,6 +324,7 @@ export function loadAgents(): Agent[] {
     const effortRaw = row[21];
     const forkedId = row[22];
     const forkedName = row[23];
+    const modelUsageRaw = row[24];
     out.push({
       id: asStr(row[0]),
       projectId: asStr(row[20]),
@@ -315,6 +360,7 @@ export function loadAgents(): Agent[] {
         typeof forkedName === 'string' && forkedName.length > 0
           ? forkedName
           : undefined,
+      modelUsage: parseModelUsage(modelUsageRaw),
     });
     agentOrdering = Math.max(agentOrdering, asInt(row[1]));
   }

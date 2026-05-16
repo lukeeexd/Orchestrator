@@ -16,6 +16,9 @@ import type {
 } from '../shared/types';
 import { readSettings, writeSettings, settingsFilePath } from './settings';
 import { getClaudeCliStatus } from './cli/status';
+import { getSpendSummary } from './spend';
+import { listHistory } from './history';
+import { quitAndInstallUpdate } from './updater';
 import {
   spawnAgent,
   redirectAgent,
@@ -76,6 +79,20 @@ export function registerIpcHandlers(): void {
     IpcChannels.AppCliStatus,
     (): { available: boolean; version: string | null } => getClaudeCliStatus(),
   );
+
+  ipcMain.handle(
+    IpcChannels.SpendGet,
+    (): import('../shared/types').SpendSummary => getSpendSummary(),
+  );
+
+  ipcMain.handle(
+    IpcChannels.HistoryList,
+    (): import('../shared/types').HistoryRow[] => listHistory(),
+  );
+
+  ipcMain.handle(IpcChannels.UpdaterRestart, (): void => {
+    quitAndInstallUpdate();
+  });
 
   ipcMain.handle(
     IpcChannels.AppShowSettingsFile,
@@ -318,6 +335,15 @@ export function registerIpcHandlers(): void {
     IpcChannels.DirectorAbort,
     (_event, projectId: string): { ok: true } => {
       director.abort(projectId);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.DirectorWipe,
+    (_event, projectId: string): { ok: true } => {
+      director.wipeSession(projectId);
+      broadcast(IpcChannels.DirectorEventCleared, { projectId });
       return { ok: true };
     },
   );

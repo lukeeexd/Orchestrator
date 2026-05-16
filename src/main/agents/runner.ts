@@ -701,6 +701,16 @@ async function consumeQuery(
           cache_creation_input_tokens?: number;
           cache_read_input_tokens?: number;
         };
+        modelUsage?: Record<
+          string,
+          {
+            inputTokens?: number;
+            outputTokens?: number;
+            cacheReadInputTokens?: number;
+            cacheCreationInputTokens?: number;
+            costUSD?: number;
+          }
+        >;
         is_error?: boolean;
         errors?: string[];
         result?: string;
@@ -716,24 +726,46 @@ async function consumeQuery(
       const resultRunOutput = Number(u.output_tokens) || 0;
       const finalTokens = baseTokens + resultRunInput + resultRunOutput;
       const finalCost = baseCost + (result.total_cost_usd ?? 0);
+
+      // Merge per-model usage cumulatively. A redirect run produces a
+      // second result event with its own modelUsage; we add to whatever
+      // the agent already had so the Drawer + Spend screen see the full
+      // cross-turn breakdown.
+      const currentUsage = registry.get(agentId)?.agent.modelUsage ?? {};
+      const mergedUsage: Record<string, { tokens: number; cost: number }> = {
+        ...currentUsage,
+      };
+      if (result.modelUsage) {
+        for (const [model, m] of Object.entries(result.modelUsage)) {
+          const turnTokens =
+            (Number(m.inputTokens) || 0) +
+            (Number(m.outputTokens) || 0) +
+            (Number(m.cacheReadInputTokens) || 0) +
+            (Number(m.cacheCreationInputTokens) || 0);
+          const turnCost = Number(m.costUSD) || 0;
+          const prev = mergedUsage[model] ?? { tokens: 0, cost: 0 };
+          mergedUsage[model] = {
+            tokens: prev.tokens + turnTokens,
+            cost: prev.cost + turnCost,
+          };
+        }
+      }
+      const usageChanged = Object.keys(mergedUsage).length > 0;
       if (result.subtype === 'success') {
         sinks.onLog(agentId, {
           ts: nowTs(),
           kind: 'handoff',
           msg: 'Task complete',
         });
-        registry.patch(agentId, {
+        const successPatch: Partial<import('../../shared/types').Agent> = {
           status: 'done',
           statusLabel: 'Done',
           tokens: finalTokens,
           cost: finalCost,
-        });
-        sinks.onPatch(agentId, {
-          status: 'done',
-          statusLabel: 'Done',
-          tokens: finalTokens,
-          cost: finalCost,
-        });
+        };
+        if (usageChanged) successPatch.modelUsage = mergedUsage;
+        registry.patch(agentId, successPatch);
+        sinks.onPatch(agentId, successPatch);
         const entry = registry.get(agentId);
         // Notify the Director on every completion — user-spawned, Director-
         // spawned, or redirected. Director sees the live fleet block on each
@@ -749,18 +781,15 @@ async function consumeQuery(
       } else {
         const errMsg = (result.errors ?? [result.subtype]).join(' · ');
         sinks.onLog(agentId, { ts: nowTs(), kind: 'error', msg: errMsg });
-        registry.patch(agentId, {
+        const errorPatch: Partial<import('../../shared/types').Agent> = {
           status: 'error',
           statusLabel: result.subtype,
           tokens: finalTokens,
           cost: finalCost,
-        });
-        sinks.onPatch(agentId, {
-          status: 'error',
-          statusLabel: result.subtype,
-          tokens: finalTokens,
-          cost: finalCost,
-        });
+        };
+        if (usageChanged) errorPatch.modelUsage = mergedUsage;
+        registry.patch(agentId, errorPatch);
+        sinks.onPatch(agentId, errorPatch);
       }
     }
   }

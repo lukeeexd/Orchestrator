@@ -177,6 +177,17 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE projects ADD COLUMN role_tools TEXT;`);
     },
   },
+  {
+    version: 11,
+    up: (db) => {
+      // Cumulative per-model spend captured from each CLI result event's
+      // modelUsage field. JSON-encoded map of
+      // `{ <model-id>: { tokens, cost } }`. NULL for agents that ran
+      // before v0.5; the runtime falls back to attributing to agent.model
+      // for those.
+      db.exec(`ALTER TABLE agents ADD COLUMN model_usage TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

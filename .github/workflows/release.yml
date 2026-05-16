@@ -22,7 +22,14 @@ env:
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    # Pinned explicitly to windows-2025 instead of windows-latest. GitHub's
+    # been emitting deprecation notices that windows-latest is being
+    # redirected to a new variant (windows-2025-vs2026) on June 15, 2026.
+    # We don't need VS 2026 specifically — just Node + Electron Forge — so
+    # pinning to the current stable image now means the build won't move
+    # under us when the alias flips. Bump explicitly if/when we need a
+    # newer image (or, e.g., a different MSVC for any native deps we add).
+    runs-on: windows-2025
     timeout-minutes: 30
 
     steps:
@@ -94,10 +101,14 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # The .exe is the only artifact end-users need. RELEASES + nupkg
-          # are Squirrel auto-update metadata; once auto-update is wired
-          # (v1.1+), add them here as well.
-          files: out/make/squirrel.windows/x64/Orchestrator-Setup.exe
+          # The .exe is the first-install artifact; RELEASES + *.nupkg are
+          # the Squirrel update feed. update.electronjs.org reads them from
+          # the GitHub Release to serve auto-updates to existing installs.
+          # Glob expansion picks up both full and delta nupkgs when present.
+          files: |
+            out/make/squirrel.windows/x64/Orchestrator-Setup.exe
+            out/make/squirrel.windows/x64/RELEASES
+            out/make/squirrel.windows/x64/*.nupkg
           name: Orchestrator ${{ github.ref_name }}
           body: ${{ steps.notes.outputs.body }}
           # Tags containing a hyphen (e.g. v0.2.0-beta.1) auto-flagged as

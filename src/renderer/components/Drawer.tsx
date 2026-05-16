@@ -550,11 +550,75 @@ function ConfigTab({ agent }: { agent: Agent }) {
           <code>{agent.workspace}</code>
         </span>
       </div>
+      {agent.modelUsage && Object.keys(agent.modelUsage).length > 0 && (
+        <div className="field">
+          <span className="lbl">Per-model spend</span>
+          <ModelUsageTable usage={agent.modelUsage} />
+        </div>
+      )}
       <div className="field">
         <span className="lbl">Budget caps</span>
         <BudgetBars agent={agent} />
       </div>
     </>
+  );
+}
+
+function ModelUsageTable({
+  usage,
+}: {
+  usage: NonNullable<Agent['modelUsage']>;
+}) {
+  const entries = Object.entries(usage).sort((a, b) => b[1].cost - a[1].cost);
+  const totalCost = entries.reduce((s, [, v]) => s + v.cost, 0);
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+        fontFamily: 'var(--font-mono)',
+        fontSize: 11,
+      }}
+    >
+      {entries.map(([model, v]) => {
+        const pct = totalCost > 0 ? Math.round((v.cost / totalCost) * 100) : 0;
+        return (
+          <div
+            key={model}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 60px 70px 40px',
+              gap: 6,
+              alignItems: 'center',
+            }}
+            title={`${model} — ${v.tokens.toLocaleString()} tokens · $${v.cost.toFixed(4)}`}
+          >
+            <span
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                color: 'var(--text)',
+              }}
+            >
+              {model}
+            </span>
+            <span style={{ textAlign: 'right', color: 'var(--muted)' }}>
+              {v.tokens >= 1000
+                ? `${(v.tokens / 1000).toFixed(1)}k`
+                : v.tokens}
+            </span>
+            <span style={{ textAlign: 'right', color: 'var(--text)' }}>
+              ${v.cost.toFixed(4)}
+            </span>
+            <span style={{ textAlign: 'right', color: 'var(--muted)' }}>
+              {pct}%
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

@@ -53,9 +53,16 @@ export function useDirector(projectId: string | null): UseDirectorResult {
       if (patch.live === false) setBusy(false);
     });
 
+    const offCleared = window.api.onDirectorCleared(({ projectId: pid }) => {
+      if (pid !== projectId) return;
+      setMessages([]);
+      setBusy(false);
+    });
+
     return () => {
       offMessage();
       offPatch();
+      offCleared();
     };
   }, [projectId]);
 

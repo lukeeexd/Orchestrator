@@ -29,6 +29,7 @@ export const IpcChannels = {
   DirectorAcceptPlan: 'director:acceptPlan',
   DirectorAckRedirect: 'director:ackRedirect',
   DirectorAbort: 'director:abort',
+  DirectorWipe: 'director:wipe',
   ProjectList: 'project:list',
   ProjectCreate: 'project:create',
   ProjectSetActive: 'project:setActive',
@@ -41,6 +42,10 @@ export const IpcChannels = {
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
   AppCliStatus: 'app:cliStatus',
+  SpendGet: 'spend:get',
+  HistoryList: 'history:list',
+  UpdaterRestart: 'updater:restart',
+  UpdaterEventDownloaded: 'updater:event:update-downloaded',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
@@ -48,6 +53,7 @@ export const IpcChannels = {
   AgentEventRemove: 'agent:event:remove',
   DirectorEventMessage: 'director:event:message',
   DirectorEventPatch: 'director:event:patch',
+  DirectorEventCleared: 'director:event:cleared',
   ProjectEventActiveChanged: 'project:event:activeChanged',
   SettingsEventChanged: 'settings:event:changed',
 } as const;
@@ -176,6 +182,7 @@ export interface OrchestratorApi {
     error?: string;
   }) => Promise<{ ok: true }>;
   abortDirector: (projectId: string) => Promise<{ ok: true }>;
+  wipeDirector: (projectId: string) => Promise<{ ok: true }>;
   // Projects
   listProjects: () => Promise<Project[]>;
   createProject: (name: string, workspace: string) => Promise<Project>;
@@ -198,6 +205,12 @@ export interface OrchestratorApi {
     available: boolean;
     version: string | null;
   }>;
+  getSpendSummary: () => Promise<import('./types').SpendSummary>;
+  listHistory: () => Promise<import('./types').HistoryRow[]>;
+  restartToUpdate: () => Promise<void>;
+  onUpdateDownloaded: (
+    cb: (p: { version: string; notes: string }) => void,
+  ) => () => void;
   // Streams
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;
@@ -205,6 +218,9 @@ export interface OrchestratorApi {
   onAgentRemove: (cb: (p: AgentEventRemovePayload) => void) => () => void;
   onDirectorMessage: (cb: (p: DirectorEventMessagePayload) => void) => () => void;
   onDirectorPatch: (cb: (p: DirectorEventPatchPayload) => void) => () => void;
+  onDirectorCleared: (
+    cb: (p: { projectId: string }) => void,
+  ) => () => void;
   onActiveProjectChanged: (cb: (p: ProjectActiveChangedPayload) => void) => () => void;
   onSettingsChanged: (cb: (p: Settings) => void) => () => void;
 }
