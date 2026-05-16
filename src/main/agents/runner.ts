@@ -20,6 +20,7 @@ import * as director from '../director/runner';
 import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
 import { getProject } from '../projects';
+import { runClaudeQuery } from '../cli/spawn';
 
 /**
  * Resolve the tool allow-list for an agent: per-project role override
@@ -293,7 +294,6 @@ async function runFork(
   if (!entry) return;
   const settings = readSettings();
   const env = buildEnv(settings);
-  const sdk = await import('@anthropic-ai/claude-agent-sdk');
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
   try {
@@ -313,29 +313,24 @@ ${task}`;
       msg: `Forked from ${entry.agent.forkedFromName ?? 'unknown'} (parent session ${parentSessionId})`,
     });
 
-    const q = sdk.query({
+    const q = runClaudeQuery({
+      cwd: entry.agent.workspace,
+      env,
       prompt,
-      options: {
-        cwd: entry.agent.workspace,
-        env,
-        abortController: controller,
-        permissionMode: 'bypassPermissions',
-        resume: parentSessionId,
-        forkSession: true,
-        agent: 'main',
-        agents: {
-          main: {
-            description: `${role.label} for the Orchestrator app`,
-            prompt: role.systemPrompt,
-            tools: effectiveTools,
-            model: resolved.model,
-            effort: effectiveEffort,
-          },
+      abortController: controller,
+      resume: parentSessionId,
+      forkSession: true,
+      agent: 'main',
+      agents: {
+        main: {
+          description: `${role.label} for the Orchestrator app`,
+          prompt: role.systemPrompt,
+          tools: effectiveTools,
+          model: resolved.model,
+          effort: effectiveEffort,
         },
-        ...(resolved.betas
-          ? { betas: resolved.betas as ('context-1m-2025-08-07')[] }
-          : {}),
       },
+      betas: resolved.betas,
     });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
@@ -354,7 +349,6 @@ async function run(
 ): Promise<void> {
   const role = ROLES[req.role];
   const env = buildEnv(settings);
-  const sdk = await import('@anthropic-ai/claude-agent-sdk');
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
   try {
@@ -382,27 +376,22 @@ ${req.task}`;
 
     const effectiveTools = resolveTools(req.role, req.projectId);
 
-    const q = sdk.query({
+    const q = runClaudeQuery({
+      cwd: workdir,
+      env,
       prompt: promptWithContext,
-      options: {
-        cwd: workdir,
-        env,
-        abortController: controller,
-        permissionMode: 'bypassPermissions',
-        agent: 'main',
-        agents: {
-          main: {
-            description: `${role.label} for the Orchestrator app`,
-            prompt: role.systemPrompt,
-            tools: effectiveTools,
-            model: resolved.model,
-            effort: effectiveEffort,
-          },
+      abortController: controller,
+      agent: 'main',
+      agents: {
+        main: {
+          description: `${role.label} for the Orchestrator app`,
+          prompt: role.systemPrompt,
+          tools: effectiveTools,
+          model: resolved.model,
+          effort: effectiveEffort,
         },
-        ...(resolved.betas
-          ? { betas: resolved.betas as ('context-1m-2025-08-07')[] }
-          : {}),
       },
+      betas: resolved.betas,
     });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
@@ -488,12 +477,11 @@ async function runRedirect(
   if (!entry || !entry.agent.sessionId) return;
   const settings = readSettings();
   const env = buildEnv(settings);
-  const sdk = await import('@anthropic-ai/claude-agent-sdk');
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
   // If the redirect comes with a new model/effort, persist it on the
   // agent so future redirects + the Drawer's Config tab show the latest.
-  // The SDK call below explicitly passes both in the agent definition so
+  // The CLI call below explicitly passes both in the agent definition so
   // the resumed turn actually uses them (rather than inheriting the
   // session's original).
   const role = ROLES[entry.agent.role];
@@ -529,31 +517,26 @@ ${body}`;
       }`,
     });
 
-    const q = sdk.query({
+    const q = runClaudeQuery({
+      cwd: entry.agent.workspace,
+      env,
       prompt,
-      options: {
-        cwd: entry.agent.workspace,
-        env,
-        abortController: controller,
-        permissionMode: 'bypassPermissions',
-        resume: entry.agent.sessionId,
-        // Pass the agent config explicitly so the resumed turn uses
-        // our chosen model + tools + effort, not whatever the saved
-        // session had.
-        agent: 'main',
-        agents: {
-          main: {
-            description: `${role.label} for the Orchestrator app`,
-            prompt: role.systemPrompt,
-            tools: resolveTools(entry.agent.role, entry.agent.projectId),
-            model: resolved.model,
-            effort: effectiveEffort,
-          },
+      abortController: controller,
+      resume: entry.agent.sessionId,
+      // Pass the agent config explicitly so the resumed turn uses
+      // our chosen model + tools + effort, not whatever the saved
+      // session had.
+      agent: 'main',
+      agents: {
+        main: {
+          description: `${role.label} for the Orchestrator app`,
+          prompt: role.systemPrompt,
+          tools: resolveTools(entry.agent.role, entry.agent.projectId),
+          model: resolved.model,
+          effort: effectiveEffort,
         },
-        ...(resolved.betas
-          ? { betas: resolved.betas as ('context-1m-2025-08-07')[] }
-          : {}),
       },
+      betas: resolved.betas,
     });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);

@@ -15,6 +15,7 @@ import type {
   SpawnAgentRequest,
 } from '../shared/types';
 import { readSettings, writeSettings, settingsFilePath } from './settings';
+import { getClaudeCliStatus } from './cli/status';
 import {
   spawnAgent,
   redirectAgent,
@@ -69,6 +70,11 @@ export function registerIpcHandlers(): void {
       broadcast(IpcChannels.SettingsEventChanged, merged);
       return merged;
     },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AppCliStatus,
+    (): { available: boolean; version: string | null } => getClaudeCliStatus(),
   );
 
   ipcMain.handle(
