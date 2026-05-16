@@ -18,6 +18,7 @@ import { readSettings, writeSettings, settingsFilePath } from './settings';
 import { getClaudeCliStatus } from './cli/status';
 import { getSpendSummary } from './spend';
 import { listHistory } from './history';
+import { quitAndInstallUpdate } from './updater';
 import {
   spawnAgent,
   redirectAgent,
@@ -88,6 +89,10 @@ export function registerIpcHandlers(): void {
     IpcChannels.HistoryList,
     (): import('../shared/types').HistoryRow[] => listHistory(),
   );
+
+  ipcMain.handle(IpcChannels.UpdaterRestart, (): void => {
+    quitAndInstallUpdate();
+  });
 
   ipcMain.handle(
     IpcChannels.AppShowSettingsFile,

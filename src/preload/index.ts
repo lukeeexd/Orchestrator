@@ -165,6 +165,14 @@ const api: OrchestratorApi = {
       import('../shared/types').HistoryRow[]
     >,
 
+  restartToUpdate: () =>
+    ipcRenderer.invoke(IpcChannels.UpdaterRestart) as Promise<void>,
+  onUpdateDownloaded: (cb) =>
+    subscribe<{ version: string; notes: string }>(
+      IpcChannels.UpdaterEventDownloaded,
+      cb,
+    ),
+
   onAgent: (cb) => subscribe<AgentEventAgentPayload>(IpcChannels.AgentEventAgent, cb),
   onLog: (cb) => subscribe<AgentEventLogPayload>(IpcChannels.AgentEventLog, cb),
   onPatch: (cb) =>

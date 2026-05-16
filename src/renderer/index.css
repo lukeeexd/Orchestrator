@@ -1572,3 +1572,20 @@ body.resizing * { cursor: col-resize !important; }
   user-select: none;
 }
 .history-sortable:hover { color: var(--accent); }
+
+.statusbar-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  margin-right: 12px;
+  background: rgba(74, 222, 128, 0.12);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  color: var(--accent);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.statusbar-update:hover { background: rgba(74, 222, 128, 0.2); }

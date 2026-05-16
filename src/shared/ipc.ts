@@ -44,6 +44,8 @@ export const IpcChannels = {
   AppCliStatus: 'app:cliStatus',
   SpendGet: 'spend:get',
   HistoryList: 'history:list',
+  UpdaterRestart: 'updater:restart',
+  UpdaterEventDownloaded: 'updater:event:update-downloaded',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
@@ -205,6 +207,10 @@ export interface OrchestratorApi {
   }>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   listHistory: () => Promise<import('./types').HistoryRow[]>;
+  restartToUpdate: () => Promise<void>;
+  onUpdateDownloaded: (
+    cb: (p: { version: string; notes: string }) => void,
+  ) => () => void;
   // Streams
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;

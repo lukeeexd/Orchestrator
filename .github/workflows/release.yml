@@ -101,10 +101,14 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # The .exe is the only artifact end-users need. RELEASES + nupkg
-          # are Squirrel auto-update metadata; once auto-update is wired
-          # (v1.1+), add them here as well.
-          files: out/make/squirrel.windows/x64/Orchestrator-Setup.exe
+          # The .exe is the first-install artifact; RELEASES + *.nupkg are
+          # the Squirrel update feed. update.electronjs.org reads them from
+          # the GitHub Release to serve auto-updates to existing installs.
+          # Glob expansion picks up both full and delta nupkgs when present.
+          files: |
+            out/make/squirrel.windows/x64/Orchestrator-Setup.exe
+            out/make/squirrel.windows/x64/RELEASES
+            out/make/squirrel.windows/x64/*.nupkg
           name: Orchestrator ${{ github.ref_name }}
           body: ${{ steps.notes.outputs.body }}
           # Tags containing a hyphen (e.g. v0.2.0-beta.1) auto-flagged as
