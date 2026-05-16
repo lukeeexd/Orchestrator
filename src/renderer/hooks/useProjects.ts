@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { EffortLevel, Project } from '../../shared/types';
+import type { AgentRole, EffortLevel, Project } from '../../shared/types';
 
 interface UseProjectsResult {
   projects: Project[];
@@ -10,6 +10,10 @@ interface UseProjectsResult {
   setWorkspace: (id: string, workspace: string) => Promise<void>;
   setDirectorModel: (id: string, model: string) => Promise<void>;
   setDirectorEffort: (id: string, effort: EffortLevel) => Promise<void>;
+  setRoleTools: (
+    id: string,
+    roleTools: Partial<Record<AgentRole, string[]>> | null,
+  ) => Promise<void>;
   remove: (id: string) => Promise<void>;
   reload: () => Promise<void>;
 }
@@ -84,6 +88,17 @@ export function useProjects(): UseProjectsResult {
     [reload],
   );
 
+  const setRoleTools = useCallback(
+    async (
+      id: string,
+      roleTools: Partial<Record<AgentRole, string[]>> | null,
+    ) => {
+      await window.api.setProjectRoleTools(id, roleTools);
+      await reload();
+    },
+    [reload],
+  );
+
   const remove = useCallback(
     async (id: string) => {
       await window.api.deleteProject(id);
@@ -101,6 +116,7 @@ export function useProjects(): UseProjectsResult {
     setWorkspace,
     setDirectorModel,
     setDirectorEffort,
+    setRoleTools,
     remove,
     reload,
   };

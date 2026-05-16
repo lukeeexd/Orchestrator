@@ -40,6 +40,12 @@ export interface Project {
   directorModel?: string;
   /** Per-project override for the Director's reasoning effort. Falls back to settings.defaultEffort. */
   directorEffort?: EffortLevel;
+  /**
+   * Per-role tool allow-list overrides. Keys are AgentRole values; values are
+   * the tools that role is permitted in this project. Roles not present in
+   * the map fall back to the role's default tool set from `shared/roles.ts`.
+   */
+  roleTools?: Partial<Record<AgentRole, string[]>>;
 }
 
 export type AgentSpawnedBy = 'user' | 'director';

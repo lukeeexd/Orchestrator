@@ -167,6 +167,16 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 10,
+    up: (db) => {
+      // Per-project role-tool allow-list overrides. JSON-encoded map of
+      // `{ role: ["Tool1", "Tool2", ...] }`. Roles not present in the map
+      // fall back to the role's default tool set from shared/roles.ts at
+      // spawn time. NULL means "no overrides, use defaults for every role".
+      db.exec(`ALTER TABLE projects ADD COLUMN role_tools TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

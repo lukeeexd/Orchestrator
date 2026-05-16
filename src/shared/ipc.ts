@@ -36,6 +36,7 @@ export const IpcChannels = {
   ProjectSetWorkspace: 'project:setWorkspace',
   ProjectSetDirectorModel: 'project:setDirectorModel',
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
+  ProjectSetRoleTools: 'project:setRoleTools',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
@@ -183,6 +184,10 @@ export interface OrchestratorApi {
   setProjectDirectorEffort: (
     id: string,
     effort: import('./types').EffortLevel,
+  ) => Promise<{ ok: true }>;
+  setProjectRoleTools: (
+    id: string,
+    roleTools: Partial<Record<import('./types').AgentRole, string[]>> | null,
   ) => Promise<{ ok: true }>;
   setProjectWorkspace: (id: string, workspace: string) => Promise<{ ok: true }>;
   deleteProject: (id: string) => Promise<{ ok: true }>;

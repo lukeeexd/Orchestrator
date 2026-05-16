@@ -19,6 +19,20 @@ import { readSettings } from '../settings';
 import * as director from '../director/runner';
 import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
+import { getProject } from '../projects';
+
+/**
+ * Resolve the tool allow-list for an agent: per-project role override
+ * (if any) wins over the role's hardcoded default. Used by both initial
+ * spawn and fork; redirects already inherit their parent's allow-list
+ * via the registry's stored agent definition, so they pass through
+ * unchanged.
+ */
+function resolveTools(role: AgentRole, projectId: string): string[] {
+  const project = getProject(projectId);
+  const override = project?.roleTools?.[role];
+  return override && override.length > 0 ? override : ROLES[role].tools;
+}
 
 interface AuthSettings {
   apiKey: string;
@@ -287,6 +301,7 @@ async function runFork(
     const effectiveModel = entry.agent.model;
     const effectiveEffort = entry.agent.effort || DEFAULT_EFFORT;
     const resolved = resolveModel(effectiveModel);
+    const effectiveTools = resolveTools(entry.agent.role, entry.agent.projectId);
     const attachmentBlock =
       attachments && attachments.length > 0 ? inlineAttachments(attachments) : '';
     const prompt = `${attachmentBlock}Forked from prior session. New direction:
@@ -312,7 +327,7 @@ ${task}`;
           main: {
             description: `${role.label} for the Orchestrator app`,
             prompt: role.systemPrompt,
-            tools: role.tools,
+            tools: effectiveTools,
             model: resolved.model,
             effort: effectiveEffort,
           },
@@ -365,6 +380,8 @@ Do NOT invent paths like /home/user/, /tmp/, or POSIX-style locations — they a
 ${attachmentBlock}Task:
 ${req.task}`;
 
+    const effectiveTools = resolveTools(req.role, req.projectId);
+
     const q = sdk.query({
       prompt: promptWithContext,
       options: {
@@ -377,7 +394,7 @@ ${req.task}`;
           main: {
             description: `${role.label} for the Orchestrator app`,
             prompt: role.systemPrompt,
-            tools: role.tools,
+            tools: effectiveTools,
             model: resolved.model,
             effort: effectiveEffort,
           },
@@ -528,7 +545,7 @@ ${body}`;
           main: {
             description: `${role.label} for the Orchestrator app`,
             prompt: role.systemPrompt,
-            tools: role.tools,
+            tools: resolveTools(entry.agent.role, entry.agent.projectId),
             model: resolved.model,
             effort: effectiveEffort,
           },

@@ -35,6 +35,7 @@ import {
   setActiveProjectId,
   setProjectDirectorEffort,
   setProjectDirectorModel,
+  setProjectRoleTools,
   setProjectWorkspace,
 } from './projects';
 import { isEffortLevel } from '../shared/efforts';
@@ -130,6 +131,19 @@ export function registerIpcHandlers(): void {
     IpcChannels.ProjectSetDirectorEffort,
     (_event, id: string, effort: EffortLevel | null): { ok: true } => {
       setProjectDirectorEffort(id, isEffortLevel(effort) ? effort : null);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetRoleTools,
+    (
+      _event,
+      id: string,
+      roleTools: Partial<
+        Record<import('../shared/types').AgentRole, string[]>
+      > | null,
+    ): { ok: true } => {
+      setProjectRoleTools(id, roleTools);
       return { ok: true };
     },
   );

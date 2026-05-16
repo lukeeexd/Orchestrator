@@ -133,6 +133,12 @@ const api: OrchestratorApi = {
       id,
       effort,
     ) as Promise<{ ok: true }>,
+  setProjectRoleTools: (id, roleTools) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetRoleTools,
+      id,
+      roleTools,
+    ) as Promise<{ ok: true }>,
   deleteProject: (id) =>
     ipcRenderer.invoke(IpcChannels.ProjectDelete, id) as Promise<{ ok: true }>,
   getActiveProjectId: () =>
