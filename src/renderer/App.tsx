@@ -13,6 +13,7 @@ import { AgentsPane } from './components/AgentsPane';
 import { Drawer } from './components/Drawer';
 import { ResizeHandle } from './components/ResizeHandle';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
+import { SettingsScreen } from './components/SettingsScreen';
 import {
   ProjectTabs,
   NewProjectForm,
@@ -20,7 +21,7 @@ import {
 } from './components/ProjectTabs';
 
 const PLACEHOLDERS: Record<
-  Exclude<RailScreen, 'agents'>,
+  Exclude<RailScreen, 'agents' | 'settings'>,
   { title: string; icon: Parameters<typeof PlaceholderScreen>[0]['icon']; body: string }
 > = {
   templates: {
@@ -43,11 +44,6 @@ const PLACEHOLDERS: Record<
     icon: 'history',
     body: 'Past sessions, searchable. Replay an old run, fork from any point, or audit what an agent did.',
   },
-  settings: {
-    title: 'Settings',
-    icon: 'settings',
-    body: 'API key, model preferences, theme, keyboard shortcuts. For v1 the API key lives in a JSON file under the user-data directory.',
-  },
 };
 
 export function App() {
@@ -67,7 +63,7 @@ export function App() {
     Record<string, number>
   >({});
 
-  const settings = useSettings();
+  const { settings } = useSettings();
   const {
     projects,
     activeId: activeProjectId,
@@ -321,6 +317,8 @@ export function App() {
               onAbort={(id) => void window.api.abortAgent(id)}
             />
           </>
+        ) : active === 'settings' ? (
+          <SettingsScreen />
         ) : (
           <PlaceholderScreen
             {...(active === 'agents'

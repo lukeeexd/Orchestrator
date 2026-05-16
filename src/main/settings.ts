@@ -20,6 +20,10 @@ const DEFAULTS: Settings = {
 let cached: Settings | null = null;
 let settingsPath: string | null = null;
 
+export function settingsFilePath(): string {
+  return pathFor();
+}
+
 function pathFor(): string {
   if (!settingsPath) {
     settingsPath = path.join(app.getPath('userData'), 'settings.json');

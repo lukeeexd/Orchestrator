@@ -1,4 +1,4 @@
-import { ipcMain, app, BrowserWindow, dialog } from 'electron';
+import { ipcMain, app, BrowserWindow, dialog, shell } from 'electron';
 import {
   IpcChannels,
   type AcceptPlanRequest,
@@ -14,7 +14,7 @@ import type {
   Project,
   SpawnAgentRequest,
 } from '../shared/types';
-import { readSettings, writeSettings } from './settings';
+import { readSettings, writeSettings, settingsFilePath } from './settings';
 import {
   spawnAgent,
   redirectAgent,
@@ -57,7 +57,28 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IpcChannels.SettingsGet, (): Settings => readSettings());
   ipcMain.handle(
     IpcChannels.SettingsSet,
-    (_event, next: Partial<Settings>): Settings => writeSettings(next),
+    (_event, next: Partial<Settings>): Settings => {
+      const merged = writeSettings(next);
+      broadcast(IpcChannels.SettingsEventChanged, merged);
+      return merged;
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AppShowSettingsFile,
+    async (): Promise<{ ok: boolean }> => {
+      const p = settingsFilePath();
+      // shell.showItemInFolder requires the file to exist; create on first
+      // open if a user clicks before saving anything.
+      try {
+        const fs = await import('node:fs');
+        if (!fs.existsSync(p)) writeSettings({});
+        shell.showItemInFolder(p);
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
+    },
   );
 
   // ─────────────────────────── Projects ───────────────────────────

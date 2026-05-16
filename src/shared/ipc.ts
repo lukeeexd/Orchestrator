@@ -32,6 +32,7 @@ export const IpcChannels = {
   ProjectSetWorkspace: 'project:setWorkspace',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
+  AppShowSettingsFile: 'app:showSettingsFile',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
@@ -40,6 +41,7 @@ export const IpcChannels = {
   DirectorEventMessage: 'director:event:message',
   DirectorEventPatch: 'director:event:patch',
   ProjectEventActiveChanged: 'project:event:activeChanged',
+  SettingsEventChanged: 'settings:event:changed',
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];
@@ -159,6 +161,7 @@ export interface OrchestratorApi {
   setProjectWorkspace: (id: string, workspace: string) => Promise<{ ok: true }>;
   deleteProject: (id: string) => Promise<{ ok: true }>;
   getActiveProjectId: () => Promise<string | null>;
+  showSettingsFile: () => Promise<{ ok: boolean }>;
   // Streams
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;
@@ -167,6 +170,7 @@ export interface OrchestratorApi {
   onDirectorMessage: (cb: (p: DirectorEventMessagePayload) => void) => () => void;
   onDirectorPatch: (cb: (p: DirectorEventPatchPayload) => void) => () => void;
   onActiveProjectChanged: (cb: (p: ProjectActiveChangedPayload) => void) => () => void;
+  onSettingsChanged: (cb: (p: Settings) => void) => () => void;
 }
 
 declare global {

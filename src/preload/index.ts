@@ -111,6 +111,10 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.ProjectDelete, id) as Promise<{ ok: true }>,
   getActiveProjectId: () =>
     ipcRenderer.invoke(IpcChannels.ProjectGetActive) as Promise<string | null>,
+  showSettingsFile: () =>
+    ipcRenderer.invoke(IpcChannels.AppShowSettingsFile) as Promise<{
+      ok: boolean;
+    }>,
 
   onAgent: (cb) => subscribe<AgentEventAgentPayload>(IpcChannels.AgentEventAgent, cb),
   onLog: (cb) => subscribe<AgentEventLogPayload>(IpcChannels.AgentEventLog, cb),
@@ -130,6 +134,8 @@ const api: OrchestratorApi = {
       IpcChannels.ProjectEventActiveChanged,
       cb,
     ),
+  onSettingsChanged: (cb) =>
+    subscribe<Settings>(IpcChannels.SettingsEventChanged, cb),
 };
 
 contextBridge.exposeInMainWorld('api', api);
