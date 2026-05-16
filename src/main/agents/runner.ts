@@ -39,18 +39,16 @@ export interface RunnerSinks {
   onPatch: (agentId: string, patch: Partial<Agent>) => void;
 }
 
-let agentCounter: Record<AgentRole, number> = {
-  pm: 0,
-  researcher: 0,
-  coder: 0,
-  qa: 0,
-  devops: 0,
-};
-
-function nextName(role: AgentRole): string {
-  agentCounter = { ...agentCounter, [role]: agentCounter[role] + 1 };
-  const n = agentCounter[role].toString().padStart(2, '0');
-  return `${role === 'researcher' ? 'research' : role}-${n}`;
+function nextName(role: AgentRole, projectId: string): string {
+  const prefix = role === 'researcher' ? 'research' : role;
+  const re = new RegExp(`^${prefix}-(\\d+)$`);
+  let max = 0;
+  for (const a of registry.listForProject(projectId)) {
+    const m = a.name.match(re);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  const n = (max + 1).toString().padStart(2, '0');
+  return `${prefix}-${n}`;
 }
 
 function elapsed(startedAt: number): string {
@@ -103,7 +101,7 @@ export async function spawnAgent(
   sinks: RunnerSinks,
 ): Promise<{ agentId: string }> {
   const role = ROLES[req.role];
-  const name = nextName(req.role);
+  const name = nextName(req.role, req.projectId);
   const id = randomUUID();
   const controller = new AbortController();
 
