@@ -18,6 +18,29 @@ function asNum(v: unknown): number {
   return typeof v === 'number' ? v : 0;
 }
 
+function parseModelUsage(
+  raw: unknown,
+): Record<string, { tokens: number; cost: number }> | undefined {
+  if (typeof raw !== 'string' || raw.length === 0) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return undefined;
+    const out: Record<string, { tokens: number; cost: number }> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (v && typeof v === 'object') {
+        const entry = v as { tokens?: number; cost?: number };
+        out[k] = {
+          tokens: typeof entry.tokens === 'number' ? entry.tokens : 0,
+          cost: typeof entry.cost === 'number' ? entry.cost : 0,
+        };
+      }
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Aggregate cost/token spend across every agent in the database. Runs in
  * one DB roundtrip (well, three: one project lookup map + one big agents
@@ -39,7 +62,7 @@ export function getSpendSummary(): SpendSummary {
   // because we only need a handful of columns and the agent table grows
   // slowly compared to log_lines.
   const res = db.exec(`
-    SELECT id, role, name, status, model, tokens, cost, project_id, started_at
+    SELECT id, role, name, status, model, tokens, cost, project_id, started_at, model_usage
     FROM agents
   `);
   const rows: Array<{
@@ -52,6 +75,7 @@ export function getSpendSummary(): SpendSummary {
     cost: number;
     projectId: string;
     startedAt: number;
+    modelUsage?: Record<string, { tokens: number; cost: number }>;
   }> = [];
   if (res.length > 0) {
     for (const r of res[0].values) {
@@ -65,6 +89,7 @@ export function getSpendSummary(): SpendSummary {
         cost: asNum(r[6]),
         projectId: asStr(r[7]),
         startedAt: asNum(r[8]),
+        modelUsage: parseModelUsage(r[9]),
       });
     }
   }
@@ -110,7 +135,20 @@ export function getSpendSummary(): SpendSummary {
       }
     }
     accumulate(projectBuckets, r.projectId, projectNames.get(r.projectId) ?? '(deleted project)', r);
-    accumulate(modelBuckets, r.model, MODEL_LABELS[r.model] ?? r.model, r);
+    // Model breakdown: use the CLI's per-model usage when we captured it
+    // (v0.5+) so an agent that ran on Sonnet + Haiku auto-mode classifier
+    // shows up in both buckets accurately. Fall back to the agent's
+    // chosen model for legacy rows that don't have model_usage yet.
+    if (r.modelUsage) {
+      for (const [model, mu] of Object.entries(r.modelUsage)) {
+        accumulate(modelBuckets, model, MODEL_LABELS[model] ?? model, {
+          tokens: mu.tokens,
+          cost: mu.cost,
+        });
+      }
+    } else {
+      accumulate(modelBuckets, r.model, MODEL_LABELS[r.model] ?? r.model, r);
+    }
     accumulate(roleBuckets, r.role, ROLES[r.role]?.label ?? r.role, r);
   }
 

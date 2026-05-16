@@ -71,6 +71,15 @@ export interface Agent {
   elapsed: string;
   model: string;
   effort: EffortLevel;
+  /**
+   * Per-model spend breakdown — captured from each CLI result event's
+   * modelUsage field and merged cumulatively across the agent's run +
+   * any subsequent redirects/forks. Lets the UI show which model
+   * actually burned the $ (often a mix of the chosen agent.model + a
+   * cheaper auxiliary model used internally by the CLI). Optional
+   * because pre-v0.5 agents in the DB don't have it.
+   */
+  modelUsage?: Record<string, { tokens: number; cost: number }>;
   workspace: string;
   budget: AgentBudget;
   spawnedBy: AgentSpawnedBy;
