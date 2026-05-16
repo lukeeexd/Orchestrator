@@ -71,6 +71,11 @@ Things that landed partially or are explicitly tabled for a later milestone. New
 - **Plan editing.** In auto mode, plans auto-spawn. Add an Edit button to the plan card for tighter control without flipping to manual mode.
 - **Session-wide budget.** Per-agent budgets exist; a global "session won't exceed $X" cap (rolling across all agents in a session) doesn't.
 - **Wipe session.** Truly nuke a session — agents, Director chat, attachments, settings.json `oauthToken` — for handing the machine off.
+- **Other LLM providers.** *(Way down the line — not v1.x.)* Today the whole app sits on `@anthropic-ai/claude-agent-sdk`, which is Claude-only and ships its own `claude.exe` for tool execution. Adding GPT-5 / Gemini / open models would require either:
+  - **(a)** A provider-abstraction layer that swaps the SDK call out for each provider, with a re-implementation of the Read / Write / Edit / Bash / Glob / Grep tool surface for non-Claude providers (since they don't ship their own tool runner). Big lift — easily a milestone of its own.
+  - **(b)** Route through a multi-provider router (OpenRouter, LiteLLM) and accept that non-Claude models won't have the same tool ergonomics.
+  - **(c)** Keep Claude as the Director (for orchestration smarts) and let individual agents target other models for cheap/fast specialised work. Per-agent provider field on `Agent`, per-provider runner module. The least invasive variant.
+  Option (c) is probably the right first step if/when this is needed.
 
 ## Milestones
 
