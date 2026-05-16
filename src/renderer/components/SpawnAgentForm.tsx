@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { AgentRole } from '../../shared/types';
 import { Icon } from './Icon';
+import { ModelPicker } from './ModelPicker';
 
 const ROLES: { id: AgentRole; label: string; tint: string }[] = [
   { id: 'pm', label: 'Project Manager', tint: '#4ade80' },
@@ -15,6 +16,8 @@ interface Props {
   onSpawned: () => void;
   /** Pre-fill the workspace input from the active project's workspace. */
   defaultWorkspace: string;
+  /** Pre-fill the model from the project's Director model. */
+  defaultModel: string;
   projectId: string;
 }
 
@@ -29,10 +32,12 @@ export function SpawnAgentForm({
   onCancel,
   onSpawned,
   defaultWorkspace,
+  defaultModel,
   projectId,
 }: Props) {
   const [role, setRole] = useState<AgentRole>('coder');
   const [workspace, setWorkspace] = useState(defaultWorkspace);
+  const [model, setModel] = useState(defaultModel);
   const [task, setTask] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,6 +110,7 @@ export function SpawnAgentForm({
         role,
         workspace,
         task,
+        ...(model && model !== defaultModel ? { model } : { model }),
         ...(hasBudget ? { budget } : {}),
         ...(okAttachments.length > 0 ? { attachments: okAttachments } : {}),
       });
@@ -163,6 +169,11 @@ export function SpawnAgentForm({
                 Browse…
               </button>
             </div>
+          </div>
+
+          <div className="field">
+            <span className="lbl">Model</span>
+            <ModelPicker value={model} onChange={setModel} />
           </div>
 
           <div className="field">

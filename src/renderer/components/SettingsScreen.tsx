@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Settings } from '../../shared/ipc';
 import { Icon } from './Icon';
-
-const KNOWN_MODELS = [
-  'claude-opus-4-7',
-  'claude-sonnet-4-6',
-  'claude-haiku-4-5-20251001',
-];
+import { ModelPicker } from './ModelPicker';
 
 export function SettingsScreen() {
   const [draft, setDraft] = useState<Settings | null>(null);
@@ -151,25 +146,10 @@ export function SettingsScreen() {
 
           <div className="field">
             <span className="lbl">Default model</span>
-            <select
-              className="text-input settings-select"
+            <ModelPicker
               value={draft.defaultModel}
-              onChange={(e) => patch('defaultModel', e.target.value)}
-            >
-              {/* If the saved value isn't one of the known ids, surface it
-                  as a "custom" entry so we don't silently lose it on save. */}
-              {!KNOWN_MODELS.includes(draft.defaultModel) &&
-                draft.defaultModel && (
-                  <option value={draft.defaultModel}>
-                    {draft.defaultModel} (custom)
-                  </option>
-                )}
-              {KNOWN_MODELS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => patch('defaultModel', v)}
+            />
           </div>
         </section>
 

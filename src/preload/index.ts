@@ -107,6 +107,12 @@ const api: OrchestratorApi = {
       id,
       workspace,
     ) as Promise<{ ok: true }>,
+  setProjectDirectorModel: (id, model) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetDirectorModel,
+      id,
+      model,
+    ) as Promise<{ ok: true }>,
   deleteProject: (id) =>
     ipcRenderer.invoke(IpcChannels.ProjectDelete, id) as Promise<{ ok: true }>,
   getActiveProjectId: () =>

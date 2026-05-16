@@ -1087,6 +1087,21 @@ body.resizing * { cursor: col-resize !important; }
 .redirect-form-bar {
   display: flex; justify-content: flex-end; gap: 6px;
 }
+.redirect-model-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.redirect-model-row .lbl { min-width: 50px; }
+
+/* Compact model picker — inline in toolbar contexts (Director pane head) */
+.model-picker-compact {
+  height: 24px;
+  padding: 0 26px 0 10px;
+  font-size: 11px;
+  min-width: 160px;
+  width: auto;
+  background-position: calc(100% - 12px) calc(50% - 2px),
+    calc(100% - 7px) calc(50% - 2px);
+}
 
 .tabs {
   display: flex;

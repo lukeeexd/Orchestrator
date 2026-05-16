@@ -31,6 +31,7 @@ import {
   listProjects,
   renameProject,
   setActiveProjectId,
+  setProjectDirectorModel,
   setProjectWorkspace,
 } from './projects';
 
@@ -110,6 +111,13 @@ export function registerIpcHandlers(): void {
     IpcChannels.ProjectSetWorkspace,
     (_event, id: string, workspace: string): { ok: true } => {
       setProjectWorkspace(id, workspace);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetDirectorModel,
+    (_event, id: string, model: string): { ok: true } => {
+      setProjectDirectorModel(id, model);
       return { ok: true };
     },
   );

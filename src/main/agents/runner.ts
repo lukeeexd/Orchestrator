@@ -107,10 +107,12 @@ export async function spawnAgent(
   const id = randomUUID();
   const controller = new AbortController();
 
-  // settings.defaultModel overrides each role's hardcoded model — gives
-  // the user one knob to flip Opus / Sonnet / Haiku across the whole fleet.
+  // Model cascade: explicit per-spawn override → settings.defaultModel →
+  // the role's hardcoded default. Lets users pick a model per agent
+  // without touching global settings.
   const baseSettings = readSettings();
-  const effectiveModel = baseSettings.defaultModel || role.model;
+  const effectiveModel =
+    req.model || baseSettings.defaultModel || role.model;
   const budget: AgentBudget = {
     usd: req.budget?.usd ?? baseSettings.defaultBudgetUsd,
     tokens: req.budget?.tokens ?? baseSettings.defaultBudgetTokens,
@@ -257,7 +259,7 @@ export async function redirectAgent(
   });
   completions.set(req.agentId, donePromise);
 
-  runRedirect(req.agentId, req.body, req.attachments, controller, sinks)
+  runRedirect(req.agentId, req.body, req.attachments, req.model, controller, sinks)
     .catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       sinks.onLog(req.agentId, {
@@ -279,6 +281,7 @@ async function runRedirect(
   agentId: string,
   body: string,
   attachments: string[] | undefined,
+  modelOverride: string | undefined,
   controller: AbortController,
   sinks: RunnerSinks,
 ): Promise<void> {
@@ -289,6 +292,18 @@ async function runRedirect(
   const sdk = await import('@anthropic-ai/claude-agent-sdk');
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
+  // If the redirect comes with a new model, persist it on the agent so
+  // future redirects + the drawer's Config tab show the latest. The SDK
+  // call below explicitly passes the model in the agent definition so
+  // the resumed turn actually uses it (rather than inheriting the
+  // session's original).
+  const role = ROLES[entry.agent.role];
+  const effectiveModel = modelOverride || entry.agent.model;
+  if (modelOverride && modelOverride !== entry.agent.model) {
+    registry.patch(agentId, { model: effectiveModel });
+    sinks.onPatch(agentId, { model: effectiveModel });
+  }
+
   try {
     const attachmentBlock =
       attachments && attachments.length > 0 ? inlineAttachments(attachments) : '';
@@ -298,7 +313,11 @@ ${body}`;
     sinks.onLog(agentId, {
       ts: nowTs(),
       kind: 'note',
-      msg: `Redirected — resuming session ${entry.agent.sessionId}`,
+      msg: `Redirected — resuming session ${entry.agent.sessionId}${
+        modelOverride && modelOverride !== entry.agent.model
+          ? ` · model → ${effectiveModel}`
+          : ''
+      }`,
     });
 
     const q = sdk.query({
@@ -309,10 +328,21 @@ ${body}`;
         abortController: controller,
         permissionMode: 'bypassPermissions',
         resume: entry.agent.sessionId,
+        // Pass the agent config explicitly so the resumed turn uses
+        // our chosen model + tools, not whatever the saved session had.
+        agent: 'main',
+        agents: {
+          main: {
+            description: `${role.label} for the Orchestrator app`,
+            prompt: role.systemPrompt,
+            tools: role.tools,
+            model: effectiveModel,
+          },
+        },
       },
     });
 
-    await consumeQuery(agentId, q, controller, entry.agent.model, sinks);
+    await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
     clearInterval(elapsedTimer);
   }

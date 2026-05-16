@@ -133,6 +133,14 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 7,
+    up: (db) => {
+      // Per-project Director model override. NULL means "fall through
+      // to settings.defaultModel".
+      db.exec(`ALTER TABLE projects ADD COLUMN director_model TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

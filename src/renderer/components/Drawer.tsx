@@ -3,6 +3,7 @@ import type { Agent, AgentRole } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { Icon } from './Icon';
 import { LogLineRow } from './LogLineRow';
+import { ModelPicker } from './ModelPicker';
 
 const ROLE_TINT: Record<AgentRole, string> = {
   pm: '#4ade80',
@@ -139,6 +140,7 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
       {redirectOpen && (
         <RedirectForm
           agentId={agent.id}
+          currentModel={agent.model}
           onClose={() => setRedirectOpen(false)}
         />
       )}
@@ -148,12 +150,15 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
 
 function RedirectForm({
   agentId,
+  currentModel,
   onClose,
 }: {
   agentId: string;
+  currentModel: string;
   onClose: () => void;
 }) {
   const [body, setBody] = useState('');
+  const [model, setModel] = useState(currentModel);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -163,7 +168,11 @@ function RedirectForm({
     setBusy(true);
     setError(null);
     try {
-      const res = await window.api.redirectAgent({ agentId, body: trimmed });
+      const res = await window.api.redirectAgent({
+        agentId,
+        body: trimmed,
+        ...(model !== currentModel ? { model } : {}),
+      });
       if (!res.ok) {
         setError(res.error ?? 'redirect failed');
         return;
@@ -178,6 +187,10 @@ function RedirectForm({
 
   return (
     <div className="redirect-form">
+      <div className="redirect-model-row">
+        <span className="lbl">Model</span>
+        <ModelPicker value={model} onChange={setModel} compact />
+      </div>
       <textarea
         className="text-input task-input"
         value={body}

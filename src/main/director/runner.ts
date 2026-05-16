@@ -9,6 +9,7 @@ import { nowTs } from '../agents/classifier';
 import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
 import * as registry from '../agents/registry';
+import { getProject } from '../projects';
 
 export interface DirectorSinks {
   onMessage: (projectId: string, msg: DirectorMessage) => void;
@@ -229,6 +230,13 @@ class DirectorSession {
     };
     this.pushMessage(directorMessage);
 
+    // Per-project Director model wins over the global default.
+    const project = getProject(this.projectId);
+    const directorModel =
+      project?.directorModel ||
+      settings.defaultModel ||
+      'claude-sonnet-4-6';
+
     const queryOptions = {
       cwd: app.getPath('userData'),
       env,
@@ -240,7 +248,7 @@ class DirectorSession {
           description: 'Orchestrator director — plans and supervises agents.',
           prompt: DIRECTOR_SYSTEM_PROMPT,
           tools: [] as string[],
-          model: settings.defaultModel || 'claude-sonnet-4-6',
+          model: directorModel,
         },
       },
       ...(this.sessionId ? { resume: this.sessionId } : {}),

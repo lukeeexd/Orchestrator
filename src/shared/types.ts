@@ -33,6 +33,8 @@ export interface Project {
   name: string;
   workspace: string;
   createdAt: number;
+  /** Per-project override for the Director's model. Falls back to settings.defaultModel. */
+  directorModel?: string;
 }
 
 export type AgentSpawnedBy = 'user' | 'director';
@@ -69,6 +71,8 @@ export interface Agent {
 export interface RedirectAgentRequest {
   agentId: string;
   body: string;
+  /** Override the model for this turn (and going forward). Falls back to agent's existing model. */
+  model?: string;
   attachments?: string[];
 }
 
@@ -113,6 +117,8 @@ export interface SpawnAgentRequest {
   role: AgentRole;
   task: string;
   workspace: string;
+  /** Override the model the agent runs on. Falls back to settings.defaultModel. */
+  model?: string;
   spawnedBy?: AgentSpawnedBy;
   budget?: Partial<AgentBudget>;
   attachments?: string[];

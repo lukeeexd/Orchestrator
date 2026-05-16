@@ -70,11 +70,14 @@ export function App() {
     setActive: setActiveProject,
     create: createProject,
     setWorkspace: setProjectWorkspace,
+    setDirectorModel: setProjectDirectorModel,
     remove: removeProject,
   } = useProjects();
   const activeProject: Project | null =
     projects.find((p) => p.id === activeProjectId) ?? null;
   const workspace = activeProject?.workspace ?? '';
+  const fallbackModel = settings?.defaultModel ?? 'claude-sonnet-4-6';
+  const directorModel = activeProject?.directorModel || fallbackModel;
 
   const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents(
     activeProjectId,
@@ -282,7 +285,11 @@ export function App() {
               agents={agents}
               busy={busy}
               mode={mode}
+              model={directorModel}
               onModeChange={setMode}
+              onModelChange={(m) => {
+                if (activeProjectId) void setProjectDirectorModel(activeProjectId, m);
+              }}
               onSend={send}
               onSpawnPlan={spawnPlan}
             />
@@ -299,6 +306,7 @@ export function App() {
               expanded={expanded}
               workspace={workspace}
               projectId={activeProjectId}
+              defaultModel={directorModel}
               spawning={spawning}
               setSpawning={setSpawning}
               onSelect={setSelectedId}

@@ -8,6 +8,7 @@ import {
 import type { Agent, DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
 import { Icon } from './Icon';
 import { PlanCard } from './PlanCard';
+import { ModelPicker } from './ModelPicker';
 
 const ROLE_TINT: Record<Agent['role'], string> = {
   pm: '#4ade80',
@@ -23,7 +24,9 @@ interface Props {
   agents: Agent[];
   busy: boolean;
   mode: DirectorMode;
+  model: string;
   onModeChange: (next: DirectorMode) => void;
+  onModelChange: (next: string) => void;
   onSend: (
     body: string,
     mode: DirectorMode,
@@ -45,7 +48,9 @@ export function DirectorPane({
   agents,
   busy,
   mode,
+  model,
   onModeChange,
+  onModelChange,
   onSend,
   onSpawnPlan,
 }: Props) {
@@ -56,6 +61,7 @@ export function DirectorPane({
           <b>Director</b>
         </span>
         <ModeToggle mode={mode} onChange={onModeChange} />
+        <ModelPicker value={model} onChange={onModelChange} compact />
         <span className="spacer" />
         {busy && (
           <span className="meta" style={{ color: 'var(--accent)' }}>

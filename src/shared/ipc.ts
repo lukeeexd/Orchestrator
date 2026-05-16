@@ -30,6 +30,7 @@ export const IpcChannels = {
   ProjectSetActive: 'project:setActive',
   ProjectRename: 'project:rename',
   ProjectSetWorkspace: 'project:setWorkspace',
+  ProjectSetDirectorModel: 'project:setDirectorModel',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
@@ -158,6 +159,7 @@ export interface OrchestratorApi {
   createProject: (name: string, workspace: string) => Promise<Project>;
   setActiveProject: (id: string) => Promise<{ ok: true }>;
   renameProject: (id: string, name: string) => Promise<{ ok: true }>;
+  setProjectDirectorModel: (id: string, model: string) => Promise<{ ok: true }>;
   setProjectWorkspace: (id: string, workspace: string) => Promise<{ ok: true }>;
   deleteProject: (id: string) => Promise<{ ok: true }>;
   getActiveProjectId: () => Promise<string | null>;
