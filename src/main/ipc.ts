@@ -323,6 +323,15 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IpcChannels.DirectorWipe,
+    (_event, projectId: string): { ok: true } => {
+      director.wipeSession(projectId);
+      broadcast(IpcChannels.DirectorEventCleared, { projectId });
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
     IpcChannels.DirectorAckRedirect,
     (
       _event,

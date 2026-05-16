@@ -97,6 +97,10 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.DirectorAbort, projectId) as Promise<{
       ok: true;
     }>,
+  wipeDirector: (projectId) =>
+    ipcRenderer.invoke(IpcChannels.DirectorWipe, projectId) as Promise<{
+      ok: true;
+    }>,
 
   // Projects
   listProjects: () =>
@@ -166,6 +170,8 @@ const api: OrchestratorApi = {
     ),
   onDirectorPatch: (cb) =>
     subscribe<DirectorEventPatchPayload>(IpcChannels.DirectorEventPatch, cb),
+  onDirectorCleared: (cb) =>
+    subscribe<{ projectId: string }>(IpcChannels.DirectorEventCleared, cb),
   onActiveProjectChanged: (cb) =>
     subscribe<ProjectActiveChangedPayload>(
       IpcChannels.ProjectEventActiveChanged,

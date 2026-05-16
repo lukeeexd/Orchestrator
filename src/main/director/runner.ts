@@ -344,6 +344,20 @@ export function discardSession(projectId: string): void {
   sessions.delete(projectId);
 }
 
+/**
+ * Wipe a project's Director chat: abort any live turn, drop the in-memory
+ * session, delete persisted messages + the saved SDK session id from disk.
+ * The next sendFromUser lazily re-creates an empty session.
+ *
+ * Use this when the user wants a clean slate without deleting the project
+ * itself (which would also drop agents and per-project config).
+ */
+export function wipeSession(projectId: string): void {
+  sessions.get(projectId)?.abort();
+  sessions.delete(projectId);
+  persistence.wipeDirector(projectId);
+}
+
 export function listMessages(projectId: string): DirectorMessage[] {
   return getSession(projectId).list();
 }

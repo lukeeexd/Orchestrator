@@ -334,6 +334,10 @@ export function App() {
               }}
               onSend={send}
               onSpawnPlan={spawnPlan}
+              onWipe={async () => {
+                if (activeProjectId)
+                  await window.api.wipeDirector(activeProjectId);
+              }}
             />
             <ResizeHandle
               value={dirW}

@@ -157,6 +157,22 @@ export function loadDirectorMessages(projectId: string): DirectorMessage[] {
 const sessionKey = (projectId: string) =>
   `project:${projectId}:director_session_id`;
 
+/**
+ * Drop every persisted Director artifact for one project: chat messages
+ * + the saved SDK session id. Leaves the project itself and its agents
+ * intact — this is the "clear chat" operation, not project deletion.
+ */
+export function wipeDirector(projectId: string): void {
+  const db = getDb();
+  const dm = db.prepare(`DELETE FROM director_messages WHERE project_id = ?`);
+  dm.run([projectId]);
+  dm.free();
+  const kv = db.prepare(`DELETE FROM kv WHERE key = ?`);
+  kv.run([sessionKey(projectId)]);
+  kv.free();
+  scheduleSave();
+}
+
 export function saveDirectorSessionId(
   projectId: string,
   sessionId: string,
