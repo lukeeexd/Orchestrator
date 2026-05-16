@@ -10,6 +10,7 @@ import type {
 } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { DEFAULT_EFFORT } from '../../shared/efforts';
+import { resolveModel } from '../../shared/models';
 import { estimateCost } from '../../shared/rates';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';
@@ -193,6 +194,8 @@ async function run(
     const effectiveModel = entry?.agent.model || settings.defaultModel || role.model;
     const effectiveEffort: EffortLevel =
       entry?.agent.effort || DEFAULT_EFFORT;
+    // Pseudo-ids like `*-1m` resolve to a base model id + a beta header.
+    const resolved = resolveModel(effectiveModel);
     const attachmentBlock =
       req.attachments && req.attachments.length > 0
         ? inlineAttachments(req.attachments)
@@ -218,10 +221,13 @@ ${req.task}`;
             description: `${role.label} for the Orchestrator app`,
             prompt: role.systemPrompt,
             tools: role.tools,
-            model: effectiveModel,
+            model: resolved.model,
             effort: effectiveEffort,
           },
         },
+        ...(resolved.betas
+          ? { betas: resolved.betas as ('context-1m-2025-08-07')[] }
+          : {}),
       },
     });
 
@@ -330,6 +336,7 @@ async function runRedirect(
     registry.patch(agentId, patch);
     sinks.onPatch(agentId, patch);
   }
+  const resolved = resolveModel(effectiveModel);
 
   try {
     const attachmentBlock =
@@ -365,10 +372,13 @@ ${body}`;
             description: `${role.label} for the Orchestrator app`,
             prompt: role.systemPrompt,
             tools: role.tools,
-            model: effectiveModel,
+            model: resolved.model,
             effort: effectiveEffort,
           },
         },
+        ...(resolved.betas
+          ? { betas: resolved.betas as ('context-1m-2025-08-07')[] }
+          : {}),
       },
     });
 

@@ -6,9 +6,41 @@
  * Custom values typed into settings.json (or saved by older app
  * versions) are preserved at runtime — the pickers add them as a
  * "(custom)" entry rather than silently dropping them.
+ *
+ * The `-1m` suffix is our pseudo-id for "same base model, 1M context
+ * window beta enabled". The runner resolves it to the real model id +
+ * the `context-1m-2025-08-07` beta flag at SDK-call time. Claude Code's
+ * picker does the same trick — `Opus 4.7 1M` and `Opus 4.7` both report
+ * `claude-opus-4-7` as the underlying id.
  */
 export const KNOWN_MODELS: readonly string[] = [
   'claude-opus-4-7',
+  'claude-opus-4-7-1m',
   'claude-sonnet-4-6',
   'claude-haiku-4-5-20251001',
 ];
+
+export const MODEL_LABELS: Record<string, string> = {
+  'claude-opus-4-7': 'claude-opus-4-7',
+  'claude-opus-4-7-1m': 'claude-opus-4-7 · 1M context',
+  'claude-sonnet-4-6': 'claude-sonnet-4-6',
+  'claude-haiku-4-5-20251001': 'claude-haiku-4-5-20251001',
+};
+
+/** Beta header that unlocks the 1M token context window. */
+const BETA_CONTEXT_1M = 'context-1m-2025-08-07';
+
+/**
+ * Translate a picker model id into the (model, betas) pair the SDK
+ * actually consumes. The 1M context window is a beta header layered on
+ * top of the base model, not a separate model id.
+ */
+export function resolveModel(id: string): {
+  model: string;
+  betas?: readonly string[];
+} {
+  if (id.endsWith('-1m')) {
+    return { model: id.slice(0, -3), betas: [BETA_CONTEXT_1M] };
+  }
+  return { model: id };
+}

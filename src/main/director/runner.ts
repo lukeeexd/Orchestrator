@@ -8,6 +8,7 @@ import type {
   PlanRow,
 } from '../../shared/types';
 import { DEFAULT_EFFORT } from '../../shared/efforts';
+import { resolveModel } from '../../shared/models';
 import { readSettings } from '../settings';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractDirectives } from './parse';
@@ -246,6 +247,7 @@ class DirectorSession {
       project?.directorEffort ||
       settings.defaultEffort ||
       DEFAULT_EFFORT;
+    const resolved = resolveModel(directorModel);
 
     const queryOptions = {
       cwd: app.getPath('userData'),
@@ -258,11 +260,14 @@ class DirectorSession {
           description: 'Orchestrator director — plans and supervises agents.',
           prompt: DIRECTOR_SYSTEM_PROMPT,
           tools: [] as string[],
-          model: directorModel,
+          model: resolved.model,
           effort: directorEffort,
         },
       },
       ...(this.sessionId ? { resume: this.sessionId } : {}),
+      ...(resolved.betas
+        ? { betas: resolved.betas as ('context-1m-2025-08-07')[] }
+        : {}),
     };
 
     try {

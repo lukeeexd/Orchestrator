@@ -1,4 +1,4 @@
-import { KNOWN_MODELS } from '../../shared/models';
+import { KNOWN_MODELS, MODEL_LABELS } from '../../shared/models';
 
 interface Props {
   value: string;
@@ -34,7 +34,7 @@ export function ModelPicker({
       {isCustom && <option value={value}>{value} (custom)</option>}
       {KNOWN_MODELS.map((m) => (
         <option key={m} value={m}>
-          {m}
+          {MODEL_LABELS[m] ?? m}
         </option>
       ))}
     </select>
