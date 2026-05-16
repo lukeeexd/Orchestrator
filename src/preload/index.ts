@@ -49,6 +49,12 @@ const api: OrchestratorApi = {
       ok: boolean;
       error?: string;
     }>,
+  forkAgent: (req) =>
+    ipcRenderer.invoke(IpcChannels.AgentFork, req) as Promise<{
+      ok: boolean;
+      agentId?: string;
+      error?: string;
+    }>,
   setAgentModel: (id, model) =>
     ipcRenderer.invoke(IpcChannels.AgentSetModel, id, model) as Promise<{
       ok: boolean;

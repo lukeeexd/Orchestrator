@@ -85,7 +85,12 @@ export function Drawer({ width, agent, onAbort }: Props) {
 function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
   const canRedirect = !isRunning && !!agent.sessionId;
+  // Fork can happen any time the parent has produced a session id — even
+  // mid-flight. The fork is a separate session and doesn't disturb the
+  // parent's run, so we don't gate on isRunning.
+  const canFork = !!agent.sessionId;
   const [redirectOpen, setRedirectOpen] = useState(false);
+  const [forkOpen, setForkOpen] = useState(false);
 
   return (
     <div className="drawer-head">
@@ -135,8 +140,13 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
         </button>
         <button
           className="tb-btn"
-          disabled
-          title="Fork via SDK forkSession() — wiring up in a follow-up"
+          disabled={!canFork}
+          onClick={() => setForkOpen((v) => !v)}
+          title={
+            !agent.sessionId
+              ? 'No session captured yet (no result event)'
+              : 'Branch a new agent off this one — parent stays intact'
+          }
         >
           <Icon name="fork" size={11} /> Fork
         </button>
@@ -157,6 +167,90 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
           onClose={() => setRedirectOpen(false)}
         />
       )}
+      {forkOpen && (
+        <ForkForm
+          parentAgentId={agent.id}
+          currentModel={agent.model}
+          currentEffort={agent.effort}
+          onClose={() => setForkOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ForkForm({
+  parentAgentId,
+  currentModel,
+  currentEffort,
+  onClose,
+}: {
+  parentAgentId: string;
+  currentModel: string;
+  currentEffort: EffortLevel;
+  onClose: () => void;
+}) {
+  const [task, setTask] = useState('');
+  const [model, setModel] = useState(currentModel);
+  const [effort, setEffort] = useState<EffortLevel>(currentEffort);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    const trimmed = task.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await window.api.forkAgent({
+        parentAgentId,
+        task: trimmed,
+        ...(model !== currentModel ? { model } : {}),
+        ...(effort !== currentEffort ? { effort } : {}),
+      });
+      if (!res.ok) {
+        setError(res.error ?? 'fork failed');
+        return;
+      }
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="redirect-form">
+      <div className="redirect-model-row">
+        <span className="lbl">Model</span>
+        <ModelPicker value={model} onChange={setModel} compact />
+      </div>
+      <div className="redirect-model-row">
+        <span className="lbl">Effort</span>
+        <EffortPicker value={effort} onChange={setEffort} compact />
+      </div>
+      <textarea
+        className="text-input task-input"
+        value={task}
+        onChange={(e) => setTask(e.target.value)}
+        placeholder="New direction for the forked agent — it starts with the parent's full chat history."
+        rows={3}
+        autoFocus
+      />
+      {error && <div className="form-error">{error}</div>}
+      <div className="redirect-form-bar">
+        <button className="tb-btn" onClick={onClose} disabled={busy}>
+          Cancel
+        </button>
+        <button
+          className="tb-btn primary"
+          onClick={() => void submit()}
+          disabled={busy || !task.trim()}
+        >
+          <Icon name="fork" size={11} /> {busy ? 'Forking…' : 'Fork'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -281,7 +375,9 @@ function LogsTab({ agent }: { agent: Agent }) {
       <div className="field">
         <span className="lbl">Spawned by</span>
         <span className="v">
-          {agent.spawnedBy === 'director'
+          {agent.forkedFromName
+            ? `fork of @${agent.forkedFromName}`
+            : agent.spawnedBy === 'director'
             ? 'director · auto-spawned from plan'
             : 'you · manual spawn'}
         </span>

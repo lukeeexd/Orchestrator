@@ -18,6 +18,7 @@ import { readSettings, writeSettings, settingsFilePath } from './settings';
 import {
   spawnAgent,
   redirectAgent,
+  forkAgent,
   registry,
   awaitCompletion,
 } from './agents/runner';
@@ -209,6 +210,16 @@ export function registerIpcHandlers(): void {
       req: import('../shared/types').RedirectAgentRequest,
     ): Promise<{ ok: boolean; error?: string }> => {
       return redirectAgent(req, agentSinks);
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AgentFork,
+    async (
+      _event,
+      req: import('../shared/types').ForkAgentRequest,
+    ): Promise<{ ok: boolean; agentId?: string; error?: string }> => {
+      return forkAgent(req, agentSinks);
     },
   );
 

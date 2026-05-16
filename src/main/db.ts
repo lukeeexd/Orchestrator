@@ -154,6 +154,19 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 9,
+    up: (db) => {
+      // Fork attribution: which agent (if any) this one was forked from.
+      // NULL for normal spawns. Name is denormalised so the Drawer can
+      // render "forked from coder-01" without joining back to the agents
+      // table (and so the attribution survives the parent being deleted).
+      db.exec(`
+        ALTER TABLE agents ADD COLUMN forked_from_id TEXT;
+        ALTER TABLE agents ADD COLUMN forked_from_name TEXT;
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

@@ -72,6 +72,21 @@ export interface Agent {
   startedAt: number;
   /** SDK session id, captured from the stream. Enables Redirect via `options.resume`. */
   sessionId?: string;
+  /** Set when this agent was forked off another. Stored for UX attribution. */
+  forkedFromId?: string;
+  forkedFromName?: string;
+}
+
+export interface ForkAgentRequest {
+  /** Parent agent id — its conversation history is the seed for the fork. */
+  parentAgentId: string;
+  /** Instruction to send into the forked session. Required — fork without a new direction is just a duplicate. */
+  task: string;
+  /** Override the model. Falls back to the parent's model. */
+  model?: string;
+  /** Override the reasoning effort. Falls back to the parent's effort. */
+  effort?: EffortLevel;
+  attachments?: string[];
 }
 
 export interface RedirectAgentRequest {

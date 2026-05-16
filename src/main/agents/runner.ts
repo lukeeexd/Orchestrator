@@ -4,6 +4,7 @@ import type {
   AgentBudget,
   AgentRole,
   EffortLevel,
+  ForkAgentRequest,
   LogLine,
   RedirectAgentRequest,
   SpawnAgentRequest,
@@ -170,6 +171,162 @@ export async function spawnAgent(
     });
 
   return { agentId: id };
+}
+
+/**
+ * Branch a new agent off an existing one's conversation. Uses the SDK's
+ * `resume: parent.sessionId, forkSession: true` combo so the fork starts
+ * with the parent's full chat history but writes to a fresh session id —
+ * the parent stays intact and untouched.
+ */
+export async function forkAgent(
+  req: ForkAgentRequest,
+  sinks: RunnerSinks,
+): Promise<{ ok: boolean; agentId?: string; error?: string }> {
+  const parent = registry.get(req.parentAgentId);
+  if (!parent) return { ok: false, error: 'parent agent not found' };
+  if (!parent.agent.sessionId) {
+    return {
+      ok: false,
+      error: 'parent has no SDK session id yet — wait for its first result event',
+    };
+  }
+
+  const role = ROLES[parent.agent.role];
+  const name = nextName(parent.agent.role, parent.agent.projectId);
+  const id = randomUUID();
+  const controller = new AbortController();
+
+  // Fork inherits from the parent, but per-fork overrides win. Budget
+  // resets to a fresh allowance (mirroring spawn defaults) — the fork
+  // gets its own caps so it doesn't trip the parent's nearly-spent ones.
+  const baseSettings = readSettings();
+  const effectiveModel = req.model || parent.agent.model;
+  const effectiveEffort: EffortLevel = req.effort || parent.agent.effort;
+
+  const agent: Agent = {
+    id,
+    projectId: parent.agent.projectId,
+    role: parent.agent.role,
+    roleLabel: role.label,
+    name,
+    status: 'running',
+    statusLabel: 'Running',
+    step: '0/?',
+    task: req.task,
+    tokens: 0,
+    cost: 0,
+    elapsed: '00:00',
+    model: effectiveModel,
+    effort: effectiveEffort,
+    workspace: parent.agent.workspace,
+    budget: {
+      usd: baseSettings.defaultBudgetUsd,
+      tokens: baseSettings.defaultBudgetTokens,
+      seconds: baseSettings.defaultBudgetSeconds,
+    },
+    spawnedBy: 'user',
+    log: [],
+    startedAt: Date.now(),
+    forkedFromId: parent.agent.id,
+    forkedFromName: parent.agent.name,
+  };
+
+  registry.add(agent, controller);
+  persistence.saveAgent(agent);
+  sinks.onAgent(agent);
+
+  let resolveDone!: () => void;
+  const donePromise = new Promise<void>((res) => {
+    resolveDone = res;
+  });
+  completions.set(id, donePromise);
+
+  runFork(
+    id,
+    parent.agent.sessionId,
+    req.task,
+    req.attachments,
+    controller,
+    sinks,
+  )
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      sinks.onLog(id, {
+        ts: nowTs(),
+        kind: 'error',
+        msg: `fork crashed: ${msg}`,
+      });
+      sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
+    })
+    .finally(() => {
+      resolveDone();
+      setTimeout(() => completions.delete(id), 60_000);
+    });
+
+  return { ok: true, agentId: id };
+}
+
+async function runFork(
+  agentId: string,
+  parentSessionId: string,
+  task: string,
+  attachments: string[] | undefined,
+  controller: AbortController,
+  sinks: RunnerSinks,
+): Promise<void> {
+  const entry = registry.get(agentId);
+  if (!entry) return;
+  const settings = readSettings();
+  const env = buildEnv(settings);
+  const sdk = await import('@anthropic-ai/claude-agent-sdk');
+  const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
+
+  try {
+    const role = ROLES[entry.agent.role];
+    const effectiveModel = entry.agent.model;
+    const effectiveEffort = entry.agent.effort || DEFAULT_EFFORT;
+    const resolved = resolveModel(effectiveModel);
+    const attachmentBlock =
+      attachments && attachments.length > 0 ? inlineAttachments(attachments) : '';
+    const prompt = `${attachmentBlock}Forked from prior session. New direction:
+${task}`;
+
+    sinks.onLog(agentId, {
+      ts: nowTs(),
+      kind: 'note',
+      msg: `Forked from ${entry.agent.forkedFromName ?? 'unknown'} (parent session ${parentSessionId})`,
+    });
+
+    const q = sdk.query({
+      prompt,
+      options: {
+        cwd: entry.agent.workspace,
+        env,
+        abortController: controller,
+        permissionMode: 'bypassPermissions',
+        resume: parentSessionId,
+        forkSession: true,
+        agent: 'main',
+        agents: {
+          main: {
+            description: `${role.label} for the Orchestrator app`,
+            prompt: role.systemPrompt,
+            tools: role.tools,
+            model: resolved.model,
+            effort: effectiveEffort,
+          },
+        },
+        ...(resolved.betas
+          ? { betas: resolved.betas as ('context-1m-2025-08-07')[] }
+          : {}),
+      },
+    });
+
+    await consumeQuery(agentId, q, controller, effectiveModel, sinks);
+  } finally {
+    clearInterval(elapsedTimer);
+  }
 }
 
 async function run(
