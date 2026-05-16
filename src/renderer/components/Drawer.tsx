@@ -259,7 +259,11 @@ function LogsTab({ agent }: { agent: Agent }) {
       </div>
       <div className="field">
         <span className="lbl">Spawned by</span>
-        <span className="v">you · direct spawn (Director lands in M4)</span>
+        <span className="v">
+          {agent.spawnedBy === 'director'
+            ? 'director · auto-spawned from plan'
+            : 'you · manual spawn'}
+        </span>
       </div>
       <div className="field">
         <span className="lbl">Last {tail.length} log lines</span>
