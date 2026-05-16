@@ -317,19 +317,30 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IpcChannels.DirectorAcceptPlan,
     async (_event, req: AcceptPlanRequest): Promise<AcceptPlanResponse> => {
-      // Director auto-spawns inherit the project's Director model + effort
-      // when set. Without this, agents auto-spawned from a plan fall
-      // through to settings.defaultModel/defaultEffort even when the user
-      // picked something different on the Director header — which feels
-      // wrong (an Opus xhigh Director shouldn't quietly spawn Sonnet high
-      // workers).
+      // Director auto-spawns inherit the Director's effective model +
+      // effort — using the same cascade the Director itself uses
+      // (per-project override → settings.defaultDirectorModel/Effort →
+      // settings.defaultModel/Effort). Just reading project.directorModel
+      // wasn't enough: when the user leaves the Director on the global
+      // defaults, project.directorModel is null and agents fall through
+      // to the cheap agent defaults — so an Opus 4.7 1M xhigh Director
+      // would quietly spawn Sonnet 4.6 high workers.
       const project = getProject(req.projectId);
+      const cascadeSettings = readSettings();
+      const resolvedDirectorModel =
+        project?.directorModel ||
+        cascadeSettings.defaultDirectorModel ||
+        cascadeSettings.defaultModel;
+      const resolvedDirectorEffort =
+        project?.directorEffort ||
+        cascadeSettings.defaultDirectorEffort ||
+        cascadeSettings.defaultEffort;
       const directorOverrides: {
         model?: string;
         effort?: import('../shared/types').EffortLevel;
       } = {
-        ...(project?.directorModel ? { model: project.directorModel } : {}),
-        ...(project?.directorEffort ? { effort: project.directorEffort } : {}),
+        ...(resolvedDirectorModel ? { model: resolvedDirectorModel } : {}),
+        ...(resolvedDirectorEffort ? { effort: resolvedDirectorEffort } : {}),
       };
 
       const spawned: { id: string; name: string }[] = [];
