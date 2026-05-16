@@ -28,6 +28,7 @@ import {
   createProject,
   deleteProject,
   getActiveProjectId,
+  getProject,
   listProjects,
   renameProject,
   setActiveProjectId,
@@ -316,6 +317,21 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IpcChannels.DirectorAcceptPlan,
     async (_event, req: AcceptPlanRequest): Promise<AcceptPlanResponse> => {
+      // Director auto-spawns inherit the project's Director model + effort
+      // when set. Without this, agents auto-spawned from a plan fall
+      // through to settings.defaultModel/defaultEffort even when the user
+      // picked something different on the Director header — which feels
+      // wrong (an Opus xhigh Director shouldn't quietly spawn Sonnet high
+      // workers).
+      const project = getProject(req.projectId);
+      const directorOverrides: {
+        model?: string;
+        effort?: import('../shared/types').EffortLevel;
+      } = {
+        ...(project?.directorModel ? { model: project.directorModel } : {}),
+        ...(project?.directorEffort ? { effort: project.directorEffort } : {}),
+      };
+
       const spawned: { id: string; name: string }[] = [];
       const firstId =
         req.rows.length > 0
@@ -326,6 +342,7 @@ export function registerIpcHandlers(): void {
                 task: req.rows[0].task,
                 workspace: req.workspace,
                 spawnedBy: 'director',
+                ...directorOverrides,
               },
               agentSinks,
             )
@@ -359,6 +376,7 @@ export function registerIpcHandlers(): void {
               task: row.task,
               workspace: req.workspace,
               spawnedBy: 'director',
+              ...directorOverrides,
             },
             agentSinks,
           );
