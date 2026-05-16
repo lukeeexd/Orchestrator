@@ -7,8 +7,17 @@ import { DEFAULT_EFFORT, isEffortLevel } from '../shared/efforts';
 const DEFAULTS: Settings = {
   apiKey: '',
   oauthToken: '',
+  // Agents default to a cheaper model + standard effort so plan-spawned
+  // workers don't run up large bills unless the user explicitly picks
+  // something bigger.
   defaultModel: 'claude-sonnet-4-6',
   defaultEffort: DEFAULT_EFFORT,
+  // The Director benefits from deeper reasoning + bigger context (it has
+  // to keep the whole fleet, prior conversation, and plan in its head),
+  // so the global default is Opus 4.7 with the 1M context beta and xhigh
+  // effort. Agents stay on the cheaper Sonnet path above.
+  defaultDirectorModel: 'claude-opus-4-7-1m',
+  defaultDirectorEffort: 'xhigh',
   // Budgets default to 0 (unlimited). Caps are opt-in — set a non-zero
   // value here (or per spawn) to enforce one. The old $1 / 100k / 600s
   // safety belts were too restrictive (a single Opus 4.7 turn easily
@@ -60,10 +69,13 @@ export function readSettings(): Settings {
 
     const merged: Settings = { ...DEFAULTS, ...parsed };
     // Guard against a hand-edited or older settings.json with an invalid
-    // effort string. Fall back to DEFAULT_EFFORT instead of pushing a bad
+    // effort string. Fall back to the defaults instead of pushing a bad
     // value through to the SDK.
     if (!isEffortLevel(merged.defaultEffort)) {
-      merged.defaultEffort = DEFAULT_EFFORT;
+      merged.defaultEffort = DEFAULTS.defaultEffort;
+    }
+    if (!isEffortLevel(merged.defaultDirectorEffort)) {
+      merged.defaultDirectorEffort = DEFAULTS.defaultDirectorEffort;
     }
     cached = merged;
   } catch {

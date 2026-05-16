@@ -141,16 +141,34 @@ export function SettingsScreen() {
         <section className="settings-section">
           <h3 className="settings-h">Model &amp; effort</h3>
           <p className="settings-help">
-            Defaults used by the Director and any new agent spawn. Both can
-            be overridden per project (Director header) or per agent (spawn
-            form / Drawer Config tab). Effort levels mirror Claude Code:
+            Defaults used when a project hasn&apos;t picked its own values.
+            The Director gets a heavier model out of the box (Opus 4.7 1M,
+            xhigh) since it has to hold the whole fleet + conversation in
+            its head; agents default to Sonnet 4.6 at <code>high</code>.
+            Effort levels mirror Claude Code:&nbsp;
             <code>low</code>/<code>medium</code>/<code>high</code> on all
             models, <code>xhigh</code>/<code>max</code> on Opus 4.6/4.7 +
             Sonnet 4.6.
           </p>
 
           <div className="field">
-            <span className="lbl">Default model</span>
+            <span className="lbl">Director model</span>
+            <ModelPicker
+              value={draft.defaultDirectorModel}
+              onChange={(v) => patch('defaultDirectorModel', v)}
+            />
+          </div>
+
+          <div className="field">
+            <span className="lbl">Director effort</span>
+            <EffortPicker
+              value={draft.defaultDirectorEffort}
+              onChange={(v) => patch('defaultDirectorEffort', v)}
+            />
+          </div>
+
+          <div className="field">
+            <span className="lbl">Agent model</span>
             <ModelPicker
               value={draft.defaultModel}
               onChange={(v) => patch('defaultModel', v)}
@@ -158,7 +176,7 @@ export function SettingsScreen() {
           </div>
 
           <div className="field">
-            <span className="lbl">Default effort</span>
+            <span className="lbl">Agent effort</span>
             <EffortPicker
               value={draft.defaultEffort}
               onChange={(v) => patch('defaultEffort', v)}

@@ -84,9 +84,20 @@ export function App() {
     projects.find((p) => p.id === activeProjectId) ?? null;
   const workspace = activeProject?.workspace ?? '';
   const fallbackModel = settings?.defaultModel ?? 'claude-sonnet-4-6';
-  const directorModel = activeProject?.directorModel || fallbackModel;
+  const directorFallbackModel =
+    settings?.defaultDirectorModel || fallbackModel;
+  const directorModel = activeProject?.directorModel || directorFallbackModel;
   const fallbackEffort: EffortLevel = settings?.defaultEffort ?? DEFAULT_EFFORT;
+  const directorFallbackEffort: EffortLevel =
+    settings?.defaultDirectorEffort ?? fallbackEffort;
   const directorEffort: EffortLevel =
+    activeProject?.directorEffort || directorFallbackEffort;
+  // Spawn-form pre-fill stays on the agent defaults — we don't want a
+  // 1M-context Opus Director to silently pre-select Opus for every new
+  // worker the user spawns by hand. If the user pinned a project-level
+  // Director model/effort, we honour that intent and pre-fill with it.
+  const spawnDefaultModel = activeProject?.directorModel || fallbackModel;
+  const spawnDefaultEffort: EffortLevel =
     activeProject?.directorEffort || fallbackEffort;
 
   const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents(
@@ -320,8 +331,8 @@ export function App() {
               expanded={expanded}
               workspace={workspace}
               projectId={activeProjectId}
-              defaultModel={directorModel}
-              defaultEffort={directorEffort}
+              defaultModel={spawnDefaultModel}
+              defaultEffort={spawnDefaultEffort}
               spawning={spawning}
               setSpawning={setSpawning}
               onSelect={setSelectedId}

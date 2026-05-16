@@ -61,9 +61,14 @@ export interface Settings {
   apiKey: string;
   /** Long-lived OAuth token from `claude setup-token`. Takes precedence over apiKey when set. */
   oauthToken: string;
+  /** Model used by spawned agents unless the spawn overrides it. */
   defaultModel: string;
-  /** Reasoning effort applied to Director and agents unless overridden. Defaults to 'high'. */
+  /** Reasoning effort applied to spawned agents unless overridden. Defaults to 'high'. */
   defaultEffort: import('./types').EffortLevel;
+  /** Model used by the Director when the project hasn't picked one. */
+  defaultDirectorModel: string;
+  /** Effort used by the Director when the project hasn't picked one. */
+  defaultDirectorEffort: import('./types').EffortLevel;
   /** Per-agent dollar cap. 0 = unlimited. */
   defaultBudgetUsd: number;
   /** Per-agent token cap (input + output). 0 = unlimited. */

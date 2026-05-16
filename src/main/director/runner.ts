@@ -237,14 +237,18 @@ class DirectorSession {
     };
     this.pushMessage(directorMessage);
 
-    // Per-project Director model + effort win over the global defaults.
+    // Per-project Director model + effort win over the global Director
+    // defaults, which are separate from the agent defaults — the Director
+    // gets a heavier model out of the box.
     const project = getProject(this.projectId);
     const directorModel =
       project?.directorModel ||
+      settings.defaultDirectorModel ||
       settings.defaultModel ||
-      'claude-sonnet-4-6';
+      'claude-opus-4-7-1m';
     const directorEffort: EffortLevel =
       project?.directorEffort ||
+      settings.defaultDirectorEffort ||
       settings.defaultEffort ||
       DEFAULT_EFFORT;
     const resolved = resolveModel(directorModel);
