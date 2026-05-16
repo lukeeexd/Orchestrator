@@ -77,13 +77,9 @@ jobs:
               $filtered = "_No user-facing changes (version bump + housekeeping only)._"
             }
             $url = "https://github.com/${{ github.repository }}/compare/$prev...$tag"
-            $body = @"
-## Changes since $prev
-
-$filtered
-
-**Full Changelog**: $url
-"@
+            # Plain string concatenation with `n escapes — here-strings'
+            # required column-0 closing tag breaks YAML block-scalar parsing.
+            $body = "## Changes since $prev`n`n$filtered`n`n**Full Changelog**: $url"
           }
           Write-Host "----- Release notes preview -----"
           Write-Host $body
