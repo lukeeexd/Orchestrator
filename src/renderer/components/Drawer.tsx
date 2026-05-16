@@ -14,7 +14,18 @@ const ROLE_TINT: Record<AgentRole, string> = {
   devops: '#f97316',
 };
 
-const CONTEXT_CAP = 200_000;
+const CONTEXT_CAP_DEFAULT = 200_000;
+const CONTEXT_CAP_1M = 1_000_000;
+
+function contextCapFor(model: string): number {
+  return model.endsWith('-1m') ? CONTEXT_CAP_1M : CONTEXT_CAP_DEFAULT;
+}
+
+function formatCap(cap: number): string {
+  return cap >= 1_000_000
+    ? `${(cap / 1_000_000).toFixed(0)}M`
+    : `${cap / 1000}k`;
+}
 
 type TabId = 'logs' | 'tools' | 'memory' | 'context' | 'config';
 
@@ -359,12 +370,13 @@ function MemoryTab() {
 
 function ContextTab({ agent }: { agent: Agent }) {
   const used = agent.tokens;
-  const pct = Math.min(100, Math.round((used / CONTEXT_CAP) * 100));
+  const cap = contextCapFor(agent.model);
+  const pct = Math.min(100, Math.round((used / cap) * 100));
   return (
     <>
       <div className="field">
         <span className="lbl">
-          Context window · {(used / 1000).toFixed(1)}k / {CONTEXT_CAP / 1000}k ·{' '}
+          Context window · {(used / 1000).toFixed(1)}k / {formatCap(cap)} ·{' '}
           {pct}%
         </span>
         <div className="ctx-bar">
