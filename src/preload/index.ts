@@ -156,6 +156,10 @@ const api: OrchestratorApi = {
       available: boolean;
       version: string | null;
     }>,
+  getSpendSummary: () =>
+    ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
+      import('../shared/types').SpendSummary
+    >,
 
   onAgent: (cb) => subscribe<AgentEventAgentPayload>(IpcChannels.AgentEventAgent, cb),
   onLog: (cb) => subscribe<AgentEventLogPayload>(IpcChannels.AgentEventLog, cb),

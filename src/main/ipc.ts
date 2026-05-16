@@ -16,6 +16,7 @@ import type {
 } from '../shared/types';
 import { readSettings, writeSettings, settingsFilePath } from './settings';
 import { getClaudeCliStatus } from './cli/status';
+import { getSpendSummary } from './spend';
 import {
   spawnAgent,
   redirectAgent,
@@ -75,6 +76,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IpcChannels.AppCliStatus,
     (): { available: boolean; version: string | null } => getClaudeCliStatus(),
+  );
+
+  ipcMain.handle(
+    IpcChannels.SpendGet,
+    (): import('../shared/types').SpendSummary => getSpendSummary(),
   );
 
   ipcMain.handle(

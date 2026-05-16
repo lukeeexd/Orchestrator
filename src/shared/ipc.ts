@@ -42,6 +42,7 @@ export const IpcChannels = {
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
   AppCliStatus: 'app:cliStatus',
+  SpendGet: 'spend:get',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
@@ -201,6 +202,7 @@ export interface OrchestratorApi {
     available: boolean;
     version: string | null;
   }>;
+  getSpendSummary: () => Promise<import('./types').SpendSummary>;
   // Streams
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;

@@ -159,3 +159,43 @@ export interface SpawnAgentResponse {
   ok: true;
   agentId: string;
 }
+
+export interface SpendBucket {
+  /** Display label for the bucket (project name, model id, or role label). */
+  label: string;
+  /** Stable id — used by the renderer for keys and for "drill in" later. */
+  id: string;
+  agentCount: number;
+  tokens: number;
+  cost: number;
+}
+
+export interface SpendAgentRow {
+  id: string;
+  name: string;
+  role: AgentRole;
+  model: string;
+  status: AgentStatus;
+  projectId: string;
+  projectName: string;
+  cost: number;
+  tokens: number;
+  startedAt: number;
+}
+
+export interface SpendSummary {
+  /** Aggregate totals across every agent in every project — lifetime. */
+  lifetime: { agentCount: number; tokens: number; cost: number };
+  /** Same totals filtered to agents started in the trailing 7 days. */
+  last7d: { agentCount: number; tokens: number; cost: number };
+  /** Same totals filtered to agents started in the trailing 30 days. */
+  last30d: { agentCount: number; tokens: number; cost: number };
+  /** One row per project, sorted by cost descending. */
+  byProject: SpendBucket[];
+  /** One row per model (as stored on the agent), sorted by cost descending. */
+  byModel: SpendBucket[];
+  /** One row per role, sorted by cost descending. */
+  byRole: SpendBucket[];
+  /** Top 20 most expensive agents, all-time. */
+  topAgents: SpendAgentRow[];
+}

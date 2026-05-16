@@ -1,0 +1,159 @@
+import type {
+  AgentRole,
+  AgentStatus,
+  SpendAgentRow,
+  SpendBucket,
+  SpendSummary,
+} from '../shared/types';
+import { ROLES } from '../shared/roles';
+import { MODEL_LABELS } from '../shared/models';
+import { getDb } from './db';
+import { listProjects } from './projects';
+
+function asStr(v: unknown, fallback = ''): string {
+  return typeof v === 'string' ? v : fallback;
+}
+function asNum(v: unknown): number {
+  return typeof v === 'number' ? v : 0;
+}
+
+/**
+ * Aggregate cost/token spend across every agent in the database. Runs in
+ * one DB roundtrip (well, three: one project lookup map + one big agents
+ * scan + the in-memory bucketing happens here). Re-fetched fresh on every
+ * IPC call — the renderer's Spend screen pulls it whenever it mounts.
+ *
+ * No per-turn modelUsage breakdown yet — that data is on result events
+ * (the CLI's `modelUsage` field) but we discard it today. A follow-up
+ * could capture it and split cost between e.g. the auto-mode classifier
+ * Haiku turns and the main Sonnet turn. For now we attribute the agent's
+ * total spend to its chosen model.
+ */
+export function getSpendSummary(): SpendSummary {
+  const db = getDb();
+  const projectNames = new Map<string, string>();
+  for (const p of listProjects()) projectNames.set(p.id, p.name);
+
+  // Pull everything in one go — even with a long history this is cheap
+  // because we only need a handful of columns and the agent table grows
+  // slowly compared to log_lines.
+  const res = db.exec(`
+    SELECT id, role, name, status, model, tokens, cost, project_id, started_at
+    FROM agents
+  `);
+  const rows: Array<{
+    id: string;
+    role: AgentRole;
+    name: string;
+    status: AgentStatus;
+    model: string;
+    tokens: number;
+    cost: number;
+    projectId: string;
+    startedAt: number;
+  }> = [];
+  if (res.length > 0) {
+    for (const r of res[0].values) {
+      rows.push({
+        id: asStr(r[0]),
+        role: asStr(r[1]) as AgentRole,
+        name: asStr(r[2]),
+        status: asStr(r[3]) as AgentStatus,
+        model: asStr(r[4]),
+        tokens: asNum(r[5]),
+        cost: asNum(r[6]),
+        projectId: asStr(r[7]),
+        startedAt: asNum(r[8]),
+      });
+    }
+  }
+
+  const lifetime = { agentCount: 0, tokens: 0, cost: 0 };
+  const last7d = { agentCount: 0, tokens: 0, cost: 0 };
+  const last30d = { agentCount: 0, tokens: 0, cost: 0 };
+  const projectBuckets = new Map<string, SpendBucket>();
+  const modelBuckets = new Map<string, SpendBucket>();
+  const roleBuckets = new Map<string, SpendBucket>();
+
+  const now = Date.now();
+  const sevenDaysAgo = now - 7 * 24 * 3600 * 1000;
+  const thirtyDaysAgo = now - 30 * 24 * 3600 * 1000;
+
+  for (const r of rows) {
+    lifetime.agentCount += 1;
+    lifetime.tokens += r.tokens;
+    lifetime.cost += r.cost;
+    if (r.startedAt >= sevenDaysAgo) {
+      last7d.agentCount += 1;
+      last7d.tokens += r.tokens;
+      last7d.cost += r.cost;
+    }
+    if (r.startedAt >= thirtyDaysAgo) {
+      last30d.agentCount += 1;
+      last30d.tokens += r.tokens;
+      last30d.cost += r.cost;
+    }
+    accumulate(projectBuckets, r.projectId, projectNames.get(r.projectId) ?? '(deleted project)', r);
+    accumulate(modelBuckets, r.model, MODEL_LABELS[r.model] ?? r.model, r);
+    accumulate(roleBuckets, r.role, ROLES[r.role]?.label ?? r.role, r);
+  }
+
+  // Top 20 most expensive agents — name + role + model + project so the
+  // user can navigate back to investigate. Order by cost desc then by
+  // start time desc as a tiebreaker so newest expensive ones surface first.
+  const topAgents: SpendAgentRow[] = rows
+    .slice()
+    .sort((a, b) => {
+      if (a.cost !== b.cost) return b.cost - a.cost;
+      return b.startedAt - a.startedAt;
+    })
+    .slice(0, 20)
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      role: r.role,
+      model: r.model,
+      status: r.status,
+      projectId: r.projectId,
+      projectName: projectNames.get(r.projectId) ?? '(deleted project)',
+      cost: r.cost,
+      tokens: r.tokens,
+      startedAt: r.startedAt,
+    }));
+
+  return {
+    lifetime,
+    last7d,
+    last30d,
+    byProject: bucketsByCost(projectBuckets),
+    byModel: bucketsByCost(modelBuckets),
+    byRole: bucketsByCost(roleBuckets),
+    topAgents,
+  };
+}
+
+function accumulate(
+  map: Map<string, SpendBucket>,
+  id: string,
+  label: string,
+  r: { tokens: number; cost: number },
+): void {
+  const existing = map.get(id);
+  if (existing) {
+    existing.agentCount += 1;
+    existing.tokens += r.tokens;
+    existing.cost += r.cost;
+  } else {
+    map.set(id, {
+      id,
+      label,
+      agentCount: 1,
+      tokens: r.tokens,
+      cost: r.cost,
+    });
+  }
+}
+
+function bucketsByCost(map: Map<string, SpendBucket>): SpendBucket[] {
+  return [...map.values()].sort((a, b) => b.cost - a.cost);
+}

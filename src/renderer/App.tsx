@@ -22,6 +22,7 @@ import { ResizeHandle } from './components/ResizeHandle';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { ToolsScreen } from './components/ToolsScreen';
+import { SpendScreen } from './components/SpendScreen';
 import { CliMissingGate } from './components/CliMissingGate';
 import {
   ProjectTabs,
@@ -30,18 +31,13 @@ import {
 } from './components/ProjectTabs';
 
 const PLACEHOLDERS: Record<
-  Exclude<RailScreen, 'agents' | 'settings' | 'tools'>,
+  Exclude<RailScreen, 'agents' | 'settings' | 'tools' | 'cost'>,
   { title: string; icon: Parameters<typeof PlaceholderScreen>[0]['icon']; body: string }
 > = {
   templates: {
     title: 'Templates',
     icon: 'templates',
     body: 'Saved agent fleets. Pick a template, the Director spawns the matching agents with their system prompts and tool allow-lists already wired.',
-  },
-  cost: {
-    title: 'Spend',
-    icon: 'cost',
-    body: 'Historical cost analytics — per session, per agent, per tool. Track where your tokens go and which agents are worth the spend.',
   },
   history: {
     title: 'Runs',
@@ -382,6 +378,8 @@ export function App() {
                 await setProjectRoleTools(activeProjectId, roleTools);
             }}
           />
+        ) : active === 'cost' ? (
+          <SpendScreen />
         ) : (
           <PlaceholderScreen
             {...(active === 'agents'
