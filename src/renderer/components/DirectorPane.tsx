@@ -16,6 +16,8 @@ import { Icon } from './Icon';
 import { PlanCard } from './PlanCard';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
+import { DirectorStream } from './DirectorStream';
+import type { ViewMode } from './TopBar';
 
 const ROLE_TINT: Record<Agent['role'], string> = {
   pm: '#4ade80',
@@ -43,6 +45,7 @@ interface Props {
   ) => Promise<void>;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   onWipe: () => Promise<void>;
+  viewMode: ViewMode;
 }
 
 interface AttachmentChip {
@@ -66,6 +69,7 @@ export function DirectorPane({
   onSend,
   onSpawnPlan,
   onWipe,
+  viewMode,
 }: Props) {
   const [confirmWipe, setConfirmWipe] = useState(false);
   return (
@@ -93,7 +97,13 @@ export function DirectorPane({
         </button>
       </div>
 
-      {messages.length === 0 ? (
+      {viewMode === 'stream' ? (
+        <DirectorStream
+          messages={messages}
+          mode={mode}
+          onSpawnPlan={onSpawnPlan}
+        />
+      ) : messages.length === 0 ? (
         <EmptyChat mode={mode} />
       ) : (
         <Chat messages={messages} mode={mode} onSpawnPlan={onSpawnPlan} />

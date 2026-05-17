@@ -12,7 +12,7 @@ import { useAgents } from './hooks/useAgents';
 import { useDirector } from './hooks/useDirector';
 import { useSettings } from './hooks/useSettings';
 import { useProjects } from './hooks/useProjects';
-import { TopBar } from './components/TopBar';
+import { TopBar, type ViewMode } from './components/TopBar';
 import { LeftRail, type RailScreen } from './components/LeftRail';
 import { StatusBar } from './components/StatusBar';
 import { DirectorPane } from './components/DirectorPane';
@@ -52,6 +52,10 @@ export function App() {
   const [mode, setMode] = useLocalStorageState<DirectorMode>(
     'orchestrator.directorMode',
     'auto',
+  );
+  const [viewMode, setViewMode] = useLocalStorageState<ViewMode>(
+    'orchestrator.viewMode',
+    'compact',
   );
   const [showNewProject, setShowNewProject] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -286,11 +290,13 @@ export function App() {
         model={settings?.defaultModel ?? 'claude-sonnet-4-6'}
         totalTokens={totalTokens}
         totalCost={totalCost}
+        viewMode={viewMode}
         onChangeWorkspace={async () => {
           if (!activeProjectId) return;
           const { path } = await window.api.pickWorkspace();
           if (path) await setProjectWorkspace(activeProjectId, path);
         }}
+        onViewModeChange={setViewMode}
       />
       <ProjectTabs
         projects={projects}
@@ -330,6 +336,7 @@ export function App() {
                 if (activeProjectId)
                   await window.api.wipeDirector(activeProjectId);
               }}
+              viewMode={viewMode}
             />
             <ResizeHandle
               value={dirW}
@@ -347,6 +354,7 @@ export function App() {
               defaultModel={spawnDefaultModel}
               defaultEffort={spawnDefaultEffort}
               spawning={spawning}
+              viewMode={viewMode}
               setSpawning={setSpawning}
               onSelect={setSelectedId}
               onToggle={toggle}

@@ -1,7 +1,9 @@
 import type { Agent, EffortLevel } from '../../shared/types';
 import { Icon } from './Icon';
 import { AgentRow } from './AgentRow';
+import { AgentStreamPanel } from './AgentStreamPanel';
 import { SpawnAgentForm } from './SpawnAgentForm';
+import type { ViewMode } from './TopBar';
 
 interface Props {
   agents: Agent[];
@@ -12,6 +14,7 @@ interface Props {
   defaultModel: string;
   defaultEffort: EffortLevel;
   spawning: boolean;
+  viewMode: ViewMode;
   setSpawning: (next: boolean) => void;
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
@@ -26,6 +29,7 @@ export function AgentsPane({
   defaultModel,
   defaultEffort,
   spawning,
+  viewMode,
   setSpawning,
   onSelect,
   onToggle,
@@ -52,6 +56,19 @@ export function AgentsPane({
 
       {agents.length === 0 ? (
         <EmptyAgents onNew={() => setSpawning(true)} />
+      ) : viewMode === 'stream' ? (
+        <div className="agents-stream">
+          {agents.map((a) => (
+            <AgentStreamPanel
+              key={a.id}
+              agent={a}
+              selected={selectedId === a.id}
+              onSelect={() => onSelect(a.id)}
+              onAbort={() => void window.api.abortAgent(a.id)}
+              onRemove={() => void window.api.removeAgent(a.id)}
+            />
+          ))}
+        </div>
       ) : (
         <div className="agents-list">
           {agents.map((a) => (
