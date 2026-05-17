@@ -81,6 +81,21 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IpcChannels.AppOpenUsage,
+    async (): Promise<{ ok: boolean }> => {
+      // Hardcoded URL on the main side — preload doesn't accept a URL arg
+      // so the renderer can't redirect this anywhere else (e.g. to a
+      // phishing lookalike).
+      try {
+        await shell.openExternal('https://claude.ai/settings/usage');
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
+    },
+  );
+
+  ipcMain.handle(
     IpcChannels.SpendGet,
     (): import('../shared/types').SpendSummary => getSpendSummary(),
   );

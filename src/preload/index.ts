@@ -156,6 +156,8 @@ const api: OrchestratorApi = {
       available: boolean;
       version: string | null;
     }>,
+  openClaudeUsage: () =>
+    ipcRenderer.invoke(IpcChannels.AppOpenUsage) as Promise<{ ok: boolean }>,
   getSpendSummary: () =>
     ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
       import('../shared/types').SpendSummary

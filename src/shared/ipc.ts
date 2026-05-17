@@ -42,6 +42,7 @@ export const IpcChannels = {
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
   AppCliStatus: 'app:cliStatus',
+  AppOpenUsage: 'app:openUsage',
   SpendGet: 'spend:get',
   HistoryList: 'history:list',
   UpdaterRestart: 'updater:restart',
@@ -205,6 +206,7 @@ export interface OrchestratorApi {
     available: boolean;
     version: string | null;
   }>;
+  openClaudeUsage: () => Promise<{ ok: boolean }>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   listHistory: () => Promise<import('./types').HistoryRow[]>;
   restartToUpdate: () => Promise<void>;

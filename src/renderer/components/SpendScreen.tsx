@@ -85,6 +85,13 @@ export function SpendScreen() {
         <span className="spacer" />
         <button
           className="tb-btn"
+          onClick={() => void window.api.openClaudeUsage()}
+          title="Open claude.ai/settings/usage in your browser for Anthropic's official rate-limit numbers"
+        >
+          View official usage ↗
+        </button>
+        <button
+          className="tb-btn"
           onClick={() => void load()}
           disabled={reloading}
           title="Recompute aggregates from the database"
