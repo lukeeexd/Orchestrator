@@ -93,42 +93,51 @@ export async function* runCodexQuery(
 }
 
 function buildArgs(o: CodexQueryOptions): string[] {
-  // `codex resume <id>` vs `codex exec` are different subcommand shapes.
-  // Resume's prompt-input semantics are the same (stdin or positional)
-  // but the argv prefix differs.
-  const base: string[] = o.resume
-    ? ['exec', 'resume', o.resume]
-    : ['exec'];
+  // `codex exec resume <id>` accepts a *much* smaller flag set than
+  // `codex exec`:
+  //   resume: --json, -c <key=value>, <SESSION_ID>, [PROMPT]
+  //   exec:   --json, -m, --sandbox, -C, --skip-git-repo-check,
+  //           --ephemeral, -c, etc.
+  // Sandbox / cwd / model are all baked into the original session on
+  // resume — passing them again rejects the whole invocation with
+  // "unexpected argument '--sandbox' found". So branch the argv
+  // explicitly per subcommand.
+  if (o.resume) {
+    const args: string[] = ['exec', 'resume', '--json'];
+    if (o.effort) {
+      args.push('-c', `model_reasoning_effort="${o.effort}"`);
+    }
+    args.push(o.resume);
+    return args;
+  }
 
-  base.push('--json'); // JSONL events on stdout
+  const args: string[] = ['exec', '--json'];
 
   // ChatGPT-plan users can't specify `-m` explicitly (server returns 400
   // for `gpt-5-codex` etc). Omit the flag entirely when the model is
   // empty/sentinel — codex falls back to its config default which is the
   // right model for the user's account.
   if (o.model && o.model.length > 0) {
-    base.push('-m', o.model);
+    args.push('-m', o.model);
   }
   if (o.effort) {
-    // Codex supports `-c model_reasoning_effort=...` (TOML override). The
-    // value is the same enum (low/medium/high/etc) on supporting models.
-    base.push('-c', `model_reasoning_effort="${o.effort}"`);
+    args.push('-c', `model_reasoning_effort="${o.effort}"`);
   }
   // Sandbox policy — coarser than claude's tool allowlist but it's what
   // Codex offers. Default to workspace-write so the agent can actually
   // edit files in the project; matches our bypassPermissions intent.
-  base.push('--sandbox', o.sandbox ?? 'workspace-write');
+  args.push('--sandbox', o.sandbox ?? 'workspace-write');
   // Don't refuse to run when the workspace isn't a git repo. Orchestrator
   // workspaces can be anything.
-  base.push('--skip-git-repo-check');
+  args.push('--skip-git-repo-check');
   // No session persistence inside ~/.codex — we manage our own session
   // history via the registry. Keeps user's local codex state clean.
-  base.push('--ephemeral');
+  args.push('--ephemeral');
 
   // Working directory.
-  base.push('-C', o.cwd);
+  args.push('-C', o.cwd);
 
-  return base;
+  return args;
 }
 
 async function* parseAndNormalize(
