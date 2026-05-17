@@ -288,12 +288,12 @@ class DirectorSession {
               cwd: app.getPath('userData'),
               env,
               // Codex has no inline system-prompt knob; prepend the
-              // Director instructions as a preamble. The model still
-              // needs to follow the orchestrator-plan fenced-JSON
-              // convention from DIRECTOR_SYSTEM_PROMPT for plan parsing
-              // to work — Codex models are generally OK at this but
-              // less reliable than Claude.
-              prompt: `[director-role]\n${DIRECTOR_SYSTEM_PROMPT}\n\n---\n\n${fullPrompt}`,
+              // Director instructions as a preamble. End-of-prompt
+              // reminder added too because Codex tends to skip the
+              // orchestrator-plan block for "trivial" tasks and just
+              // describe the plan in prose, which leaves our parser
+              // with nothing to spawn from.
+              prompt: `[director-role]\n${DIRECTOR_SYSTEM_PROMPT}\n\n---\n\n${fullPrompt}\n\n---\n\nREMINDER (auto mode): Always emit the \`orchestrator-plan\` fenced JSON block, even for a single-agent task. Do not describe the plan in prose only — our parser needs the block to auto-spawn anything. If the task is trivial, emit a one-row plan.`,
               model: directorModel,
               effort: directorEffort,
               // The Director only plans — it never edits files. read-only
