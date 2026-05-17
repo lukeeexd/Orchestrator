@@ -29,18 +29,52 @@ function formatCap(cap: number): string {
 
 type TabId = 'logs' | 'tools' | 'memory' | 'context' | 'config';
 
+const COLLAPSED_WIDTH = 36;
+
 interface Props {
   width: number;
   agent: Agent | null;
+  collapsed: boolean;
   onAbort: (id: string) => void;
+  onToggleCollapsed: () => void;
 }
 
-export function Drawer({ width, agent, onAbort }: Props) {
+export function Drawer({
+  width,
+  agent,
+  collapsed,
+  onAbort,
+  onToggleCollapsed,
+}: Props) {
   const [tab, setTab] = useState<TabId>('logs');
+
+  // Collapsed: thin vertical strip with an expand button. Stays present
+  // (rather than disappearing entirely) so the affordance to bring the
+  // drawer back is always visible, and the expand state survives the
+  // user clicking around different agents.
+  if (collapsed) {
+    return (
+      <div className="drawer drawer-collapsed" style={{ width: COLLAPSED_WIDTH }}>
+        <button
+          className="drawer-collapse-btn"
+          onClick={onToggleCollapsed}
+          title="Expand inspector"
+        >
+          <Icon name="chevron" size={11} />
+        </button>
+        {agent && (
+          <span className="drawer-collapsed-name" title={`${agent.name} selected`}>
+            {agent.name}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   if (!agent) {
     return (
       <div className="drawer" style={{ width }}>
+        <DrawerCollapseBar onToggle={onToggleCollapsed} />
         <div className="empty" style={{ height: '100%' }}>
           <div className="empty-glyph">
             <Icon name="agents" size={24} color="var(--muted)" stroke={1.2} />
@@ -61,6 +95,7 @@ export function Drawer({ width, agent, onAbort }: Props) {
 
   return (
     <div className="drawer" style={{ width }}>
+      <DrawerCollapseBar onToggle={onToggleCollapsed} />
       <Header agent={agent} onAbort={() => onAbort(agent.id)} />
 
       <div className="tabs">
@@ -78,6 +113,20 @@ export function Drawer({ width, agent, onAbort }: Props) {
         {tab === 'context' && <ContextTab agent={agent} />}
         {tab === 'config' && <ConfigTab agent={agent} />}
       </div>
+    </div>
+  );
+}
+
+function DrawerCollapseBar({ onToggle }: { onToggle: () => void }) {
+  return (
+    <div className="drawer-collapse-bar">
+      <button
+        className="drawer-collapse-btn"
+        onClick={onToggle}
+        title="Collapse inspector"
+      >
+        <Icon name="chevron-down" size={11} />
+      </button>
     </div>
   );
 }

@@ -57,6 +57,10 @@ export function App() {
     'orchestrator.viewMode',
     'compact',
   );
+  const [drawerCollapsed, setDrawerCollapsed] = useLocalStorageState<boolean>(
+    'orchestrator.drawerCollapsed',
+    false,
+  );
   const [showNewProject, setShowNewProject] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [agentCountByProject, setAgentCountByProject] = useState<
@@ -275,11 +279,14 @@ export function App() {
       } else if (e.key === '.' && !typing) {
         e.preventDefault();
         if (selectedId) void window.api.abortAgent(selectedId);
+      } else if ((e.key === 'b' || e.key === 'B') && !typing) {
+        e.preventDefault();
+        setDrawerCollapsed(!drawerCollapsed);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId]);
+  }, [selectedId, drawerCollapsed, setDrawerCollapsed]);
 
   const isHome = active === 'agents';
 
@@ -359,17 +366,21 @@ export function App() {
               onSelect={setSelectedId}
               onToggle={toggle}
             />
-            <ResizeHandle
-              value={drawerW}
-              onChange={setDrawerW}
-              min={340}
-              max={680}
-              edge="right"
-            />
+            {!drawerCollapsed && (
+              <ResizeHandle
+                value={drawerW}
+                onChange={setDrawerW}
+                min={340}
+                max={680}
+                edge="right"
+              />
+            )}
             <Drawer
               width={drawerW}
               agent={selectedAgent}
+              collapsed={drawerCollapsed}
               onAbort={(id) => void window.api.abortAgent(id)}
+              onToggleCollapsed={() => setDrawerCollapsed(!drawerCollapsed)}
             />
           </>
         ) : active === 'settings' ? (

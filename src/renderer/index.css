@@ -1800,3 +1800,49 @@ body.resizing * { cursor: col-resize !important; }
 @keyframes blink {
   50% { opacity: 0; }
 }
+
+/* ───────────────────────── Drawer collapse ──────────────────────────── */
+.drawer-collapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 8px;
+  gap: 12px;
+  border-left: 1px solid var(--border);
+  background: var(--sub);
+}
+.drawer-collapsed .drawer-collapse-btn {
+  /* Rotate to point INTO the drawer (← when collapsed = expand). */
+  transform: rotate(180deg);
+}
+.drawer-collapsed-name {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.drawer-collapse-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 6px 0;
+  height: 22px;
+  align-items: center;
+}
+.drawer-collapse-btn {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+}
+.drawer-collapse-btn:hover {
+  background: var(--sub-2);
+  color: var(--text);
+}
