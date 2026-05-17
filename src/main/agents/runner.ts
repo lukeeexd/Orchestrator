@@ -24,6 +24,19 @@ import * as director from '../director/runner';
 import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
 import { getProject } from '../projects';
+import { effectiveSkill } from '../skills';
+
+/**
+ * Build the role's effective system prompt: its hardcoded prompt plus
+ * any per-role skill body the project has authored (or the in-app
+ * default). Empty skill content is a no-op.
+ */
+function buildSystemPromptFor(role: AgentRole, projectId: string): string {
+  const base = ROLES[role].systemPrompt;
+  const skill = effectiveSkill(projectId, role).trim();
+  if (!skill) return base;
+  return `${base}\n\n## Project skill\n\n${skill}`;
+}
 import { runClaudeQuery } from '../cli/spawn';
 import { runCodexQuery } from '../cli/codex';
 
@@ -356,7 +369,10 @@ ${task}`;
             agents: {
               main: {
                 description: `${role.label} for the Orchestrator app`,
-                prompt: role.systemPrompt,
+                prompt: buildSystemPromptFor(
+                  entry.agent.role,
+                  entry.agent.projectId,
+                ),
                 tools: effectiveTools,
                 model: resolved.model,
                 effort: effectiveEffort,
@@ -428,7 +444,7 @@ ${req.task}`;
             // Codex has no inline system-prompt flag — bake the role
             // prompt into the user prompt as a preamble so the model
             // still sees its persona instructions.
-            prompt: `[role: ${role.label}]\n${role.systemPrompt}\n\n---\n\n${promptWithContext}`,
+            prompt: `[role: ${role.label}]\n${buildSystemPromptFor(req.role, req.projectId)}\n\n---\n\n${promptWithContext}`,
             model: effectiveModel,
             effort: effectiveEffort,
             abortController: controller,
@@ -442,7 +458,7 @@ ${req.task}`;
             agents: {
               main: {
                 description: `${role.label} for the Orchestrator app`,
-                prompt: role.systemPrompt,
+                prompt: buildSystemPromptFor(req.role, req.projectId),
                 tools: effectiveTools,
                 model: resolved.model,
                 effort: effectiveEffort,
@@ -583,7 +599,7 @@ ${body}`;
             cwd: entry.agent.workspace,
             env,
             // Same role-prompt preamble approach as initial spawn.
-            prompt: `[role: ${role.label}]\n${role.systemPrompt}\n\n---\n\n${prompt}`,
+            prompt: `[role: ${role.label}]\n${buildSystemPromptFor(entry.agent.role, entry.agent.projectId)}\n\n---\n\n${prompt}`,
             model: effectiveModel,
             effort: effectiveEffort,
             resume: entry.agent.sessionId,
@@ -602,7 +618,10 @@ ${body}`;
             agents: {
               main: {
                 description: `${role.label} for the Orchestrator app`,
-                prompt: role.systemPrompt,
+                prompt: buildSystemPromptFor(
+                  entry.agent.role,
+                  entry.agent.projectId,
+                ),
                 tools: resolveTools(entry.agent.role, entry.agent.projectId),
                 model: resolved.model,
                 effort: effectiveEffort,

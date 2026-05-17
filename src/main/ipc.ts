@@ -19,6 +19,7 @@ import { getClaudeCliStatus } from './cli/status';
 import { getSpendSummary } from './spend';
 import { listHistory } from './history';
 import { listSlashCommands } from './commands';
+import { listSkills, writeSkill } from './skills';
 import { quitAndInstallUpdate } from './updater';
 import {
   spawnAgent,
@@ -113,6 +114,29 @@ export function registerIpcHandlers(): void {
       projectId: string | null,
     ): import('../shared/commands').SlashCommand[] =>
       listSlashCommands(projectId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.SkillsList,
+    (_event, projectId: string): import('../shared/ipc').SkillEntry[] =>
+      listSkills(projectId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.SkillsSet,
+    (
+      _event,
+      projectId: string,
+      role: import('../shared/types').AgentRole,
+      content: string,
+    ): { ok: boolean; entry?: import('../shared/ipc').SkillEntry; error?: string } => {
+      try {
+        const entry = writeSkill(projectId, role, content);
+        return { ok: true, entry };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
   );
 
   ipcMain.handle(IpcChannels.UpdaterRestart, (): void => {

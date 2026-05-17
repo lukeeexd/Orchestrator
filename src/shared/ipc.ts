@@ -46,6 +46,8 @@ export const IpcChannels = {
   SpendGet: 'spend:get',
   HistoryList: 'history:list',
   CommandsList: 'commands:list',
+  SkillsList: 'skills:list',
+  SkillsSet: 'skills:set',
   UpdaterRestart: 'updater:restart',
   UpdaterEventDownloaded: 'updater:event:update-downloaded',
   // Renderer-bound streaming events:
@@ -139,6 +141,13 @@ export interface ProjectActiveChangedPayload {
   projectId: string;
 }
 
+export interface SkillEntry {
+  role: import('./types').AgentRole;
+  content: string;
+  hasFile: boolean;
+  path: string | null;
+}
+
 export interface AcceptPlanRequest {
   projectId: string;
   rows: PlanRow[];
@@ -217,6 +226,12 @@ export interface OrchestratorApi {
   listSlashCommands: (
     projectId: string | null,
   ) => Promise<import('./commands').SlashCommand[]>;
+  listSkills: (projectId: string) => Promise<SkillEntry[]>;
+  setSkill: (
+    projectId: string,
+    role: import('./types').AgentRole,
+    content: string,
+  ) => Promise<{ ok: boolean; entry?: SkillEntry; error?: string }>;
   restartToUpdate: () => Promise<void>;
   onUpdateDownloaded: (
     cb: (p: { version: string; notes: string }) => void,

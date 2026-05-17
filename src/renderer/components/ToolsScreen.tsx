@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { AgentRole, Project } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { KNOWN_TOOLS } from '../../shared/tools';
 import { Icon } from './Icon';
+import { SkillsEditor } from './SkillsEditor';
 
 interface Props {
   project: Project | null;
@@ -17,9 +18,10 @@ const ROLE_TINT: Record<AgentRole, string> = {
   coder: '#c084fc',
   qa: '#fbbf24',
   devops: '#f97316',
+  security: '#f87171',
 };
 
-const ROLE_ORDER: AgentRole[] = ['pm', 'researcher', 'coder', 'qa', 'devops'];
+const ROLE_ORDER: AgentRole[] = ['pm', 'researcher', 'coder', 'qa', 'devops', 'security'];
 
 export function ToolsScreen({ project, onChange }: Props) {
   // Compose the live allow-list for every role: project override (if any)
@@ -32,6 +34,7 @@ export function ToolsScreen({ project, onChange }: Props) {
       coder: new Set(),
       qa: new Set(),
       devops: new Set(),
+      security: new Set(),
     };
     for (const role of ROLE_ORDER) {
       const override = project?.roleTools?.[role];
@@ -81,6 +84,8 @@ export function ToolsScreen({ project, onChange }: Props) {
     void setRoleAllowList(role, [...ROLES[role].tools]);
   };
 
+  const [tab, setTab] = useState<'tools' | 'skills'>('tools');
+
   if (!project) {
     return (
       <div className="pane" style={{ flex: 1 }}>
@@ -102,41 +107,64 @@ export function ToolsScreen({ project, onChange }: Props) {
     );
   }
 
-  if (project.provider === 'codex') {
-    return (
-      <div className="pane" style={{ flex: 1 }}>
-        <div className="pane-head">
-          <span className="title">
-            <b>Tools</b>
-          </span>
-        </div>
-        <div className="empty" style={{ height: 'auto', padding: 32 }}>
-          <div className="empty-title" style={{ color: 'var(--text-2)' }}>
-            Not applicable for codex projects
-          </div>
-          <div className="empty-body">
-            Codex uses sandbox-policy scopes instead of named tool allow-lists:
-            <code>read-only</code>, <code>workspace-write</code>, or{' '}
-            <code>danger-full-access</code>. Orchestrator currently sets every
-            codex agent to <code>workspace-write</code>; per-role overrides
-            aren&apos;t exposed yet. This screen only edits claude-project
-            allow-lists.
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="pane settings-pane" style={{ flex: 1 }}>
       <div className="pane-head">
         <span className="title">
-          <b>Tools</b>
+          <b>Roles</b>
         </span>
+        <div
+          className="mode-toggle"
+          style={{ marginLeft: 12 }}
+          title="Per-role configuration: tool allow-lists (claude only) or skill prompts (both providers)."
+        >
+          <button
+            className={tab === 'tools' ? 'on' : ''}
+            onClick={() => setTab('tools')}
+          >
+            tools
+          </button>
+          <button
+            className={tab === 'skills' ? 'on' : ''}
+            onClick={() => setTab('skills')}
+          >
+            skills
+          </button>
+        </div>
         <span className="spacer" />
       </div>
 
       <div className="settings-body">
+        {tab === 'skills' ? (
+          <section className="settings-section">
+            <h3 className="settings-h">Per-role skill prompts</h3>
+            <p className="settings-help">
+              Markdown appended to each role&apos;s system prompt at spawn
+              time. Lets you teach a role about your codebase&apos;s
+              conventions without editing the hardcoded prompts. Saved
+              per-project at{' '}
+              <code>{`<workspace>/.orchestrator/skills/<role>.md`}</code>.
+              Empty file means &quot;no skill&quot; (overrides any in-app
+              default).
+            </p>
+            <SkillsEditor project={project} />
+          </section>
+        ) : project.provider === 'codex' ? (
+          <section className="settings-section">
+            <h3 className="settings-h">Tool allow-lists</h3>
+            <div className="inline-empty" style={{ padding: 18 }}>
+              Not applicable for codex projects. Codex uses sandbox-policy
+              scopes (<code>read-only</code>, <code>workspace-write</code>,{' '}
+              <code>danger-full-access</code>) instead of named tool
+              allow-lists. Per-role sandbox overrides aren&apos;t exposed
+              yet — every codex agent currently runs with{' '}
+              <code>workspace-write</code>. Switch to the{' '}
+              <strong>skills</strong> tab to author per-role guidance that
+              <em> does</em> apply on codex.
+            </div>
+          </section>
+        ) : (
+        <>
         <section className="settings-section">
           <h3 className="settings-h">Role × tool allow-lists</h3>
           <p className="settings-help">
@@ -232,6 +260,8 @@ export function ToolsScreen({ project, onChange }: Props) {
             without tools regardless — it plans only, never executes.
           </p>
         </section>
+        </>
+        )}
       </div>
     </div>
   );

@@ -13,6 +13,7 @@ const ROLE_TINT: Record<AgentRole, string> = {
   coder: '#c084fc',
   qa: '#fbbf24',
   devops: '#f97316',
+  security: '#f87171',
 };
 
 const STATUS_TINT: Record<string, string> = {
@@ -25,7 +26,7 @@ const STATUS_TINT: Record<string, string> = {
   approval: 'var(--waiting)',
 };
 
-const ROLES_ALL: AgentRole[] = ['pm', 'researcher', 'coder', 'qa', 'devops'];
+const ROLES_ALL: AgentRole[] = ['pm', 'researcher', 'coder', 'qa', 'devops', 'security'];
 const STATUSES_ALL: AgentStatus[] = [
   'running',
   'waiting',

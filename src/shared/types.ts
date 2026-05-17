@@ -1,4 +1,4 @@
-export type AgentRole = 'pm' | 'researcher' | 'coder' | 'qa' | 'devops';
+export type AgentRole = 'pm' | 'researcher' | 'coder' | 'qa' | 'devops' | 'security';
 
 export type AgentStatus =
   | 'running'

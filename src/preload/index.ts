@@ -171,6 +171,21 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.CommandsList, projectId) as Promise<
       import('../shared/commands').SlashCommand[]
     >,
+  listSkills: (projectId) =>
+    ipcRenderer.invoke(IpcChannels.SkillsList, projectId) as Promise<
+      import('../shared/ipc').SkillEntry[]
+    >,
+  setSkill: (projectId, role, content) =>
+    ipcRenderer.invoke(
+      IpcChannels.SkillsSet,
+      projectId,
+      role,
+      content,
+    ) as Promise<{
+      ok: boolean;
+      entry?: import('../shared/ipc').SkillEntry;
+      error?: string;
+    }>,
 
   restartToUpdate: () =>
     ipcRenderer.invoke(IpcChannels.UpdaterRestart) as Promise<void>,

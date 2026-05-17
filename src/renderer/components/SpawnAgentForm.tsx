@@ -14,6 +14,7 @@ const ROLES: { id: AgentRole; label: string; tint: string }[] = [
   { id: 'coder', label: 'Coder', tint: '#c084fc' },
   { id: 'qa', label: 'QA', tint: '#fbbf24' },
   { id: 'devops', label: 'DevOps', tint: '#f97316' },
+  { id: 'security', label: 'Security', tint: '#f87171' },
 ];
 
 interface Props {
