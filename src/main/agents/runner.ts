@@ -236,6 +236,14 @@ export async function forkAgent(
       error: 'parent has no SDK session id yet — wait for its first result event',
     };
   }
+  const provider = getProject(parent.agent.projectId)?.provider ?? 'claude';
+  if (provider === 'codex') {
+    return {
+      ok: false,
+      error:
+        'fork is not supported for codex projects yet — codex exec exposes JSON resume, but not JSON fork',
+    };
+  }
 
   const role = ROLES[parent.agent.role];
   const name = nextName(parent.agent.role, parent.agent.projectId);

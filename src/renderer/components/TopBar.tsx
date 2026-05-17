@@ -1,5 +1,3 @@
-import { Icon } from './Icon';
-
 export type ViewMode = 'compact' | 'stream';
 
 interface Props {

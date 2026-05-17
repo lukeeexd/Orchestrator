@@ -5,6 +5,7 @@ export type AgentStatus =
   | 'waiting'
   | 'approval'
   | 'paused'
+  | 'aborted'
   | 'done'
   | 'error';
 

@@ -158,9 +158,9 @@ export function deleteProject(id: string): void {
   // Cascade by hand — sql.js doesn't run ON DELETE CASCADE for us reliably
   // and our v6 schema didn't declare it.
   const ds = [
+    `DELETE FROM log_lines WHERE agent_id IN (SELECT id FROM agents WHERE project_id = ?)`,
     `DELETE FROM agents WHERE project_id = ?`,
     `DELETE FROM director_messages WHERE project_id = ?`,
-    `DELETE FROM log_lines WHERE agent_id IN (SELECT id FROM agents WHERE project_id = ?)`,
     `DELETE FROM kv WHERE key = 'project:' || ? || ':director_session_id'`,
     `DELETE FROM projects WHERE id = ?`,
   ];

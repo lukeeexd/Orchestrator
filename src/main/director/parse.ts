@@ -1,6 +1,13 @@
 import type { PlanRow, AgentRole, RedirectInstruction } from '../../shared/types';
 
-const VALID_ROLES: AgentRole[] = ['pm', 'researcher', 'coder', 'qa', 'devops'];
+const VALID_ROLES: AgentRole[] = [
+  'pm',
+  'researcher',
+  'coder',
+  'qa',
+  'devops',
+  'security',
+];
 
 interface ParseResult {
   /** Text with all orchestrator blocks stripped. */

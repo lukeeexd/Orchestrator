@@ -65,10 +65,9 @@ export function readSkill(projectId: string, role: AgentRole): SkillEntry {
 }
 
 /**
- * Write a role's skill file. An empty string deletes the file — that's
- * the user explicitly opting OUT of the built-in default, signaling
- * "no skill for this role here." Restoring the default is just clearing
- * the field and saving (which deletes), then the loader falls back.
+ * Write a role's skill file. An empty string creates an empty file, which
+ * explicitly opts out of the built-in default for this project. If the file
+ * is deleted outside the app, the loader falls back to the default again.
  *
  * Returns the same shape as readSkill so the UI can refresh state in
  * one round-trip.
@@ -85,10 +84,6 @@ export function writeSkill(
     );
   }
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  if (content.length === 0) {
-    if (fs.existsSync(p)) fs.unlinkSync(p);
-    return { role, content: DEFAULT_SKILLS[role], hasFile: false, path: p };
-  }
   fs.writeFileSync(p, content, 'utf8');
   return { role, content, hasFile: true, path: p };
 }

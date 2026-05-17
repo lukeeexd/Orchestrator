@@ -160,7 +160,7 @@ export function App() {
   }, [projects]);
 
   useEffect(() => {
-    const offAgent = window.api.onAgent(({ projectId, agent }) => {
+    const offAgent = window.api.onAgent(({ projectId }) => {
       setAgentCountByProject((prev) => {
         // Recompute from scratch by polling the registry would be expensive;
         // approximate by bumping/decrementing based on the running flag.
@@ -284,7 +284,6 @@ export function App() {
         }
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, mode, activeProjectId, agents]);
 
   useEffect(() => {

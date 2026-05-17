@@ -11,6 +11,7 @@ import {
 import type {
   Agent,
   DirectorMessage,
+  EffortLevel,
   Project,
   SpawnAgentRequest,
 } from '../shared/types';
@@ -45,7 +46,6 @@ import {
   setProjectWorkspace,
 } from './projects';
 import { isEffortLevel } from '../shared/efforts';
-import type { EffortLevel } from '../shared/types';
 
 const startedAt = Date.now();
 
@@ -276,7 +276,18 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IpcChannels.AgentAbort,
-    (_event, id: string): { ok: boolean } => ({ ok: registry.abort(id) }),
+    (_event, id: string): { ok: boolean } => {
+      const ok = registry.abort(id);
+      if (ok) {
+        const patch: Partial<Agent> = {
+          status: 'aborted',
+          statusLabel: 'Aborted',
+        };
+        registry.patch(id, patch);
+        agentSinks.onPatch(id, patch);
+      }
+      return { ok };
+    },
   );
 
   ipcMain.handle(
