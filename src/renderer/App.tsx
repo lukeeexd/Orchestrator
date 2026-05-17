@@ -7,6 +7,7 @@ import type {
   Project,
 } from '../shared/types';
 import { DEFAULT_EFFORT } from '../shared/efforts';
+import { defaultModelForProvider, modelMatchesProvider } from '../shared/models';
 import { useLocalStorageState } from './hooks/useLocalStorageState';
 import { useAgents } from './hooks/useAgents';
 import { useDirector } from './hooks/useDirector';
@@ -89,10 +90,29 @@ export function App() {
   const activeProject: Project | null =
     projects.find((p) => p.id === activeProjectId) ?? null;
   const workspace = activeProject?.workspace ?? '';
-  const fallbackModel = settings?.defaultModel ?? 'claude-sonnet-4-6';
+  // Default chain. Falls through to a provider-appropriate default so a
+  // codex project doesn't silently get the global claude default
+  // (claude-opus-4-7-1m), which codex would reject as an unknown model.
+  const activeProvider = activeProject?.provider ?? 'claude';
+  const providerDefaultModel = defaultModelForProvider(activeProvider);
+  const fallbackModel =
+    activeProvider === 'claude'
+      ? settings?.defaultModel ?? providerDefaultModel
+      : providerDefaultModel;
   const directorFallbackModel =
-    settings?.defaultDirectorModel || fallbackModel;
-  const directorModel = activeProject?.directorModel || directorFallbackModel;
+    activeProvider === 'claude'
+      ? settings?.defaultDirectorModel || fallbackModel
+      : providerDefaultModel;
+  // If the stored directorModel doesn't match the project's provider
+  // (e.g. legacy value or a project that was created codex but acquired
+  // a claude model via picker before this fix landed), fall through to
+  // the provider-appropriate default.
+  const persistedDirector =
+    activeProject?.directorModel &&
+    modelMatchesProvider(activeProject.directorModel, activeProvider)
+      ? activeProject.directorModel
+      : undefined;
+  const directorModel = persistedDirector || directorFallbackModel;
   const fallbackEffort: EffortLevel = settings?.defaultEffort ?? DEFAULT_EFFORT;
   const directorFallbackEffort: EffortLevel =
     settings?.defaultDirectorEffort ?? fallbackEffort;
@@ -101,8 +121,9 @@ export function App() {
   // Spawn-form pre-fill stays on the agent defaults — we don't want a
   // 1M-context Opus Director to silently pre-select Opus for every new
   // worker the user spawns by hand. If the user pinned a project-level
-  // Director model/effort, we honour that intent and pre-fill with it.
-  const spawnDefaultModel = activeProject?.directorModel || fallbackModel;
+  // Director model/effort, we honour that intent and pre-fill with it
+  // (when it matches the provider; otherwise fall through).
+  const spawnDefaultModel = persistedDirector || fallbackModel;
   const spawnDefaultEffort: EffortLevel =
     activeProject?.directorEffort || fallbackEffort;
 

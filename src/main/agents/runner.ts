@@ -11,7 +11,11 @@ import type {
 } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { DEFAULT_EFFORT } from '../../shared/efforts';
-import { resolveModel } from '../../shared/models';
+import {
+  defaultModelForProvider,
+  modelMatchesProvider,
+  resolveModel,
+} from '../../shared/models';
 import { estimateCost } from '../../shared/rates';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';
@@ -127,9 +131,21 @@ export async function spawnAgent(
 
   // Cascade per-spawn → settings → role/SDK default for model + effort.
   // Lets users pick both per agent without editing global settings.
+  // Provider-aware: if the project is codex, the fallback uses a codex
+  // model, never the claude-flavoured settings.defaultModel. The
+  // req.model is also validated against the project provider — if
+  // someone managed to spawn with a mismatched id, we ignore it.
   const baseSettings = readSettings();
+  const spawnProvider = getProject(req.projectId)?.provider ?? 'claude';
+  const requestedModel =
+    req.model && modelMatchesProvider(req.model, spawnProvider)
+      ? req.model
+      : undefined;
   const effectiveModel =
-    req.model || baseSettings.defaultModel || role.model;
+    requestedModel ||
+    (spawnProvider === 'claude'
+      ? baseSettings.defaultModel || role.model
+      : defaultModelForProvider(spawnProvider));
   const effectiveEffort: EffortLevel =
     req.effort || baseSettings.defaultEffort || DEFAULT_EFFORT;
   const budget: AgentBudget = {
@@ -371,9 +387,19 @@ async function run(
     // The agent's model + effort were resolved in spawnAgent and saved
     // to the registry. Read from there so we honour per-spawn overrides
     // (and any setAgentModel / setAgentEffort changes that landed between
-    // spawnAgent and this point).
+    // spawnAgent and this point). The fallback respects project provider
+    // and validates the stored model id against it.
     const entry = registry.get(agentId);
-    const effectiveModel = entry?.agent.model || settings.defaultModel || role.model;
+    const runProvider = getProject(req.projectId)?.provider ?? 'claude';
+    const storedAgentModel =
+      entry?.agent.model && modelMatchesProvider(entry.agent.model, runProvider)
+        ? entry.agent.model
+        : undefined;
+    const effectiveModel =
+      storedAgentModel ||
+      (runProvider === 'claude'
+        ? settings.defaultModel || role.model
+        : defaultModelForProvider(runProvider));
     const effectiveEffort: EffortLevel =
       entry?.agent.effort || DEFAULT_EFFORT;
     // Pseudo-ids like `*-1m` resolve to a base model id + a beta header.

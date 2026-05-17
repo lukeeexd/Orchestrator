@@ -8,7 +8,11 @@ import type {
   PlanRow,
 } from '../../shared/types';
 import { DEFAULT_EFFORT } from '../../shared/efforts';
-import { resolveModel } from '../../shared/models';
+import {
+  defaultModelForProvider,
+  modelMatchesProvider,
+  resolveModel,
+} from '../../shared/models';
 import { runClaudeQuery } from '../cli/spawn';
 import { runCodexQuery } from '../cli/codex';
 import { readSettings } from '../settings';
@@ -240,13 +244,29 @@ class DirectorSession {
 
     // Per-project Director model + effort win over the global Director
     // defaults, which are separate from the agent defaults — the Director
-    // gets a heavier model out of the box.
+    // gets a heavier model out of the box. The fallback respects the
+    // project's provider so a codex project doesn't end up trying to
+    // spawn `codex exec -m claude-opus-4-7-1m` (which is what happened
+    // before this branch was provider-aware — silent empty response).
     const project = getProject(this.projectId);
+    const provider = project?.provider ?? 'claude';
+    // The persisted directorModel might be stale (e.g. left over from
+    // before the project was a codex project, or hand-edited). Validate
+    // it matches the project provider — if not, fall through to the
+    // provider's default. Without this, `codex exec -m claude-opus-4-7-1m`
+    // returns an empty agent_message and the Director chat shows
+    // "(empty response)" with no clue why.
+    const persistedDirector =
+      project?.directorModel && modelMatchesProvider(project.directorModel, provider)
+        ? project.directorModel
+        : undefined;
     const directorModel =
-      project?.directorModel ||
-      settings.defaultDirectorModel ||
-      settings.defaultModel ||
-      'claude-opus-4-7-1m';
+      persistedDirector ||
+      (provider === 'claude'
+        ? settings.defaultDirectorModel ||
+          settings.defaultModel ||
+          'claude-opus-4-7-1m'
+        : defaultModelForProvider(provider));
     const directorEffort: EffortLevel =
       project?.directorEffort ||
       settings.defaultDirectorEffort ||
@@ -261,7 +281,6 @@ class DirectorSession {
           : '';
       const agentBlock = this.buildFleetBlock();
       const fullPrompt = `[mode: ${mode}]\n${agentBlock}${attachmentBlock}${promptBody}`;
-      const provider = project?.provider ?? 'claude';
 
       const q =
         provider === 'codex'

@@ -49,6 +49,18 @@ export function defaultModelForProvider(provider: Provider): string {
   return modelsForProvider(provider)[0] ?? 'claude-sonnet-4-6';
 }
 
+/**
+ * True iff a model id is compatible with a given provider's CLI. Used as a
+ * guard so a stale persisted value (e.g. a claude model on a project that
+ * was switched to codex) doesn't get passed straight through to a CLI
+ * that doesn't recognise it. Unknown-prefix models (someone hand-edited
+ * settings.json) currently match no provider; callers fall through to the
+ * provider default.
+ */
+export function modelMatchesProvider(id: string, provider: Provider): boolean {
+  return modelProvider(id) === provider;
+}
+
 /** Beta header that unlocks the 1M token context window. */
 const BETA_CONTEXT_1M = 'context-1m-2025-08-07';
 
