@@ -39,6 +39,13 @@ jobs:
           # Need the full history so `git describe` can find the previous
           # tag when building release notes.
           fetch-depth: 0
+          # Without this, `actions/checkout` fetches the commit at the tag
+          # ref but not the tag OBJECT (the annotated-tag wrapper around
+          # the commit). That made `git tag -l --format='%(contents:body)'`
+          # return empty in CI for v0.5.x and v0.6.0, so the curated notes
+          # we put on the tag body never landed and we had to `gh release
+          # edit` after every release. Asking for tags explicitly fixes it.
+          fetch-tags: true
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -94,6 +101,11 @@ jobs:
           if ($tagType.Trim() -eq 'tag') {
             $annotated = ((git tag -l --format='%(contents:body)' "$tag") -join "`n").Trim()
           }
+          # Diagnostic: print what git saw so we can debug the curated-notes
+          # path without re-tagging. v0.5.x + v0.6.0 silently fell through
+          # to git-log auto-notes because the tag object wasn't fetched into
+          # the runner's local repo.
+          Write-Host "tag=$tag tagType='$($tagType.Trim())' annotated-length=$($annotated.Length)"
 
           if (-not [string]::IsNullOrWhiteSpace($annotated)) {
             Write-Host "Using curated notes from annotated tag body."
