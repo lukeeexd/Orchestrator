@@ -109,7 +109,6 @@ function buildArgs(o: CodexQueryOptions): string[] {
       args.push('-c', `model_reasoning_effort="${o.effort}"`);
     }
     args.push('--skip-git-repo-check');
-    args.push('--ephemeral');
     args.push(o.resume);
     return args;
   }
@@ -133,9 +132,15 @@ function buildArgs(o: CodexQueryOptions): string[] {
   // Don't refuse to run when the workspace isn't a git repo. Orchestrator
   // workspaces can be anything.
   args.push('--skip-git-repo-check');
-  // No session persistence inside ~/.codex — we manage our own session
-  // history via the registry. Keeps user's local codex state clean.
-  args.push('--ephemeral');
+
+  // NOTE: we deliberately do NOT pass --ephemeral. Without persisted
+  // session files, `codex exec resume` later returns
+  // "no rollout found for thread id X" — and we need resume for both
+  // the Director's between-turn continuation AND for agent
+  // redirect/fork. The cost is that codex's session dir
+  // (~/.codex/sessions/) accumulates rollouts; a future feature could
+  // tag-and-clean them based on agent lifecycle if it becomes a
+  // disk-space issue.
 
   // Working directory.
   args.push('-C', o.cwd);
