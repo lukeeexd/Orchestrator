@@ -66,10 +66,15 @@ const config: ForgeConfig = {
       [FuseV1Options.EnableCookieEncryption]: true,
       [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
       [FuseV1Options.EnableNodeCliInspectArguments]: false,
-      // asar is on again — integrity validation + only-load-from-asar both
-      // protect against tampering with bundled JS at install/runtime.
-      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-      [FuseV1Options.OnlyLoadAppFromAsar]: true,
+      // asar is on again, but we keep these two fuses OFF: when they were
+      // turned on in v0.4.0, packaged installs landed on disk fine via
+      // Squirrel but refused to launch silently — the embedded asar hash
+      // never matched, integrity validation killed the process before any
+      // UI, and there was no error dialog. Re-enable only when we have a
+      // way to verify the integrity hash flows through electron-forge's
+      // Squirrel maker correctly end-to-end.
+      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
+      [FuseV1Options.OnlyLoadAppFromAsar]: false,
     }),
   ],
 };

@@ -83,11 +83,16 @@ jobs:
           # Gated on objecttype=tag so a lightweight tag's `(contents:body)`
           # (which falls back to the pointed commit's body) can't get
           # accidentally picked up as curated notes.
-          $tagType = git tag -l --format='%(objecttype)' "$tag"
+          #
+          # Use `-join` to coalesce multi-line stdout into one string.
+          # `(value -as [string])` returns $null when the source is an
+          # array, which silently nukes multi-line curated notes — that
+          # bug shipped in v0.5.1 and made the dogfood release fall
+          # through to auto-notes despite the annotated tag being correct.
+          $tagType = (git tag -l --format='%(objecttype)' "$tag") -join "`n"
           $annotated = ""
-          if (($tagType -as [string]).Trim() -eq 'tag') {
-            $annotated = git tag -l --format='%(contents:body)' "$tag"
-            $annotated = ($annotated -as [string]).Trim()
+          if ($tagType.Trim() -eq 'tag') {
+            $annotated = ((git tag -l --format='%(contents:body)' "$tag") -join "`n").Trim()
           }
 
           if (-not [string]::IsNullOrWhiteSpace($annotated)) {
