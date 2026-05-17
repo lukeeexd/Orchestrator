@@ -20,7 +20,6 @@ export const KNOWN_MODELS: readonly string[] = [
   'claude-opus-4-7-1m',
   'claude-sonnet-4-6',
   'claude-haiku-4-5-20251001',
-  'gpt-5-codex',
 ];
 
 export const MODEL_LABELS: Record<string, string> = {
@@ -28,35 +27,52 @@ export const MODEL_LABELS: Record<string, string> = {
   'claude-opus-4-7-1m': 'claude-opus-4-7 · 1M context',
   'claude-sonnet-4-6': 'claude-sonnet-4-6',
   'claude-haiku-4-5-20251001': 'claude-haiku-4-5-20251001',
-  'gpt-5-codex': 'gpt-5-codex',
 };
+
+/**
+ * Sentinel used for "let the CLI pick its own model" — e.g. codex when
+ * the user has a ChatGPT account and can't choose a specific model id
+ * (`-m gpt-5-codex` returns 400 for ChatGPT-plan users). The runner
+ * detects this empty/sentinel value and omits the `-m` flag entirely.
+ */
+export const PROVIDER_AUTO_MODEL = '';
 
 /** Which provider's CLI accepts a given model id. Used to filter the picker. */
 export function modelProvider(id: string): Provider {
   if (id.startsWith('gpt-')) return 'codex';
+  if (id.startsWith('claude-')) return 'claude';
+  // Empty / unknown → no preference; either provider may consume it.
   return 'claude';
 }
 
-/** Models a given provider can be pointed at. */
+/**
+ * Models a given provider can be pointed at by id. Codex returns an
+ * empty list — ChatGPT-plan users can't specify a model explicitly, and
+ * we don't want to ship a list that 400's. The picker shows a managed
+ * read-only label instead.
+ */
 export function modelsForProvider(provider: Provider): readonly string[] {
+  if (provider === 'codex') return [];
   return KNOWN_MODELS.filter((m) => modelProvider(m) === provider);
 }
 
-/** First model in our list that belongs to a provider — used as default. */
+/**
+ * Default model id to use when nothing else is set. Codex returns the
+ * empty-string sentinel so the runner omits `-m` and lets the CLI pick.
+ */
 export function defaultModelForProvider(provider: Provider): string {
+  if (provider === 'codex') return PROVIDER_AUTO_MODEL;
   return modelsForProvider(provider)[0] ?? 'claude-sonnet-4-6';
 }
 
 /**
- * True iff a model id is compatible with a given provider's CLI. Used as a
- * guard so a stale persisted value (e.g. a claude model on a project that
- * was switched to codex) doesn't get passed straight through to a CLI
- * that doesn't recognise it. Unknown-prefix models (someone hand-edited
- * settings.json) currently match no provider; callers fall through to the
- * provider default.
+ * True iff a model id is compatible with a given provider's CLI. Codex
+ * accepts the auto sentinel (empty string). Used as a guard so a stale
+ * persisted claude id on a codex project doesn't get passed through.
  */
 export function modelMatchesProvider(id: string, provider: Provider): boolean {
-  return modelProvider(id) === provider;
+  if (provider === 'codex') return id === PROVIDER_AUTO_MODEL;
+  return modelProvider(id) === provider && id !== PROVIDER_AUTO_MODEL;
 }
 
 /** Beta header that unlocks the 1M token context window. */

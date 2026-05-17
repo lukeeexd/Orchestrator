@@ -102,7 +102,11 @@ function buildArgs(o: CodexQueryOptions): string[] {
 
   base.push('--json'); // JSONL events on stdout
 
-  if (o.model) {
+  // ChatGPT-plan users can't specify `-m` explicitly (server returns 400
+  // for `gpt-5-codex` etc). Omit the flag entirely when the model is
+  // empty/sentinel — codex falls back to its config default which is the
+  // right model for the user's account.
+  if (o.model && o.model.length > 0) {
     base.push('-m', o.model);
   }
   if (o.effort) {

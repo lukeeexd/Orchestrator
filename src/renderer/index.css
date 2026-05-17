@@ -1846,3 +1846,15 @@ body.resizing * { cursor: col-resize !important; }
   background: var(--sub-2);
   color: var(--text);
 }
+
+/* Read-only model-picker label for providers with no selectable models. */
+.model-picker-managed {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  font-style: italic;
+  font-size: 11px;
+  pointer-events: none;
+  padding: 4px 8px;
+  border-style: dashed;
+}
