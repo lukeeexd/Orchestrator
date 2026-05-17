@@ -45,6 +45,7 @@ export const IpcChannels = {
   AppOpenUsage: 'app:openUsage',
   SpendGet: 'spend:get',
   HistoryList: 'history:list',
+  CommandsList: 'commands:list',
   UpdaterRestart: 'updater:restart',
   UpdaterEventDownloaded: 'updater:event:update-downloaded',
   // Renderer-bound streaming events:
@@ -213,6 +214,9 @@ export interface OrchestratorApi {
   openClaudeUsage: () => Promise<{ ok: boolean }>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   listHistory: () => Promise<import('./types').HistoryRow[]>;
+  listSlashCommands: (
+    projectId: string | null,
+  ) => Promise<import('./commands').SlashCommand[]>;
   restartToUpdate: () => Promise<void>;
   onUpdateDownloaded: (
     cb: (p: { version: string; notes: string }) => void,

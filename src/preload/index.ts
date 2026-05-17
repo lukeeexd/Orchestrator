@@ -167,6 +167,10 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.HistoryList) as Promise<
       import('../shared/types').HistoryRow[]
     >,
+  listSlashCommands: (projectId) =>
+    ipcRenderer.invoke(IpcChannels.CommandsList, projectId) as Promise<
+      import('../shared/commands').SlashCommand[]
+    >,
 
   restartToUpdate: () =>
     ipcRenderer.invoke(IpcChannels.UpdaterRestart) as Promise<void>,

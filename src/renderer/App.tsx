@@ -26,6 +26,7 @@ import { ToolsScreen } from './components/ToolsScreen';
 import { SpendScreen } from './components/SpendScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { CliMissingGate } from './components/CliMissingGate';
+import type { BuiltinAction } from '../shared/builtinCommands';
 import {
   ProjectTabs,
   NewProjectForm,
@@ -366,6 +367,39 @@ export function App() {
               }}
               viewMode={viewMode}
               provider={activeProject?.provider ?? 'claude'}
+              projectId={activeProjectId}
+              onSlashAction={async (action: BuiltinAction) => {
+                switch (action) {
+                  case 'wipe-director':
+                    if (activeProjectId)
+                      await window.api.wipeDirector(activeProjectId);
+                    break;
+                  case 'open-usage':
+                    await window.api.openClaudeUsage();
+                    break;
+                  case 'go-agents':
+                    setActive('agents');
+                    break;
+                  case 'go-spend':
+                    setActive('cost');
+                    break;
+                  case 'go-history':
+                    setActive('history');
+                    break;
+                  case 'go-settings':
+                    setActive('settings');
+                    break;
+                  case 'go-tools':
+                    setActive('tools');
+                    break;
+                  case 'go-templates':
+                    setActive('templates');
+                    break;
+                  case 'show-help':
+                    // Handled locally inside the Composer (opens modal).
+                    break;
+                }
+              }}
             />
             <ResizeHandle
               value={dirW}

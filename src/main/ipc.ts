@@ -18,6 +18,7 @@ import { readSettings, writeSettings, settingsFilePath } from './settings';
 import { getClaudeCliStatus } from './cli/status';
 import { getSpendSummary } from './spend';
 import { listHistory } from './history';
+import { listSlashCommands } from './commands';
 import { quitAndInstallUpdate } from './updater';
 import {
   spawnAgent,
@@ -103,6 +104,15 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IpcChannels.HistoryList,
     (): import('../shared/types').HistoryRow[] => listHistory(),
+  );
+
+  ipcMain.handle(
+    IpcChannels.CommandsList,
+    (
+      _event,
+      projectId: string | null,
+    ): import('../shared/commands').SlashCommand[] =>
+      listSlashCommands(projectId),
   );
 
   ipcMain.handle(IpcChannels.UpdaterRestart, (): void => {
