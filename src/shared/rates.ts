@@ -16,6 +16,11 @@ const RATES: Record<string, ModelRate> = {
   'claude-sonnet-4-6': { inputPerMillion: 3, outputPerMillion: 15 },
   'claude-haiku-4-5-20251001': { inputPerMillion: 0.8, outputPerMillion: 4 },
   'claude-haiku-4-5': { inputPerMillion: 0.8, outputPerMillion: 4 },
+  // OpenAI Codex model. ChatGPT-plan users don't actually pay per-token
+  // (usage bucketed against plan limits), but we estimate so the
+  // Spend screen has a meaningful figure. Update when public pricing
+  // changes.
+  'gpt-5-codex': { inputPerMillion: 1.25, outputPerMillion: 10 },
 };
 
 /** Conservative fallback (Sonnet pricing) for unknown model ids. */

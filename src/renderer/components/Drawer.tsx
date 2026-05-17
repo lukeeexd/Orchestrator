@@ -151,8 +151,12 @@ function Header({
   const canRedirect = !isRunning && !!agent.sessionId;
   // Fork can happen any time the parent has produced a session id — even
   // mid-flight. The fork is a separate session and doesn't disturb the
-  // parent's run, so we don't gate on isRunning.
-  const canFork = !!agent.sessionId;
+  // parent's run, so we don't gate on isRunning. Codex's `fork` is a
+  // TUI-only subcommand (no --json / no -p), so we can't drive it from
+  // a subprocess — fork stays disabled for codex agents until either
+  // codex adds a non-interactive fork or we build one ourselves on top
+  // of `codex exec resume`.
+  const canFork = !!agent.sessionId && provider !== 'codex';
   const [redirectOpen, setRedirectOpen] = useState(false);
   const [forkOpen, setForkOpen] = useState(false);
 
@@ -207,7 +211,9 @@ function Header({
           disabled={!canFork}
           onClick={() => setForkOpen((v) => !v)}
           title={
-            !agent.sessionId
+            provider === 'codex'
+              ? "Fork isn't available on codex agents — `codex fork` is a TUI-only subcommand with no --json output, so we can't drive it from a subprocess yet."
+              : !agent.sessionId
               ? 'No session captured yet (no result event)'
               : 'Branch a new agent off this one — parent stays intact'
           }

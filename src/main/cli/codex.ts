@@ -67,9 +67,14 @@ export async function* runCodexQuery(
   proc.stderr.on('data', (chunk: string) => {
     stderr += chunk;
     // Live stderr so we don't have to wait for exit to see what codex
-    // is saying. Each chunk may contain multiple lines.
+    // is saying. Each chunk may contain multiple lines. Filter the
+    // "Reading prompt from stdin..." chatter — it fires on every
+    // invocation and isn't actionable.
     for (const line of chunk.split(/\r?\n/)) {
-      if (line.trim()) console.error('[codex stderr]', line);
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (trimmed === 'Reading prompt from stdin...') continue;
+      console.error('[codex stderr]', line);
     }
   });
 
@@ -79,7 +84,13 @@ export async function* runCodexQuery(
   proc.stdin.end();
 
   try {
-    yield* parseAndNormalize(proc, () => stderr, options.model ?? 'unknown');
+    // For storage/display purposes, treat empty model (ChatGPT-plan
+    // users where we don't pass -m) as 'gpt-5-codex' — that's the
+    // de-facto default codex picks server-side, and it gives the
+    // Spend screen a known rate-table entry to estimate against.
+    const displayModel =
+      options.model && options.model.length > 0 ? options.model : 'gpt-5-codex';
+    yield* parseAndNormalize(proc, () => stderr, displayModel);
   } finally {
     options.abortController.signal.removeEventListener('abort', onAbort);
     if (!proc.killed && proc.exitCode === null) {
@@ -100,10 +111,17 @@ function buildArgs(o: CodexQueryOptions): string[] {
   // accepted on resume — earlier I'd over-stripped to avoid the
   // sandbox error and lost --skip-git-repo-check, which then made
   // resume die with "Not inside a trusted directory."
+  // Whether to put -m on the wire. ChatGPT-plan accounts reject explicit
+  // model selection with a 400; `gpt-5-codex` is our display id but
+  // never gets passed. Anything else (a hand-set custom model, future
+  // API-plan-only ids) does pass through.
+  const shouldPassModel =
+    !!o.model && o.model.length > 0 && o.model !== 'gpt-5-codex';
+
   if (o.resume) {
     const args: string[] = ['exec', 'resume', '--json'];
-    if (o.model && o.model.length > 0) {
-      args.push('-m', o.model);
+    if (shouldPassModel) {
+      args.push('-m', o.model as string);
     }
     if (o.effort) {
       args.push('-c', `model_reasoning_effort="${o.effort}"`);
@@ -115,12 +133,8 @@ function buildArgs(o: CodexQueryOptions): string[] {
 
   const args: string[] = ['exec', '--json'];
 
-  // ChatGPT-plan users can't specify `-m` explicitly (server returns 400
-  // for `gpt-5-codex` etc). Omit the flag entirely when the model is
-  // empty/sentinel — codex falls back to its config default which is the
-  // right model for the user's account.
-  if (o.model && o.model.length > 0) {
-    args.push('-m', o.model);
+  if (shouldPassModel) {
+    args.push('-m', o.model as string);
   }
   if (o.effort) {
     args.push('-c', `model_reasoning_effort="${o.effort}"`);

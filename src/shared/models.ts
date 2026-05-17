@@ -30,12 +30,13 @@ export const MODEL_LABELS: Record<string, string> = {
 };
 
 /**
- * Sentinel used for "let the CLI pick its own model" — e.g. codex when
- * the user has a ChatGPT account and can't choose a specific model id
- * (`-m gpt-5-codex` returns 400 for ChatGPT-plan users). The runner
- * detects this empty/sentinel value and omits the `-m` flag entirely.
+ * The canonical id we record for codex agents. We don't actually pass
+ * `-m gpt-5-codex` on the wire (ChatGPT-plan accounts reject explicit
+ * model selection with a 400), but we store the agent's effective model
+ * as this so the Spend screen + Drawer can show a meaningful label
+ * and the rate table can estimate a cost.
  */
-export const PROVIDER_AUTO_MODEL = '';
+export const DEFAULT_CODEX_MODEL = 'gpt-5-codex';
 
 /** Which provider's CLI accepts a given model id. Used to filter the picker. */
 export function modelProvider(id: string): Provider {
@@ -58,21 +59,23 @@ export function modelsForProvider(provider: Provider): readonly string[] {
 
 /**
  * Default model id to use when nothing else is set. Codex returns the
- * empty-string sentinel so the runner omits `-m` and lets the CLI pick.
+ * canonical codex id so storage / display / cost-estimation all agree;
+ * the runner itself decides whether to pass -m (it doesn't, for codex).
  */
 export function defaultModelForProvider(provider: Provider): string {
-  if (provider === 'codex') return PROVIDER_AUTO_MODEL;
+  if (provider === 'codex') return DEFAULT_CODEX_MODEL;
   return modelsForProvider(provider)[0] ?? 'claude-sonnet-4-6';
 }
 
 /**
- * True iff a model id is compatible with a given provider's CLI. Codex
- * accepts the auto sentinel (empty string). Used as a guard so a stale
- * persisted claude id on a codex project doesn't get passed through.
+ * True iff a model id is compatible with a given provider's CLI. Used
+ * as a guard so a stale persisted claude id on a codex project doesn't
+ * get passed straight through. Codex accepts only the canonical default
+ * for now (no per-model selection support).
  */
 export function modelMatchesProvider(id: string, provider: Provider): boolean {
-  if (provider === 'codex') return id === PROVIDER_AUTO_MODEL;
-  return modelProvider(id) === provider && id !== PROVIDER_AUTO_MODEL;
+  if (provider === 'codex') return id === DEFAULT_CODEX_MODEL;
+  return modelProvider(id) === provider && id !== DEFAULT_CODEX_MODEL;
 }
 
 /** Beta header that unlocks the 1M token context window. */
