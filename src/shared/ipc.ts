@@ -143,7 +143,7 @@ export interface ProjectActiveChangedPayload {
 }
 
 export interface SkillEntry {
-  role: import('./types').AgentRole;
+  key: import('./types').SkillKey;
   content: string;
   hasFile: boolean;
   path: string | null;
@@ -234,7 +234,7 @@ export interface OrchestratorApi {
   listSkills: (projectId: string) => Promise<SkillEntry[]>;
   setSkill: (
     projectId: string,
-    role: import('./types').AgentRole,
+    key: import('./types').SkillKey,
     content: string,
   ) => Promise<{ ok: boolean; entry?: SkillEntry; error?: string }>;
   restartToUpdate: () => Promise<void>;

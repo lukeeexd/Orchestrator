@@ -135,11 +135,11 @@ export function registerIpcHandlers(): void {
     (
       _event,
       projectId: string,
-      role: import('../shared/types').AgentRole,
+      key: import('../shared/types').SkillKey,
       content: string,
     ): { ok: boolean; entry?: import('../shared/ipc').SkillEntry; error?: string } => {
       try {
-        const entry = writeSkill(projectId, role, content);
+        const entry = writeSkill(projectId, key, content);
         return { ok: true, entry };
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };

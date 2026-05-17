@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { AgentRole, Project } from '../../shared/types';
+import type { AgentRole, Project, SkillKey } from '../../shared/types';
 import type { SkillEntry } from '../../shared/ipc';
 import { ROLES } from '../../shared/roles';
 import { Icon } from './Icon';
@@ -13,7 +13,9 @@ const ROLE_TINT: Record<AgentRole, string> = {
   security: '#f87171',
 };
 
-const ROLE_ORDER: AgentRole[] = [
+/** Director sits first; agent roles in execution order after. */
+const SKILL_ORDER: SkillKey[] = [
+  'director',
   'pm',
   'researcher',
   'coder',
@@ -22,11 +24,19 @@ const ROLE_ORDER: AgentRole[] = [
   'security',
 ];
 
+function tintFor(key: SkillKey): string {
+  return key === 'director' ? 'var(--accent)' : ROLE_TINT[key];
+}
+
+function labelFor(key: SkillKey): string {
+  return key === 'director' ? 'Director' : ROLES[key].label;
+}
+
 interface Props {
   project: Project;
 }
 
-interface RoleDraft {
+interface Draft {
   entry: SkillEntry;
   /** User-edited content; differs from entry.content while there's an unsaved change. */
   draft: string;
@@ -35,21 +45,19 @@ interface RoleDraft {
 }
 
 export function SkillsEditor({ project }: Props) {
-  const [drafts, setDrafts] = useState<Record<AgentRole, RoleDraft> | null>(
-    null,
-  );
-  const [active, setActive] = useState<AgentRole>('coder');
+  const [drafts, setDrafts] = useState<Record<SkillKey, Draft> | null>(null);
+  const [active, setActive] = useState<SkillKey>('coder');
 
   useEffect(() => {
     let mounted = true;
     void (async () => {
       const entries = await window.api.listSkills(project.id);
       if (!mounted) return;
-      const map: Partial<Record<AgentRole, RoleDraft>> = {};
+      const map: Partial<Record<SkillKey, Draft>> = {};
       for (const e of entries) {
-        map[e.role] = { entry: e, draft: e.content, busy: false, error: null };
+        map[e.key] = { entry: e, draft: e.content, busy: false, error: null };
       }
-      setDrafts(map as Record<AgentRole, RoleDraft>);
+      setDrafts(map as Record<SkillKey, Draft>);
     })();
     return () => {
       mounted = false;
@@ -110,11 +118,11 @@ export function SkillsEditor({ project }: Props) {
 
   const reloadFromDisk = async () => {
     const entries = await window.api.listSkills(project.id);
-    const map: Partial<Record<AgentRole, RoleDraft>> = {};
+    const map: Partial<Record<SkillKey, Draft>> = {};
     for (const e of entries) {
-      map[e.role] = { entry: e, draft: e.content, busy: false, error: null };
+      map[e.key] = { entry: e, draft: e.content, busy: false, error: null };
     }
-    setDrafts(map as Record<AgentRole, RoleDraft>);
+    setDrafts(map as Record<SkillKey, Draft>);
   };
 
   return (
@@ -125,28 +133,28 @@ export function SkillsEditor({ project }: Props) {
           style={{ marginBottom: 12, padding: 12, textAlign: 'left' }}
         >
           <strong>Set a workspace folder first.</strong> Skill files live at{' '}
-          <code>{`<workspace>/.orchestrator/skills/<role>.md`}</code> on
+          <code>{`<workspace>/.orchestrator/skills/<key>.md`}</code> on
           disk; without a workspace they can't be saved. Editing still
           works in this view but the Save button is disabled.
         </div>
       )}
       <div className="skills-tabs">
-        {ROLE_ORDER.map((role) => {
-          const has = drafts[role].entry.hasFile;
+        {SKILL_ORDER.map((key) => {
+          const has = drafts[key].entry.hasFile;
           return (
             <button
-              key={role}
-              className={'skills-tab' + (active === role ? ' on' : '')}
-              onClick={() => setActive(role)}
+              key={key}
+              className={'skills-tab' + (active === key ? ' on' : '')}
+              onClick={() => setActive(key)}
               style={{
-                borderColor: active === role ? ROLE_TINT[role] : undefined,
+                borderColor: active === key ? tintFor(key) : undefined,
               }}
             >
               <span
                 className="role-tint"
-                style={{ background: ROLE_TINT[role] }}
+                style={{ background: tintFor(key) }}
               />
-              <span>{ROLES[role].label}</span>
+              <span>{labelFor(key)}</span>
               {has && <span className="skills-tab-dot" title="Saved on disk" />}
             </button>
           );
@@ -171,7 +179,7 @@ export function SkillsEditor({ project }: Props) {
         <button
           className="tb-btn"
           onClick={() => void reloadFromDisk()}
-          title="Re-read all role skill files from disk (picks up external edits)."
+          title="Re-read all skill files from disk (picks up external edits)."
         >
           <Icon name="redirect" size={11} /> Reload
         </button>
@@ -189,7 +197,11 @@ export function SkillsEditor({ project }: Props) {
             };
           })
         }
-        placeholder={`Write a skill prompt for ${ROLES[active].label}. Appended to the role's system prompt at spawn time. Empty = no skill (overrides any in-app default to nothing).`}
+        placeholder={
+          active === 'director'
+            ? "Project-specific guidance for the Director — codebase conventions, team norms, things you'd otherwise have to restate every turn. Appended to the Director's system prompt at every turn."
+            : `Write a skill prompt for ${labelFor(active)}. Appended to the role's system prompt at spawn time. Empty = no skill (overrides any in-app default to nothing).`
+        }
         spellCheck={false}
       />
 
@@ -216,7 +228,7 @@ export function SkillsEditor({ project }: Props) {
           title={
             noWorkspace
               ? 'Set a workspace folder first.'
-              : 'Save this role’s skill to disk.'
+              : "Save this entry's skill to disk."
           }
         >
           <Icon name="check" size={11} />{' '}

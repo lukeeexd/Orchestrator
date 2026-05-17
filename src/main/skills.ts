@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AgentRole } from '../shared/types';
+import type { SkillKey } from '../shared/types';
 import { DEFAULT_SKILLS } from '../shared/defaultSkills';
 import { getProject } from './projects';
 
-const ALL_ROLES: AgentRole[] = [
+const ALL_SKILL_KEYS: SkillKey[] = [
+  'director',
   'pm',
   'researcher',
   'coder',
@@ -14,22 +15,22 @@ const ALL_ROLES: AgentRole[] = [
 ];
 
 /**
- * Path resolution for `<workspace>/.orchestrator/skills/<role>.md`.
+ * Path resolution for `<workspace>/.orchestrator/skills/<key>.md`.
  * Returns null when the project has no workspace set yet — skill files
  * have to live somewhere on disk, so a workspace-less project just gets
  * the built-in defaults until the user picks a folder.
+ *
+ * `key` is either an AgentRole or 'director'.
  */
-function skillPathFor(
-  projectId: string,
-  role: AgentRole,
-): string | null {
+function skillPathFor(projectId: string, key: SkillKey): string | null {
   const project = getProject(projectId);
   if (!project?.workspace) return null;
-  return path.join(project.workspace, '.orchestrator', 'skills', `${role}.md`);
+  return path.join(project.workspace, '.orchestrator', 'skills', `${key}.md`);
 }
 
 export interface SkillEntry {
-  role: AgentRole;
+  /** AgentRole or 'director'. */
+  key: SkillKey;
   /** What the editor/UI shows — disk content if present, otherwise the default. */
   content: string;
   /** Whether the disk file exists (vs falling back to the built-in default). */
@@ -39,33 +40,33 @@ export interface SkillEntry {
 }
 
 export function listSkills(projectId: string): SkillEntry[] {
-  return ALL_ROLES.map((role) => readSkill(projectId, role));
+  return ALL_SKILL_KEYS.map((key) => readSkill(projectId, key));
 }
 
-export function readSkill(projectId: string, role: AgentRole): SkillEntry {
-  const p = skillPathFor(projectId, role);
+export function readSkill(projectId: string, key: SkillKey): SkillEntry {
+  const p = skillPathFor(projectId, key);
   if (!p) {
     return {
-      role,
-      content: DEFAULT_SKILLS[role],
+      key,
+      content: DEFAULT_SKILLS[key],
       hasFile: false,
       path: null,
     };
   }
   if (!fs.existsSync(p)) {
-    return { role, content: DEFAULT_SKILLS[role], hasFile: false, path: p };
+    return { key, content: DEFAULT_SKILLS[key], hasFile: false, path: p };
   }
   let content = '';
   try {
     content = fs.readFileSync(p, 'utf8');
   } catch {
-    return { role, content: DEFAULT_SKILLS[role], hasFile: false, path: p };
+    return { key, content: DEFAULT_SKILLS[key], hasFile: false, path: p };
   }
-  return { role, content, hasFile: true, path: p };
+  return { key, content, hasFile: true, path: p };
 }
 
 /**
- * Write a role's skill file. An empty string creates an empty file, which
+ * Write a key's skill file. An empty string creates an empty file, which
  * explicitly opts out of the built-in default for this project. If the file
  * is deleted outside the app, the loader falls back to the default again.
  *
@@ -74,10 +75,10 @@ export function readSkill(projectId: string, role: AgentRole): SkillEntry {
  */
 export function writeSkill(
   projectId: string,
-  role: AgentRole,
+  key: SkillKey,
   content: string,
 ): SkillEntry {
-  const p = skillPathFor(projectId, role);
+  const p = skillPathFor(projectId, key);
   if (!p) {
     throw new Error(
       'Cannot write skills: this project has no workspace folder. Set one in the topbar first.',
@@ -85,7 +86,7 @@ export function writeSkill(
   }
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, content, 'utf8');
-  return { role, content, hasFile: true, path: p };
+  return { key, content, hasFile: true, path: p };
 }
 
 /**
@@ -94,6 +95,6 @@ export function writeSkill(
  * Pure helper; no UI flow, just the runtime resolution the spawn paths
  * need.
  */
-export function effectiveSkill(projectId: string, role: AgentRole): string {
-  return readSkill(projectId, role).content;
+export function effectiveSkill(projectId: string, key: SkillKey): string {
+  return readSkill(projectId, key).content;
 }

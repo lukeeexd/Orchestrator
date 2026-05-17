@@ -1,5 +1,12 @@
 export type AgentRole = 'pm' | 'researcher' | 'coder' | 'qa' | 'devops' | 'security';
 
+/**
+ * What kinds of "actor" can have a skill prompt attached. Agent roles
+ * plus the Director — the Director isn't an AgentRole (it's a separate
+ * concept), but it has the same on-disk SKILL.md slot.
+ */
+export type SkillKey = AgentRole | 'director';
+
 export type AgentStatus =
   | 'running'
   | 'waiting'

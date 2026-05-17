@@ -1,4 +1,4 @@
-import type { AgentRole } from './types';
+import type { SkillKey } from './types';
 
 /**
  * Built-in skill content shipped with the app. When a project hasn't
@@ -177,11 +177,23 @@ End with a counts-by-severity summary and an explicit "no findings" statement fo
 - Don't rely on obfuscation, client-side checks, or "nobody would do that" as mitigations.
 - When unsure of severity, rate up and mark confidence "likely".`;
 
-export const DEFAULT_SKILLS: Record<AgentRole, string> = {
+/**
+ * Director default is empty by design. The hardcoded
+ * DIRECTOR_SYSTEM_PROMPT is already long and prescriptive about plan
+ * structure, redirect convention, and mode behavior — there's no
+ * universal "good Director" content to ship the way there is for
+ * "good coder/qa/etc." This slot is for the user to fill with
+ * codebase-specific guidance ("this repo uses pgx; prefer pgx idioms",
+ * "the team merges PRs only on Tuesdays", etc).
+ */
+const DIRECTOR = '';
+
+export const DEFAULT_SKILLS: Record<SkillKey, string> = {
   pm: PM,
   researcher: RESEARCHER,
   coder: CODER,
   qa: QA,
   devops: DEVOPS,
   security: SECURITY,
+  director: DIRECTOR,
 };

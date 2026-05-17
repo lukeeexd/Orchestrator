@@ -16,6 +16,7 @@ import {
 import { runClaudeQuery } from '../cli/spawn';
 import { runCodexQuery } from '../cli/codex';
 import { readSettings } from '../settings';
+import { effectiveSkill } from '../skills';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractDirectives } from './parse';
 import { nowTs } from '../agents/classifier';
@@ -23,6 +24,17 @@ import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
 import * as registry from '../agents/registry';
 import { getProject } from '../projects';
+
+/**
+ * Build the Director's effective system prompt: the hardcoded base
+ * plus any per-project Director skill the user has authored. Empty
+ * skill is a no-op.
+ */
+function buildDirectorSystemPrompt(projectId: string): string {
+  const skill = effectiveSkill(projectId, 'director').trim();
+  if (!skill) return DIRECTOR_SYSTEM_PROMPT;
+  return `${DIRECTOR_SYSTEM_PROMPT}\n\n## Project guidance\n\n${skill}`;
+}
 
 export interface DirectorSinks {
   onMessage: (projectId: string, msg: DirectorMessage) => void;
@@ -293,7 +305,7 @@ class DirectorSession {
               // orchestrator-plan block for "trivial" tasks and just
               // describe the plan in prose, which leaves our parser
               // with nothing to spawn from.
-              prompt: `[director-role]\n${DIRECTOR_SYSTEM_PROMPT}\n\n---\n\n${fullPrompt}\n\n---\n\nREMINDER (auto mode): Always emit the \`orchestrator-plan\` fenced JSON block, even for a single-agent task. Do not describe the plan in prose only — our parser needs the block to auto-spawn anything. If the task is trivial, emit a one-row plan.`,
+              prompt: `[director-role]\n${buildDirectorSystemPrompt(this.projectId)}\n\n---\n\n${fullPrompt}\n\n---\n\nREMINDER (auto mode): Always emit the \`orchestrator-plan\` fenced JSON block, even for a single-agent task. Do not describe the plan in prose only — our parser needs the block to auto-spawn anything. If the task is trivial, emit a one-row plan.`,
               model: directorModel,
               effort: directorEffort,
               // The Director only plans — it never edits files. read-only
@@ -313,7 +325,7 @@ class DirectorSession {
               agents: {
                 director: {
                   description: 'Orchestrator director — plans and supervises agents.',
-                  prompt: DIRECTOR_SYSTEM_PROMPT,
+                  prompt: buildDirectorSystemPrompt(this.projectId),
                   tools: [] as string[],
                   model: resolved.model,
                   effort: directorEffort,
