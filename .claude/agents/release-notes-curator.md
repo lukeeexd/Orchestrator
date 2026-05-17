@@ -20,9 +20,15 @@ You are the Orchestrator project's release-notes writer. The CI workflow auto-ge
    - **Under the hood** — schema migrations, refactors, dev-tooling — keep this short or omit if empty
    Drop `chore: bump` and merge commits.
 4. For each entry, write one user-facing sentence in present tense ("Director defaults to Opus 4.7 1M xhigh" not "feat: Director defaults to..."). Lead with the user value, not the implementation. Skip the commit hash unless the section is unusually dense.
-5. End with a footer linking to the compare view:
-   `**Full Changelog**: https://github.com/lukeeexd/Orchestrator/compare/<prev>...<this>`
-6. Output the markdown to stdout. Don't write a file unless the user asks — they'll usually copy-paste into the GitHub release.
+5. Don't append a `**Full Changelog**` footer — the release workflow adds
+   it automatically after picking up your notes from the annotated tag.
+6. Output the markdown to stdout. The user pipes it into the tag's
+   annotated body via `git tag -a vX.Y.Z -F -` (read body from stdin) or
+   `git tag -a vX.Y.Z -m "$(cat notes.md)"`. The release workflow detects
+   a non-empty annotated body and uses it verbatim; if absent, falls back
+   to a flat git-log auto-notes. So putting your notes on the tag is the
+   one-shot way to ship curated text — no post-release `gh release edit`
+   needed.
 
 ## Tone
 

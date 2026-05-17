@@ -68,12 +68,40 @@ jobs:
         shell: pwsh
         run: |
           $tag = "${{ github.ref_name }}"
-          # Find the tag pointing at the parent of this tag's commit, if any.
+          # Find the previous tag (if any) so we can build a compare URL
+          # regardless of which notes source wins below.
           # 2>$null suppresses git's "no names found" stderr on the first release.
           $prev = git describe --tags --abbrev=0 "$tag^" 2>$null
-          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrEmpty($prev)) {
+          if ($LASTEXITCODE -ne 0) { $prev = "" }
+
+          # Prefer the annotated tag's body when present. Lets the release
+          # author hand-write curated notes via `git tag -a vX.Y.Z -m "..."`
+          # without a post-release `gh release edit` round-trip. The
+          # `%(contents:body)` format gives everything AFTER the tag's
+          # subject line — the subject is reserved for the tag's short title.
+          #
+          # Gated on objecttype=tag so a lightweight tag's `(contents:body)`
+          # (which falls back to the pointed commit's body) can't get
+          # accidentally picked up as curated notes.
+          $tagType = git tag -l --format='%(objecttype)' "$tag"
+          $annotated = ""
+          if (($tagType -as [string]).Trim() -eq 'tag') {
+            $annotated = git tag -l --format='%(contents:body)' "$tag"
+            $annotated = ($annotated -as [string]).Trim()
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($annotated)) {
+            Write-Host "Using curated notes from annotated tag body."
+            if ([string]::IsNullOrEmpty($prev)) {
+              $body = $annotated
+            } else {
+              $url = "https://github.com/${{ github.repository }}/compare/$prev...$tag"
+              $body = "$annotated`n`n**Full Changelog**: $url"
+            }
+          } elseif ([string]::IsNullOrEmpty($prev)) {
             $body = "Initial release."
           } else {
+            Write-Host "No annotated tag body — falling back to git-log auto-notes."
             $log = git log --pretty=format:"- %s (%h)" "$prev..$tag"
             # Drop noisy entries — version bumps and merge commits don't
             # tell a user anything they didn't already know.
