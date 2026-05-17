@@ -164,6 +164,10 @@ async function* parseAndNormalize(
 
       try {
         const ev = JSON.parse(raw) as Record<string, unknown>;
+        // Diagnostic: log every raw event so we can see what codex
+        // actually emitted when the user reports "(empty response)".
+        // Visible in the dev console / terminal that started npm start.
+        console.error('[codex raw]', JSON.stringify(ev));
         const translated = translate(ev, {
           sessionId: () => sessionId,
           setSessionId: (id) => {

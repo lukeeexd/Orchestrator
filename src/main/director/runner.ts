@@ -319,6 +319,7 @@ class DirectorSession {
             });
 
       let bodyBuf = '';
+      let runtimeError: string | null = null;
       for await (const event of q) {
         if (this.controller.signal.aborted) break;
         const ev = event as { type: string; [k: string]: unknown };
@@ -334,17 +335,33 @@ class DirectorSession {
             }
           }
         } else if (ev.type === 'result') {
-          const result = ev as unknown as { session_id?: string };
+          const result = ev as unknown as {
+            session_id?: string;
+            subtype?: string;
+            is_error?: boolean;
+            errors?: string[];
+          };
           if (result.session_id) {
             this.sessionId = result.session_id;
             persistence.saveDirectorSessionId(this.projectId, result.session_id);
+          }
+          // Surface non-success result events. Without this, codex's
+          // process_error / spawn_error / parse_error events were silently
+          // discarded and the chat just showed "(empty response)" with no
+          // indication of what went wrong.
+          if (result.is_error || (result.subtype && result.subtype !== 'success')) {
+            const reason = (result.errors ?? [result.subtype ?? 'unknown']).join(' · ');
+            runtimeError = reason;
           }
         }
       }
 
       const { text, plan, redirect } = extractDirectives(bodyBuf);
+      const fallbackBody = runtimeError
+        ? `Error: ${runtimeError}`
+        : '(empty response)';
       this.patchMessage(directorMessage.id, {
-        body: text || (plan || redirect ? '' : '(empty response)'),
+        body: text || (plan || redirect ? '' : fallbackBody),
         plan: plan ?? undefined,
         redirect: redirect ?? undefined,
         live: false,
