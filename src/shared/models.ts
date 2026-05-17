@@ -21,7 +21,6 @@ export const KNOWN_MODELS: readonly string[] = [
   'claude-sonnet-4-6',
   'claude-haiku-4-5-20251001',
   'gpt-5-codex',
-  'gpt-5',
 ];
 
 export const MODEL_LABELS: Record<string, string> = {
@@ -30,7 +29,6 @@ export const MODEL_LABELS: Record<string, string> = {
   'claude-sonnet-4-6': 'claude-sonnet-4-6',
   'claude-haiku-4-5-20251001': 'claude-haiku-4-5-20251001',
   'gpt-5-codex': 'gpt-5-codex',
-  'gpt-5': 'gpt-5',
 };
 
 /** Which provider's CLI accepts a given model id. Used to filter the picker. */
