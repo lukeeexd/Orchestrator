@@ -105,11 +105,12 @@ const api: OrchestratorApi = {
   // Projects
   listProjects: () =>
     ipcRenderer.invoke(IpcChannels.ProjectList) as Promise<Project[]>,
-  createProject: (name, workspace) =>
+  createProject: (name, workspace, provider) =>
     ipcRenderer.invoke(
       IpcChannels.ProjectCreate,
       name,
       workspace,
+      provider,
     ) as Promise<Project>,
   setActiveProject: (id) =>
     ipcRenderer.invoke(IpcChannels.ProjectSetActive, id) as Promise<{

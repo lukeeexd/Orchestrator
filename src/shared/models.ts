@@ -13,11 +13,15 @@
  * picker does the same trick — `Opus 4.7 1M` and `Opus 4.7` both report
  * `claude-opus-4-7` as the underlying id.
  */
+import type { Provider } from './types';
+
 export const KNOWN_MODELS: readonly string[] = [
   'claude-opus-4-7',
   'claude-opus-4-7-1m',
   'claude-sonnet-4-6',
   'claude-haiku-4-5-20251001',
+  'gpt-5-codex',
+  'gpt-5',
 ];
 
 export const MODEL_LABELS: Record<string, string> = {
@@ -25,7 +29,25 @@ export const MODEL_LABELS: Record<string, string> = {
   'claude-opus-4-7-1m': 'claude-opus-4-7 · 1M context',
   'claude-sonnet-4-6': 'claude-sonnet-4-6',
   'claude-haiku-4-5-20251001': 'claude-haiku-4-5-20251001',
+  'gpt-5-codex': 'gpt-5-codex',
+  'gpt-5': 'gpt-5',
 };
+
+/** Which provider's CLI accepts a given model id. Used to filter the picker. */
+export function modelProvider(id: string): Provider {
+  if (id.startsWith('gpt-')) return 'codex';
+  return 'claude';
+}
+
+/** Models a given provider can be pointed at. */
+export function modelsForProvider(provider: Provider): readonly string[] {
+  return KNOWN_MODELS.filter((m) => modelProvider(m) === provider);
+}
+
+/** First model in our list that belongs to a provider — used as default. */
+export function defaultModelForProvider(provider: Provider): string {
+  return modelsForProvider(provider)[0] ?? 'claude-sonnet-4-6';
+}
 
 /** Beta header that unlocks the 1M token context window. */
 const BETA_CONTEXT_1M = 'context-1m-2025-08-07';

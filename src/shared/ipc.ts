@@ -186,7 +186,11 @@ export interface OrchestratorApi {
   wipeDirector: (projectId: string) => Promise<{ ok: true }>;
   // Projects
   listProjects: () => Promise<Project[]>;
-  createProject: (name: string, workspace: string) => Promise<Project>;
+  createProject: (
+    name: string,
+    workspace: string,
+    provider?: import('./types').Provider,
+  ) => Promise<Project>;
   setActiveProject: (id: string) => Promise<{ ok: true }>;
   renameProject: (id: string, name: string) => Promise<{ ok: true }>;
   setProjectDirectorModel: (id: string, model: string) => Promise<{ ok: true }>;

@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import type { AgentRole, EffortLevel, Project } from '../shared/types';
+import type {
+  AgentRole,
+  EffortLevel,
+  Project,
+  Provider,
+} from '../shared/types';
 import { isEffortLevel } from '../shared/efforts';
 import { getDb, scheduleSave } from './db';
+
+function asProvider(v: unknown): Provider {
+  return v === 'codex' ? 'codex' : 'claude';
+}
 
 function asStr(v: unknown, fallback = ''): string {
   return typeof v === 'string' ? v : fallback;
@@ -14,18 +23,20 @@ function asInt(v: unknown, fallback = 0): number {
 export function listProjects(): Project[] {
   const db = getDb();
   const res = db.exec(
-    `SELECT id, name, workspace, created_at, director_model, director_effort, role_tools FROM projects ORDER BY created_at ASC`,
+    `SELECT id, name, workspace, created_at, director_model, director_effort, role_tools, provider FROM projects ORDER BY created_at ASC`,
   );
   if (res.length === 0) return [];
   return res[0].values.map((row) => {
     const dm = row[4];
     const de = row[5];
     const rt = row[6];
+    const pv = row[7];
     return {
       id: asStr(row[0]),
       name: asStr(row[1]),
       workspace: asStr(row[2]),
       createdAt: asInt(row[3]),
+      provider: asProvider(pv),
       directorModel: typeof dm === 'string' && dm.length > 0 ? dm : undefined,
       directorEffort: isEffortLevel(de) ? de : undefined,
       roleTools: parseRoleTools(rt),
@@ -98,18 +109,29 @@ export function setProjectRoleTools(
   scheduleSave();
 }
 
-export function createProject(name: string, workspace: string): Project {
+export function createProject(
+  name: string,
+  workspace: string,
+  provider: Provider = 'claude',
+): Project {
   const db = getDb();
   const project: Project = {
     id: randomUUID(),
     name: name.trim() || 'Untitled',
     workspace: workspace.trim(),
     createdAt: Date.now(),
+    provider,
   };
   const stmt = db.prepare(
-    `INSERT INTO projects (id, name, workspace, created_at) VALUES (?, ?, ?, ?)`,
+    `INSERT INTO projects (id, name, workspace, created_at, provider) VALUES (?, ?, ?, ?, ?)`,
   );
-  stmt.run([project.id, project.name, project.workspace, project.createdAt]);
+  stmt.run([
+    project.id,
+    project.name,
+    project.workspace,
+    project.createdAt,
+    project.provider,
+  ]);
   stmt.free();
   scheduleSave();
   return project;

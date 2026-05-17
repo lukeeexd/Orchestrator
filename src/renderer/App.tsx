@@ -344,6 +344,7 @@ export function App() {
                   await window.api.wipeDirector(activeProjectId);
               }}
               viewMode={viewMode}
+              provider={activeProject?.provider ?? 'claude'}
             />
             <ResizeHandle
               value={dirW}
@@ -362,6 +363,7 @@ export function App() {
               defaultEffort={spawnDefaultEffort}
               spawning={spawning}
               viewMode={viewMode}
+              provider={activeProject?.provider ?? 'claude'}
               setSpawning={setSpawning}
               onSelect={setSelectedId}
               onToggle={toggle}
@@ -379,6 +381,7 @@ export function App() {
               width={drawerW}
               agent={selectedAgent}
               collapsed={drawerCollapsed}
+              provider={activeProject?.provider ?? 'claude'}
               onAbort={(id) => void window.api.abortAgent(id)}
               onToggleCollapsed={() => setDrawerCollapsed(!drawerCollapsed)}
             />
@@ -422,8 +425,8 @@ export function App() {
 
       {showNewProject && (
         <NewProjectForm
-          onCreate={async (name, ws) => {
-            const p = await createProject(name, ws);
+          onCreate={async (name, ws, provider) => {
+            const p = await createProject(name, ws, provider);
             await setActiveProject(p.id);
             setShowNewProject(false);
           }}

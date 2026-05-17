@@ -31,11 +31,21 @@ export interface LogLine {
 /** Reasoning effort levels supported by the Agent SDK. Default is 'high'. */
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
+/**
+ * Which agent CLI to spawn. Default 'claude' — the original runtime.
+ * 'codex' uses OpenAI's Codex CLI (`codex exec --json`) instead. The two
+ * speak slightly different JSONL event shapes; the runner normalises
+ * codex events into claude-shaped ones so consumeQuery doesn't care.
+ */
+export type Provider = 'claude' | 'codex';
+
 export interface Project {
   id: string;
   name: string;
   workspace: string;
   createdAt: number;
+  /** Which CLI backend the project's Director + agents run against. Defaults to 'claude'. */
+  provider: Provider;
   /** Per-project override for the Director's model. Falls back to settings.defaultModel. */
   directorModel?: string;
   /** Per-project override for the Director's reasoning effort. Falls back to settings.defaultEffort. */
@@ -44,6 +54,10 @@ export interface Project {
    * Per-role tool allow-list overrides. Keys are AgentRole values; values are
    * the tools that role is permitted in this project. Roles not present in
    * the map fall back to the role's default tool set from `shared/roles.ts`.
+   *
+   * Only honored when provider === 'claude'. Codex uses sandbox-policy
+   * scopes (read-only / workspace-write / danger-full-access) instead of
+   * named tool allowlists, so the grid is hidden for codex projects.
    */
   roleTools?: Partial<Record<AgentRole, string[]>>;
 }

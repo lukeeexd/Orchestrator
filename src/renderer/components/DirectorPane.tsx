@@ -11,6 +11,7 @@ import type {
   DirectorMode,
   EffortLevel,
   PlanRow,
+  Provider,
 } from '../../shared/types';
 import { Icon } from './Icon';
 import { PlanCard } from './PlanCard';
@@ -46,6 +47,7 @@ interface Props {
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   onWipe: () => Promise<void>;
   viewMode: ViewMode;
+  provider: Provider;
 }
 
 interface AttachmentChip {
@@ -70,6 +72,7 @@ export function DirectorPane({
   onSpawnPlan,
   onWipe,
   viewMode,
+  provider,
 }: Props) {
   const [confirmWipe, setConfirmWipe] = useState(false);
   return (
@@ -78,9 +81,25 @@ export function DirectorPane({
         <span className="title">
           <b>Director</b>
         </span>
+        {provider === 'codex' && (
+          <span
+            className="badge"
+            title="This project runs against the `codex` CLI. Effort + tool allow-lists are simpler/different for Codex agents."
+            style={{ background: 'var(--sub-2)', color: 'var(--muted)' }}
+          >
+            codex
+          </span>
+        )}
         <ModeToggle mode={mode} onChange={onModeChange} />
-        <ModelPicker value={model} onChange={onModelChange} compact />
-        <EffortPicker value={effort} onChange={onEffortChange} compact />
+        <ModelPicker
+          value={model}
+          onChange={onModelChange}
+          compact
+          provider={provider}
+        />
+        {provider === 'claude' && (
+          <EffortPicker value={effort} onChange={onEffortChange} compact />
+        )}
         <span className="spacer" />
         {busy && (
           <span className="meta" style={{ color: 'var(--accent)' }}>

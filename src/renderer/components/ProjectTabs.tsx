@@ -29,9 +29,19 @@ export function ProjectTabs({
             key={p.id}
             className={'project-tab' + (activeId === p.id ? ' on' : '')}
             onClick={() => onSelect(p.id)}
-            title={p.workspace || 'no workspace set'}
+            title={
+              `${p.workspace || 'no workspace set'} · runtime: ${p.provider}`
+            }
           >
             <span className="pt-name">{p.name}</span>
+            {p.provider === 'codex' && (
+              <span
+                className="pt-count"
+                style={{ background: 'var(--sub-2)', color: 'var(--muted)' }}
+              >
+                codex
+              </span>
+            )}
             {count > 0 && <span className="pt-count">{count}</span>}
             {canDelete && (
               <button
@@ -60,13 +70,20 @@ export function ProjectTabs({
 }
 
 interface NewProjectFormProps {
-  onCreate: (name: string, workspace: string) => Promise<void>;
+  onCreate: (
+    name: string,
+    workspace: string,
+    provider: import('../../shared/types').Provider,
+  ) => Promise<void>;
   onCancel: () => void;
 }
 
 export function NewProjectForm({ onCreate, onCancel }: NewProjectFormProps) {
   const [name, setName] = useState('');
   const [workspace, setWorkspace] = useState('');
+  const [provider, setProvider] = useState<
+    import('../../shared/types').Provider
+  >('claude');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,7 +100,7 @@ export function NewProjectForm({ onCreate, onCancel }: NewProjectFormProps) {
     }
     setBusy(true);
     try {
-      await onCreate(name.trim(), workspace.trim());
+      await onCreate(name.trim(), workspace.trim(), provider);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -129,6 +146,32 @@ export function NewProjectForm({ onCreate, onCancel }: NewProjectFormProps) {
                 Browse…
               </button>
             </div>
+          </div>
+
+          <div className="field">
+            <span className="lbl">Agent runtime</span>
+            <div className="mode-toggle">
+              <button
+                className={provider === 'claude' ? 'on' : ''}
+                onClick={() => setProvider('claude')}
+              >
+                claude
+              </button>
+              <button
+                className={provider === 'codex' ? 'on' : ''}
+                onClick={() => setProvider('codex')}
+              >
+                codex
+              </button>
+            </div>
+            <span
+              className="meta"
+              style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}
+            >
+              Which CLI the Director + agents spawn against. Picked at
+              creation; can&apos;t be changed later. Requires the matching
+              binary on your PATH.
+            </span>
           </div>
 
           {error && <div className="form-error">{error}</div>}

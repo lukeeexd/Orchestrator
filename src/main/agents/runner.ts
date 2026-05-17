@@ -21,6 +21,7 @@ import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
 import { getProject } from '../projects';
 import { runClaudeQuery } from '../cli/spawn';
+import { runCodexQuery } from '../cli/codex';
 
 /**
  * Resolve the tool allow-list for an agent: per-project role override
@@ -313,25 +314,40 @@ ${task}`;
       msg: `Forked from ${entry.agent.forkedFromName ?? 'unknown'} (parent session ${parentSessionId})`,
     });
 
-    const q = runClaudeQuery({
-      cwd: entry.agent.workspace,
-      env,
-      prompt,
-      abortController: controller,
-      resume: parentSessionId,
-      forkSession: true,
-      agent: 'main',
-      agents: {
-        main: {
-          description: `${role.label} for the Orchestrator app`,
-          prompt: role.systemPrompt,
-          tools: effectiveTools,
-          model: resolved.model,
-          effort: effectiveEffort,
-        },
-      },
-      betas: resolved.betas,
-    });
+    const project = getProject(entry.agent.projectId);
+    const provider = project?.provider ?? 'claude';
+
+    const q =
+      provider === 'codex'
+        ? runCodexQuery({
+            cwd: entry.agent.workspace,
+            env,
+            prompt: `[role: ${role.label}]\n${role.systemPrompt}\n\n---\n\n${prompt}`,
+            model: effectiveModel,
+            effort: effectiveEffort,
+            resume: parentSessionId,
+            forkSession: true,
+            abortController: controller,
+          })
+        : runClaudeQuery({
+            cwd: entry.agent.workspace,
+            env,
+            prompt,
+            abortController: controller,
+            resume: parentSessionId,
+            forkSession: true,
+            agent: 'main',
+            agents: {
+              main: {
+                description: `${role.label} for the Orchestrator app`,
+                prompt: role.systemPrompt,
+                tools: effectiveTools,
+                model: resolved.model,
+                effort: effectiveEffort,
+              },
+            },
+            betas: resolved.betas,
+          });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
@@ -375,24 +391,39 @@ ${attachmentBlock}Task:
 ${req.task}`;
 
     const effectiveTools = resolveTools(req.role, req.projectId);
+    const project = getProject(req.projectId);
+    const provider = project?.provider ?? 'claude';
 
-    const q = runClaudeQuery({
-      cwd: workdir,
-      env,
-      prompt: promptWithContext,
-      abortController: controller,
-      agent: 'main',
-      agents: {
-        main: {
-          description: `${role.label} for the Orchestrator app`,
-          prompt: role.systemPrompt,
-          tools: effectiveTools,
-          model: resolved.model,
-          effort: effectiveEffort,
-        },
-      },
-      betas: resolved.betas,
-    });
+    const q =
+      provider === 'codex'
+        ? runCodexQuery({
+            cwd: workdir,
+            env,
+            // Codex has no inline system-prompt flag — bake the role
+            // prompt into the user prompt as a preamble so the model
+            // still sees its persona instructions.
+            prompt: `[role: ${role.label}]\n${role.systemPrompt}\n\n---\n\n${promptWithContext}`,
+            model: effectiveModel,
+            effort: effectiveEffort,
+            abortController: controller,
+          })
+        : runClaudeQuery({
+            cwd: workdir,
+            env,
+            prompt: promptWithContext,
+            abortController: controller,
+            agent: 'main',
+            agents: {
+              main: {
+                description: `${role.label} for the Orchestrator app`,
+                prompt: role.systemPrompt,
+                tools: effectiveTools,
+                model: resolved.model,
+                effort: effectiveEffort,
+              },
+            },
+            betas: resolved.betas,
+          });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
@@ -517,27 +548,42 @@ ${body}`;
       }`,
     });
 
-    const q = runClaudeQuery({
-      cwd: entry.agent.workspace,
-      env,
-      prompt,
-      abortController: controller,
-      resume: entry.agent.sessionId,
-      // Pass the agent config explicitly so the resumed turn uses
-      // our chosen model + tools + effort, not whatever the saved
-      // session had.
-      agent: 'main',
-      agents: {
-        main: {
-          description: `${role.label} for the Orchestrator app`,
-          prompt: role.systemPrompt,
-          tools: resolveTools(entry.agent.role, entry.agent.projectId),
-          model: resolved.model,
-          effort: effectiveEffort,
-        },
-      },
-      betas: resolved.betas,
-    });
+    const project = getProject(entry.agent.projectId);
+    const provider = project?.provider ?? 'claude';
+
+    const q =
+      provider === 'codex'
+        ? runCodexQuery({
+            cwd: entry.agent.workspace,
+            env,
+            // Same role-prompt preamble approach as initial spawn.
+            prompt: `[role: ${role.label}]\n${role.systemPrompt}\n\n---\n\n${prompt}`,
+            model: effectiveModel,
+            effort: effectiveEffort,
+            resume: entry.agent.sessionId,
+            abortController: controller,
+          })
+        : runClaudeQuery({
+            cwd: entry.agent.workspace,
+            env,
+            prompt,
+            abortController: controller,
+            resume: entry.agent.sessionId,
+            // Pass the agent config explicitly so the resumed turn uses
+            // our chosen model + tools + effort, not whatever the saved
+            // session had.
+            agent: 'main',
+            agents: {
+              main: {
+                description: `${role.label} for the Orchestrator app`,
+                prompt: role.systemPrompt,
+                tools: resolveTools(entry.agent.role, entry.agent.projectId),
+                model: resolved.model,
+                effort: effectiveEffort,
+              },
+            },
+            betas: resolved.betas,
+          });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {

@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { AgentRole, EffortLevel } from '../../shared/types';
+import type {
+  AgentRole,
+  EffortLevel,
+  Provider,
+} from '../../shared/types';
 import { Icon } from './Icon';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
@@ -22,6 +26,7 @@ interface Props {
   /** Pre-fill the effort from the project's Director effort. */
   defaultEffort: EffortLevel;
   projectId: string;
+  provider: Provider;
 }
 
 interface AttachmentChip {
@@ -38,6 +43,7 @@ export function SpawnAgentForm({
   defaultModel,
   defaultEffort,
   projectId,
+  provider,
 }: Props) {
   const [role, setRole] = useState<AgentRole>('coder');
   const [workspace, setWorkspace] = useState(defaultWorkspace);
@@ -179,13 +185,19 @@ export function SpawnAgentForm({
 
           <div className="field">
             <span className="lbl">Model</span>
-            <ModelPicker value={model} onChange={setModel} />
+            <ModelPicker
+              value={model}
+              onChange={setModel}
+              provider={provider}
+            />
           </div>
 
-          <div className="field">
-            <span className="lbl">Reasoning effort</span>
-            <EffortPicker value={effort} onChange={setEffort} />
-          </div>
+          {provider === 'claude' && (
+            <div className="field">
+              <span className="lbl">Reasoning effort</span>
+              <EffortPicker value={effort} onChange={setEffort} />
+            </div>
+          )}
 
           <div className="field">
             <span className="lbl">Task</span>

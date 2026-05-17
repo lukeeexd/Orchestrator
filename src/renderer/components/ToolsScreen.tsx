@@ -102,6 +102,31 @@ export function ToolsScreen({ project, onChange }: Props) {
     );
   }
 
+  if (project.provider === 'codex') {
+    return (
+      <div className="pane" style={{ flex: 1 }}>
+        <div className="pane-head">
+          <span className="title">
+            <b>Tools</b>
+          </span>
+        </div>
+        <div className="empty" style={{ height: 'auto', padding: 32 }}>
+          <div className="empty-title" style={{ color: 'var(--text-2)' }}>
+            Not applicable for codex projects
+          </div>
+          <div className="empty-body">
+            Codex uses sandbox-policy scopes instead of named tool allow-lists:
+            <code>read-only</code>, <code>workspace-write</code>, or{' '}
+            <code>danger-full-access</code>. Orchestrator currently sets every
+            codex agent to <code>workspace-write</code>; per-role overrides
+            aren&apos;t exposed yet. This screen only edits claude-project
+            allow-lists.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="pane settings-pane" style={{ flex: 1 }}>
       <div className="pane-head">

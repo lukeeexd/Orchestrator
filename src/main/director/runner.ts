@@ -10,6 +10,7 @@ import type {
 import { DEFAULT_EFFORT } from '../../shared/efforts';
 import { resolveModel } from '../../shared/models';
 import { runClaudeQuery } from '../cli/spawn';
+import { runCodexQuery } from '../cli/codex';
 import { readSettings } from '../settings';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractDirectives } from './parse';
@@ -259,24 +260,44 @@ class DirectorSession {
           ? inlineAttachments(attachments)
           : '';
       const agentBlock = this.buildFleetBlock();
-      const q = runClaudeQuery({
-        cwd: app.getPath('userData'),
-        env,
-        prompt: `[mode: ${mode}]\n${agentBlock}${attachmentBlock}${promptBody}`,
-        abortController: this.controller,
-        agent: 'director',
-        agents: {
-          director: {
-            description: 'Orchestrator director — plans and supervises agents.',
-            prompt: DIRECTOR_SYSTEM_PROMPT,
-            tools: [] as string[],
-            model: resolved.model,
-            effort: directorEffort,
-          },
-        },
-        ...(this.sessionId ? { resume: this.sessionId } : {}),
-        betas: resolved.betas,
-      });
+      const fullPrompt = `[mode: ${mode}]\n${agentBlock}${attachmentBlock}${promptBody}`;
+      const provider = project?.provider ?? 'claude';
+
+      const q =
+        provider === 'codex'
+          ? runCodexQuery({
+              cwd: app.getPath('userData'),
+              env,
+              // Codex has no inline system-prompt knob; prepend the
+              // Director instructions as a preamble. The model still
+              // needs to follow the orchestrator-plan fenced-JSON
+              // convention from DIRECTOR_SYSTEM_PROMPT for plan parsing
+              // to work — Codex models are generally OK at this but
+              // less reliable than Claude.
+              prompt: `[director-role]\n${DIRECTOR_SYSTEM_PROMPT}\n\n---\n\n${fullPrompt}`,
+              model: directorModel,
+              effort: directorEffort,
+              resume: this.sessionId ?? undefined,
+              abortController: this.controller,
+            })
+          : runClaudeQuery({
+              cwd: app.getPath('userData'),
+              env,
+              prompt: fullPrompt,
+              abortController: this.controller,
+              agent: 'director',
+              agents: {
+                director: {
+                  description: 'Orchestrator director — plans and supervises agents.',
+                  prompt: DIRECTOR_SYSTEM_PROMPT,
+                  tools: [] as string[],
+                  model: resolved.model,
+                  effort: directorEffort,
+                },
+              },
+              ...(this.sessionId ? { resume: this.sessionId } : {}),
+              betas: resolved.betas,
+            });
 
       let bodyBuf = '';
       for await (const event of q) {

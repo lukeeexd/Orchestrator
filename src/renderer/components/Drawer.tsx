@@ -1,5 +1,10 @@
 import { useState } from 'react';
-import type { Agent, AgentRole, EffortLevel } from '../../shared/types';
+import type {
+  Agent,
+  AgentRole,
+  EffortLevel,
+  Provider,
+} from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { Icon } from './Icon';
 import { LogLineRow } from './LogLineRow';
@@ -35,6 +40,7 @@ interface Props {
   width: number;
   agent: Agent | null;
   collapsed: boolean;
+  provider: Provider;
   onAbort: (id: string) => void;
   onToggleCollapsed: () => void;
 }
@@ -43,6 +49,7 @@ export function Drawer({
   width,
   agent,
   collapsed,
+  provider,
   onAbort,
   onToggleCollapsed,
 }: Props) {
@@ -96,7 +103,7 @@ export function Drawer({
   return (
     <div className="drawer" style={{ width }}>
       <DrawerCollapseBar onToggle={onToggleCollapsed} />
-      <Header agent={agent} onAbort={() => onAbort(agent.id)} />
+      <Header agent={agent} provider={provider} onAbort={() => onAbort(agent.id)} />
 
       <div className="tabs">
         <TabHead id="logs" label="Logs" count={agent.log.length} active={tab} onSelect={setTab} />
@@ -111,7 +118,7 @@ export function Drawer({
         {tab === 'tools' && <ToolsTab agent={agent} />}
         {tab === 'memory' && <MemoryTab />}
         {tab === 'context' && <ContextTab agent={agent} />}
-        {tab === 'config' && <ConfigTab agent={agent} />}
+        {tab === 'config' && <ConfigTab agent={agent} provider={provider} />}
       </div>
     </div>
   );
@@ -131,7 +138,15 @@ function DrawerCollapseBar({ onToggle }: { onToggle: () => void }) {
   );
 }
 
-function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
+function Header({
+  agent,
+  provider,
+  onAbort,
+}: {
+  agent: Agent;
+  provider: Provider;
+  onAbort: () => void;
+}) {
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
   const canRedirect = !isRunning && !!agent.sessionId;
   // Fork can happen any time the parent has produced a session id — even
@@ -213,6 +228,7 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
           agentId={agent.id}
           currentModel={agent.model}
           currentEffort={agent.effort}
+          provider={provider}
           onClose={() => setRedirectOpen(false)}
         />
       )}
@@ -221,6 +237,7 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
           parentAgentId={agent.id}
           currentModel={agent.model}
           currentEffort={agent.effort}
+          provider={provider}
           onClose={() => setForkOpen(false)}
         />
       )}
@@ -232,11 +249,13 @@ function ForkForm({
   parentAgentId,
   currentModel,
   currentEffort,
+  provider,
   onClose,
 }: {
   parentAgentId: string;
   currentModel: string;
   currentEffort: EffortLevel;
+  provider: Provider;
   onClose: () => void;
 }) {
   const [task, setTask] = useState('');
@@ -273,12 +292,19 @@ function ForkForm({
     <div className="redirect-form">
       <div className="redirect-model-row">
         <span className="lbl">Model</span>
-        <ModelPicker value={model} onChange={setModel} compact />
+        <ModelPicker
+          value={model}
+          onChange={setModel}
+          compact
+          provider={provider}
+        />
       </div>
-      <div className="redirect-model-row">
-        <span className="lbl">Effort</span>
-        <EffortPicker value={effort} onChange={setEffort} compact />
-      </div>
+      {provider === 'claude' && (
+        <div className="redirect-model-row">
+          <span className="lbl">Effort</span>
+          <EffortPicker value={effort} onChange={setEffort} compact />
+        </div>
+      )}
       <textarea
         className="text-input task-input"
         value={task}
@@ -308,11 +334,13 @@ function RedirectForm({
   agentId,
   currentModel,
   currentEffort,
+  provider,
   onClose,
 }: {
   agentId: string;
   currentModel: string;
   currentEffort: EffortLevel;
+  provider: Provider;
   onClose: () => void;
 }) {
   const [body, setBody] = useState('');
@@ -349,12 +377,19 @@ function RedirectForm({
     <div className="redirect-form">
       <div className="redirect-model-row">
         <span className="lbl">Model</span>
-        <ModelPicker value={model} onChange={setModel} compact />
+        <ModelPicker
+          value={model}
+          onChange={setModel}
+          compact
+          provider={provider}
+        />
       </div>
-      <div className="redirect-model-row">
-        <span className="lbl">Effort</span>
-        <EffortPicker value={effort} onChange={setEffort} compact />
-      </div>
+      {provider === 'claude' && (
+        <div className="redirect-model-row">
+          <span className="lbl">Effort</span>
+          <EffortPicker value={effort} onChange={setEffort} compact />
+        </div>
+      )}
       <textarea
         className="text-input task-input"
         value={body}
@@ -540,7 +575,13 @@ function ContextTab({ agent }: { agent: Agent }) {
   );
 }
 
-function ConfigTab({ agent }: { agent: Agent }) {
+function ConfigTab({
+  agent,
+  provider,
+}: {
+  agent: Agent;
+  provider: Provider;
+}) {
   const [expanded, setExpanded] = useState(false);
   const role = ROLES[agent.role];
   return (
@@ -565,6 +606,7 @@ function ConfigTab({ agent }: { agent: Agent }) {
           <ModelPicker
             value={agent.model}
             compact
+            provider={provider}
             onChange={(m) => {
               if (m && m !== agent.model) void window.api.setAgentModel(agent.id, m);
             }}
@@ -576,7 +618,8 @@ function ConfigTab({ agent }: { agent: Agent }) {
           )}
         </span>
       </div>
-      <div className="field">
+      {provider === 'claude' && (
+        <div className="field">
         <span className="lbl">Reasoning effort</span>
         <span className="v">
           <EffortPicker
@@ -593,6 +636,7 @@ function ConfigTab({ agent }: { agent: Agent }) {
           )}
         </span>
       </div>
+      )}
       <div className="field">
         <span className="lbl">Workspace</span>
         <span className="v">

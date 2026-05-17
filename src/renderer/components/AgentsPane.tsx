@@ -1,4 +1,4 @@
-import type { Agent, EffortLevel } from '../../shared/types';
+import type { Agent, EffortLevel, Provider } from '../../shared/types';
 import { Icon } from './Icon';
 import { AgentRow } from './AgentRow';
 import { AgentStreamPanel } from './AgentStreamPanel';
@@ -15,6 +15,7 @@ interface Props {
   defaultEffort: EffortLevel;
   spawning: boolean;
   viewMode: ViewMode;
+  provider: Provider;
   setSpawning: (next: boolean) => void;
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
@@ -30,6 +31,7 @@ export function AgentsPane({
   defaultEffort,
   spawning,
   viewMode,
+  provider,
   setSpawning,
   onSelect,
   onToggle,
@@ -92,6 +94,7 @@ export function AgentsPane({
           defaultWorkspace={workspace}
           defaultModel={defaultModel}
           defaultEffort={defaultEffort}
+          provider={provider}
           onCancel={() => setSpawning(false)}
           onSpawned={() => setSpawning(false)}
         />

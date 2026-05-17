@@ -133,8 +133,12 @@ export function registerIpcHandlers(): void {
   );
   ipcMain.handle(
     IpcChannels.ProjectCreate,
-    (_event, name: string, workspace: string): Project =>
-      createProject(name, workspace),
+    (
+      _event,
+      name: string,
+      workspace: string,
+      provider?: import('../shared/types').Provider,
+    ): Project => createProject(name, workspace, provider ?? 'claude'),
   );
   ipcMain.handle(
     IpcChannels.ProjectSetActive,
