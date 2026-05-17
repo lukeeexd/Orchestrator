@@ -296,6 +296,11 @@ class DirectorSession {
               prompt: `[director-role]\n${DIRECTOR_SYSTEM_PROMPT}\n\n---\n\n${fullPrompt}`,
               model: directorModel,
               effort: directorEffort,
+              // The Director only plans — it never edits files. read-only
+              // sandbox avoids codex trying to set up workspace-write
+              // mounts in app.getPath('userData') which isn't a real
+              // project dir (and codex exits 1 trying).
+              sandbox: 'read-only',
               resume: this.sessionId ?? undefined,
               abortController: this.controller,
             })

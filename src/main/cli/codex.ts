@@ -66,6 +66,11 @@ export async function* runCodexQuery(
   proc.stderr.setEncoding('utf8');
   proc.stderr.on('data', (chunk: string) => {
     stderr += chunk;
+    // Live stderr so we don't have to wait for exit to see what codex
+    // is saying. Each chunk may contain multiple lines.
+    for (const line of chunk.split(/\r?\n/)) {
+      if (line.trim()) console.error('[codex stderr]', line);
+    }
   });
 
   // Prompt goes through stdin — same length-safety argument as the claude
