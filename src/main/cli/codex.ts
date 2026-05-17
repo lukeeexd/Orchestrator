@@ -93,20 +93,23 @@ export async function* runCodexQuery(
 }
 
 function buildArgs(o: CodexQueryOptions): string[] {
-  // `codex exec resume <id>` accepts a *much* smaller flag set than
-  // `codex exec`:
-  //   resume: --json, -c <key=value>, <SESSION_ID>, [PROMPT]
-  //   exec:   --json, -m, --sandbox, -C, --skip-git-repo-check,
-  //           --ephemeral, -c, etc.
-  // Sandbox / cwd / model are all baked into the original session on
-  // resume — passing them again rejects the whole invocation with
-  // "unexpected argument '--sandbox' found". So branch the argv
-  // explicitly per subcommand.
+  // `codex exec resume` and `codex exec` accept overlapping but not
+  // identical flag sets. Resume rejects `--sandbox` and `-C` (both are
+  // baked into the original session). Everything else we use
+  // (--json, --skip-git-repo-check, --ephemeral, -m, -c) is still
+  // accepted on resume — earlier I'd over-stripped to avoid the
+  // sandbox error and lost --skip-git-repo-check, which then made
+  // resume die with "Not inside a trusted directory."
   if (o.resume) {
     const args: string[] = ['exec', 'resume', '--json'];
+    if (o.model && o.model.length > 0) {
+      args.push('-m', o.model);
+    }
     if (o.effort) {
       args.push('-c', `model_reasoning_effort="${o.effort}"`);
     }
+    args.push('--skip-git-repo-check');
+    args.push('--ephemeral');
     args.push(o.resume);
     return args;
   }
