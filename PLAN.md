@@ -57,28 +57,31 @@ System prompts live in `src/shared/roles.ts`. Tool allow-lists are hardcoded; us
 The rail nav has slots for these; they route to a "coming soon" placeholder screen.
 
 - Templates (saved agent fleets)
-- Tools registry (per-role allow-lists)
-- Runs (past sessions browser)
-- Most of Settings beyond API-key / provider / model defaults
+- Most of Settings beyond API-key / provider / model / Director-default fields
 
-Already shipped (no longer placeholders): the **Spend** screen (real per-day cost chart + deep link to claude.ai for official usage).
+Already shipped (no longer placeholders): the **Spend** screen (real per-day cost chart + deep link to claude.ai for official usage), the **Runs/History** screen (real list of past agents — see `HistoryScreen.tsx`), and the **Tools** screen / per-project per-role tool allow-list overrides (`ProjectSetRoleTools` IPC + `ToolsScreen.tsx`).
+
+## Already-shipped post-v1 features (formerly deferred)
+
+What was deferred at v1.0 and has since landed. Kept here so future "next slice" hunts don't re-propose finished work.
+
+- **Agent Fork.** Drawer Fork button is enabled when the parent has a captured `session_id` (any provider except codex — `codex fork` is TUI-only). Uses `claude --resume <id> --fork-session` so the parent stays intact; agent records `forkedFromId` / `forkedFromName`. See `forkAgent` in `src/main/agents/runner.ts` and the `ForkForm` in `Drawer.tsx`.
+- **Agent Redirect.** Drawer Redirect button enabled on a done/error agent with a captured session id. Resumes via `claude --resume <id>` (or `codex exec resume`), accepts a model/effort override per redirect. See `redirectAgent` + `runRedirect`.
+- **Plan editing.** `PlanCard.tsx` has editable per-row text inputs, drop buttons, an "edited" badge, and a Spawn button that uses the user-tweaked rows rather than the Director's original proposal.
 
 ## Deferred features
 
 Things that landed partially or are explicitly tabled. New sessions can pick from here when looking for the next slice.
 
-- **Better attachments.** v1 supports text-file attachments (md / code / config / json / yaml) inlined into the prompt as fenced code blocks, 100 KiB cap per file. Deferred:
-  - Image attachments via Anthropic vision content blocks (`{type: 'image', source: {type: 'base64', media_type, data}}`). Needs the SDK call to switch from `prompt: string` to `prompt: AsyncIterable<SDKUserMessage>` so we can send structured content blocks instead of a single string.
-  - PDF attachments via document content blocks (same shape change).
-  - Larger file caps (current 100 KiB is conservative; raise once we have the streaming pipeline).
-  - File picker filtered to text-like extensions instead of "all files + show error chip" UX.
-  - Drag-and-drop into the composer.
-- **Agent Redirect.** Inject a user message into an already-running agent's session. Currently agents are one-shot; mid-flight redirection isn't possible. The original v1 spike against `Query.streamInput()` is obsolete now that we shell out to the CLI — needs a fresh spike against whatever `claude --append-system-prompt` / stdin patterns the CLI actually accepts mid-session.
-- **Agent Fork.** Drawer Fork button is rendered but disabled. The original v1 spike found `forkSession()` + `resume` in the TS SDK; the CLI exposes session resume via `claude --resume <session_id>`, so wiring is feasible but needs to confirm the fork-vs-resume semantics on the CLI side.
-- **Memory pins.** Drawer Memory tab is a placeholder. Original v1 plan was to use the TS SDK's memory tool; with the CLI shell-out, the path is now whatever the `claude` CLI exposes (skills already cover some of this ground).
-- **Plan editing.** In auto mode, plans auto-spawn. Add an Edit button to the plan card for tighter control without flipping to manual mode.
+- **Better attachments — text-only at v0.6.0.** Current code (`src/main/attachments.ts`) whitelists text/code extensions only (md / code / config / json / yaml), 100 KiB cap per file, inlined as fenced code blocks. Deferred:
+  - **Image attachments** via Anthropic vision content blocks. The path is `claude --input-format stream-json` over stdin, sending a JSONL user message with `{type:'image',source:{type:'base64',media_type,data}}` content blocks alongside the text prompt — confirmed available on the CLI we now shell out to.
+  - **PDF attachments** via `document` content blocks (same JSONL shape, different `type`).
+  - **Larger caps for non-text** (Anthropic accepts up to 5 MiB per image; current 100 KiB cap is for inlined text).
+  - **File picker filtered to supported types** instead of "all files + show error chip" UX.
+  - **Drag-and-drop into the composer.**
+- **Memory pins.** Drawer Memory tab still renders the "not wired up yet" placeholder. Skills already cover the "carry a persistent body of guidance into every turn" use case, so memory pins are lower priority than they were at v1.0.
 - **Session-wide budget.** Per-agent budgets exist; a global "session won't exceed $X" cap (rolling across all agents in a session) doesn't.
-- **Wipe session.** Truly nuke a session — agents, Director chat, attachments, settings.json `oauthToken` — for handing the machine off.
+- **Wipe session.** `wipeDirector` only clears the Director's chat. A full nuke — agents, log lines, attachments, settings.json `oauthToken` — for handing the machine off is still deferred.
 - **More LLM providers.** *(Updated v0.5.x — Codex already shipped as a second provider.)* The runner now branches on a `provider` field per project (`claude` vs `codex`). Adding a third (GPT-5 via the standalone API, Gemini, open models) is feasible but needs:
   - A per-provider runner module that translates the structured event stream into the same `LogLine[]` shape the UI expects.
   - A re-implementation (or wrapping) of the Read / Write / Edit / Bash / Glob / Grep tool surface for providers that don't ship their own tool runner. Codex sidesteps this because `codex exec` has its own equivalent tool surface; a pure-API provider wouldn't.

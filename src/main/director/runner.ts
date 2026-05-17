@@ -21,7 +21,7 @@ import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractDirectives } from './parse';
 import { nowTs } from '../agents/classifier';
 import * as persistence from '../persistence';
-import { inlineAttachments } from '../attachments';
+import { prepareAttachments } from '../attachments';
 import * as registry from '../agents/registry';
 import { getProject } from '../projects';
 
@@ -287,12 +287,22 @@ class DirectorSession {
     const resolved = resolveModel(directorModel);
 
     try {
-      const attachmentBlock =
-        attachments && attachments.length > 0
-          ? inlineAttachments(attachments)
-          : '';
+      const prep = prepareAttachments(attachments, provider);
+      if (prep.warnLines.length > 0) {
+        // Surface skipped/oversize/codex-unsupported attachment warnings
+        // as a system message in the chat. One bundled message keeps the
+        // noise down when several files are involved.
+        this.pushMessage({
+          id: randomUUID(),
+          projectId: this.projectId,
+          who: 'system',
+          name: 'system',
+          time: timeOnly(),
+          body: prep.warnLines.join('\n'),
+        });
+      }
       const agentBlock = this.buildFleetBlock();
-      const fullPrompt = `[mode: ${mode}]\n${agentBlock}${attachmentBlock}${promptBody}`;
+      const fullPrompt = `[mode: ${mode}]\n${agentBlock}${prep.textInline}${promptBody}`;
 
       const q =
         provider === 'codex'
@@ -320,6 +330,7 @@ class DirectorSession {
               cwd: app.getPath('userData'),
               env,
               prompt: fullPrompt,
+              ...(prep.images.length > 0 ? { images: prep.images } : {}),
               abortController: this.controller,
               agent: 'director',
               agents: {

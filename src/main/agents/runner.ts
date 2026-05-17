@@ -22,7 +22,7 @@ import { classify, nowTs } from './classifier';
 import { readSettings } from '../settings';
 import * as director from '../director/runner';
 import * as persistence from '../persistence';
-import { inlineAttachments } from '../attachments';
+import { prepareAttachments } from '../attachments';
 import { getProject } from '../projects';
 import { effectiveSkill } from '../skills';
 
@@ -340,9 +340,14 @@ async function runFork(
     const effectiveEffort = entry.agent.effort || DEFAULT_EFFORT;
     const resolved = resolveModel(effectiveModel);
     const effectiveTools = resolveTools(entry.agent.role, entry.agent.projectId);
-    const attachmentBlock =
-      attachments && attachments.length > 0 ? inlineAttachments(attachments) : '';
-    const prompt = `${attachmentBlock}Forked from prior session. New direction:
+
+    const project = getProject(entry.agent.projectId);
+    const provider = project?.provider ?? 'claude';
+    const prep = prepareAttachments(attachments, provider);
+    for (const line of prep.warnLines) {
+      sinks.onLog(agentId, { ts: nowTs(), kind: 'warn', msg: line });
+    }
+    const prompt = `${prep.textInline}Forked from prior session. New direction:
 ${task}`;
 
     sinks.onLog(agentId, {
@@ -350,9 +355,6 @@ ${task}`;
       kind: 'note',
       msg: `Forked from ${entry.agent.forkedFromName ?? 'unknown'} (parent session ${parentSessionId})`,
     });
-
-    const project = getProject(entry.agent.projectId);
-    const provider = project?.provider ?? 'claude';
 
     const q =
       provider === 'codex'
@@ -370,6 +372,7 @@ ${task}`;
             cwd: entry.agent.workspace,
             env,
             prompt,
+            ...(prep.images.length > 0 ? { images: prep.images } : {}),
             abortController: controller,
             resume: parentSessionId,
             forkSession: true,
@@ -428,24 +431,22 @@ async function run(
       entry?.agent.effort || DEFAULT_EFFORT;
     // Pseudo-ids like `*-1m` resolve to a base model id + a beta header.
     const resolved = resolveModel(effectiveModel);
-    const attachmentBlock =
-      req.attachments && req.attachments.length > 0
-        ? inlineAttachments(req.attachments)
-        : '';
+    const prep = prepareAttachments(req.attachments, runProvider);
+    for (const line of prep.warnLines) {
+      sinks.onLog(agentId, { ts: nowTs(), kind: 'warn', msg: line });
+    }
     const promptWithContext = `[workspace] ${workdir}
 All file paths resolve here — your Read, Write, Edit, Glob, Grep tools all operate inside this folder. Use simple relative paths like "notes.md" (preferred) or the absolute path above.
 
 Do NOT invent paths like /home/user/, /tmp/, or POSIX-style locations — they are not real on this system. Your bash 'pwd' may report this folder in MSYS form (e.g. /d/ClaudeCode/foo) which is equivalent to the Windows path above; file-tool calls should still use Windows-style or simple relative paths.
 
-${attachmentBlock}Task:
+${prep.textInline}Task:
 ${req.task}`;
 
     const effectiveTools = resolveTools(req.role, req.projectId);
-    const project = getProject(req.projectId);
-    const provider = project?.provider ?? 'claude';
 
     const q =
-      provider === 'codex'
+      runProvider === 'codex'
         ? runCodexQuery({
             cwd: workdir,
             env,
@@ -461,6 +462,7 @@ ${req.task}`;
             cwd: workdir,
             env,
             prompt: promptWithContext,
+            ...(prep.images.length > 0 ? { images: prep.images } : {}),
             abortController: controller,
             agent: 'main',
             agents: {
@@ -582,9 +584,13 @@ async function runRedirect(
   const resolved = resolveModel(effectiveModel);
 
   try {
-    const attachmentBlock =
-      attachments && attachments.length > 0 ? inlineAttachments(attachments) : '';
-    const prompt = `${attachmentBlock}Continuing task. New instruction:
+    const project = getProject(entry.agent.projectId);
+    const provider = project?.provider ?? 'claude';
+    const prep = prepareAttachments(attachments, provider);
+    for (const line of prep.warnLines) {
+      sinks.onLog(agentId, { ts: nowTs(), kind: 'warn', msg: line });
+    }
+    const prompt = `${prep.textInline}Continuing task. New instruction:
 ${body}`;
 
     const parts: string[] = [];
@@ -597,9 +603,6 @@ ${body}`;
         parts.length > 0 ? ` · ${parts.join(', ')}` : ''
       }`,
     });
-
-    const project = getProject(entry.agent.projectId);
-    const provider = project?.provider ?? 'claude';
 
     const q =
       provider === 'codex'
@@ -617,6 +620,7 @@ ${body}`;
             cwd: entry.agent.workspace,
             env,
             prompt,
+            ...(prep.images.length > 0 ? { images: prep.images } : {}),
             abortController: controller,
             resume: entry.agent.sessionId,
             // Pass the agent config explicitly so the resumed turn uses
