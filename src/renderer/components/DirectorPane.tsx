@@ -11,11 +11,18 @@ import type {
   DirectorMode,
   EffortLevel,
   PlanRow,
+  Provider,
 } from '../../shared/types';
+import type { SlashCommand } from '../../shared/commands';
+import { applyCommandArguments } from '../../shared/commands';
+import { BUILTIN_COMMANDS } from '../../shared/builtinCommands';
 import { Icon } from './Icon';
 import { PlanCard } from './PlanCard';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
+import { DirectorStream } from './DirectorStream';
+import type { ViewMode } from './TopBar';
+import type { BuiltinAction } from '../../shared/builtinCommands';
 
 const ROLE_TINT: Record<Agent['role'], string> = {
   pm: '#4ade80',
@@ -23,6 +30,7 @@ const ROLE_TINT: Record<Agent['role'], string> = {
   coder: '#c084fc',
   qa: '#fbbf24',
   devops: '#f97316',
+  security: '#f87171',
 };
 
 interface Props {
@@ -43,6 +51,12 @@ interface Props {
   ) => Promise<void>;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   onWipe: () => Promise<void>;
+  viewMode: ViewMode;
+  provider: Provider;
+  /** Project id used to scope which `.claude/commands/` directory to load from. */
+  projectId: string | null;
+  /** Dispatches built-in slash command actions (rail nav, wipe, etc). */
+  onSlashAction: (action: BuiltinAction) => void | Promise<void>;
 }
 
 interface AttachmentChip {
@@ -66,6 +80,10 @@ export function DirectorPane({
   onSend,
   onSpawnPlan,
   onWipe,
+  viewMode,
+  provider,
+  projectId,
+  onSlashAction,
 }: Props) {
   const [confirmWipe, setConfirmWipe] = useState(false);
   return (
@@ -74,9 +92,25 @@ export function DirectorPane({
         <span className="title">
           <b>Director</b>
         </span>
+        {provider === 'codex' && (
+          <span
+            className="badge"
+            title="This project runs against the `codex` CLI. Effort + tool allow-lists are simpler/different for Codex agents."
+            style={{ background: 'var(--sub-2)', color: 'var(--muted)' }}
+          >
+            codex
+          </span>
+        )}
         <ModeToggle mode={mode} onChange={onModeChange} />
-        <ModelPicker value={model} onChange={onModelChange} compact />
-        <EffortPicker value={effort} onChange={onEffortChange} compact />
+        <ModelPicker
+          value={model}
+          onChange={onModelChange}
+          compact
+          provider={provider}
+        />
+        {provider === 'claude' && (
+          <EffortPicker value={effort} onChange={onEffortChange} compact />
+        )}
         <span className="spacer" />
         {busy && (
           <span className="meta" style={{ color: 'var(--accent)' }}>
@@ -93,7 +127,13 @@ export function DirectorPane({
         </button>
       </div>
 
-      {messages.length === 0 ? (
+      {viewMode === 'stream' ? (
+        <DirectorStream
+          messages={messages}
+          mode={mode}
+          onSpawnPlan={onSpawnPlan}
+        />
+      ) : messages.length === 0 ? (
         <EmptyChat mode={mode} />
       ) : (
         <Chat messages={messages} mode={mode} onSpawnPlan={onSpawnPlan} />
@@ -103,7 +143,9 @@ export function DirectorPane({
         busy={busy}
         mode={mode}
         agents={agents}
+        projectId={projectId}
         onSend={(body, attachments) => onSend(body, mode, attachments)}
+        onSlashAction={onSlashAction}
       />
       {confirmWipe && (
         <ConfirmWipe
@@ -317,12 +359,16 @@ function Composer({
   busy,
   mode,
   agents,
+  projectId,
   onSend,
+  onSlashAction,
 }: {
   busy: boolean;
   mode: DirectorMode;
   agents: Agent[];
+  projectId: string | null;
   onSend: (body: string, attachments?: string[]) => Promise<void>;
+  onSlashAction: (action: BuiltinAction) => void | Promise<void>;
 }) {
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const [text, setText] = useState('');
@@ -334,6 +380,24 @@ function Composer({
     atIdx: number;
     selected: number;
   }>({ open: false, query: '', atIdx: -1, selected: 0 });
+  const [slashState, setSlashState] = useState<{
+    open: boolean;
+    query: string;
+    selected: number;
+  }>({ open: false, query: '', selected: 0 });
+  const [commands, setCommands] = useState<SlashCommand[]>(
+    BUILTIN_COMMANDS as SlashCommand[],
+  );
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  // Load custom slash commands from disk for the active project. Built-ins
+  // come from shared/builtinCommands so they're always available without
+  // a round-trip.
+  useEffect(() => {
+    void window.api.listSlashCommands(projectId).then((disk) => {
+      setCommands([...(BUILTIN_COMMANDS as SlashCommand[]), ...disk]);
+    });
+  }, [projectId]);
 
   const mentionMatches = useMemo(() => {
     if (!mentionState.open) return [];
@@ -342,6 +406,14 @@ function Composer({
       .filter((a) => !q || a.name.toLowerCase().startsWith(q))
       .slice(0, 8);
   }, [mentionState, agents]);
+
+  const slashMatches = useMemo(() => {
+    if (!slashState.open) return [];
+    const q = slashState.query.toLowerCase();
+    return commands
+      .filter((c) => !q || c.name.toLowerCase().startsWith(q))
+      .slice(0, 10);
+  }, [slashState, commands]);
 
   const pick = async () => {
     const { attachments: picked } = await window.api.pickAttachments();
@@ -358,10 +430,97 @@ function Composer({
     const okPaths = attachments.filter((a) => a.ok).map((a) => a.path);
     if (!body && okPaths.length === 0) return;
     if (busy) return;
+
+    // Slash command interception. Built-ins fire local actions and never
+    // hit the agent. Custom commands expand to their .md body (with
+    // $ARGUMENTS substituted) and then go through the normal send path.
+    if (body.startsWith('/')) {
+      const spaceIdx = body.indexOf(' ');
+      const cmdName = body.slice(1, spaceIdx < 0 ? undefined : spaceIdx);
+      const restArgs = spaceIdx < 0 ? '' : body.slice(spaceIdx + 1);
+      const match = commands.find((c) => c.name === cmdName);
+      if (match) {
+        const builtin = (BUILTIN_COMMANDS as SlashCommand[]).find(
+          (c) => c.name === cmdName,
+        );
+        if (builtin) {
+          // Built-in: fire the action, clear input, no send. The action
+          // type is the builtin's stored field — narrow via the original
+          // BUILTIN_COMMANDS so we keep the discriminated union.
+          const action = (
+            BUILTIN_COMMANDS.find((c) => c.name === cmdName) as
+              | (typeof BUILTIN_COMMANDS)[number]
+              | undefined
+          )?.action;
+          setText('');
+          setAttachments([]);
+          setMentionState({ open: false, query: '', atIdx: -1, selected: 0 });
+          setSlashState({ open: false, query: '', selected: 0 });
+          if (action === 'show-help') {
+            setHelpOpen(true);
+            return;
+          }
+          if (action) void onSlashAction(action);
+          return;
+        }
+        // Custom command: expand $ARGUMENTS and send as a normal prompt.
+        const expanded = applyCommandArguments(match.body, restArgs);
+        setText('');
+        setAttachments([]);
+        setMentionState({ open: false, query: '', atIdx: -1, selected: 0 });
+        setSlashState({ open: false, query: '', selected: 0 });
+        await onSend(expanded, okPaths.length > 0 ? okPaths : undefined);
+        return;
+      }
+      // Unknown /command: fall through to the literal-prompt path —
+      // matches the Claude CLI's behaviour for typos.
+    }
+
     setText('');
     setAttachments([]);
     setMentionState({ open: false, query: '', atIdx: -1, selected: 0 });
+    setSlashState({ open: false, query: '', selected: 0 });
     await onSend(body, okPaths.length > 0 ? okPaths : undefined);
+  };
+
+  /** Detect `/<word>` at the very start of input. */
+  const refreshSlash = (value: string, caret: number) => {
+    if (!value.startsWith('/')) {
+      setSlashState({ open: false, query: '', selected: 0 });
+      return;
+    }
+    const firstSpace = value.indexOf(' ');
+    const cmdEnd = firstSpace < 0 ? value.length : firstSpace;
+    if (caret > cmdEnd) {
+      // Caret moved past the command word — close picker so it doesn't
+      // hover while the user is typing arguments.
+      setSlashState({ open: false, query: '', selected: 0 });
+      return;
+    }
+    const query = value.slice(1, cmdEnd);
+    if (!/^[A-Za-z0-9_-]*$/.test(query)) {
+      setSlashState({ open: false, query: '', selected: 0 });
+      return;
+    }
+    setSlashState({ open: true, query, selected: 0 });
+  };
+
+  const insertSlash = (name: string) => {
+    // Replace the typed `/<query>` with `/<name> ` so the user can type
+    // arguments straight away. Built-ins without args are still
+    // submittable by hitting Enter immediately.
+    const firstSpace = text.indexOf(' ');
+    const rest = firstSpace < 0 ? '' : text.slice(firstSpace);
+    const next = `/${name}${rest || ' '}`;
+    setText(next);
+    setSlashState({ open: false, query: '', selected: 0 });
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      const pos = next.length;
+      ta.focus();
+      ta.setSelectionRange(pos, pos);
+    });
   };
 
   /** Detect `@<prefix>` at the cursor and open/refresh the picker. */
@@ -410,6 +569,34 @@ function Composer({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashState.open && slashMatches.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashState((s) => ({
+          ...s,
+          selected: Math.min(slashMatches.length - 1, s.selected + 1),
+        }));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashState((s) => ({ ...s, selected: Math.max(0, s.selected - 1) }));
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        insertSlash(slashMatches[slashState.selected].name);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSlashState({ open: false, query: '', selected: 0 });
+        return;
+      }
+      // Note: Enter while the picker is open does NOT pick — it submits.
+      // For a builtin like /clear, the user types `/cl` + Tab to expand
+      // OR `/clear` + Enter; either way submit() routes the action.
+    }
     if (mentionState.open && mentionMatches.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -478,23 +665,68 @@ function Composer({
           onChange={(e) => {
             setText(e.target.value);
             refreshMention(e.target.value, e.target.selectionStart ?? 0);
+            refreshSlash(e.target.value, e.target.selectionStart ?? 0);
           }}
           onKeyDown={onKeyDown}
           onKeyUp={(e) => {
             const target = e.target as HTMLTextAreaElement;
             refreshMention(target.value, target.selectionStart ?? 0);
+            refreshSlash(target.value, target.selectionStart ?? 0);
           }}
           onClick={(e) => {
             const target = e.target as HTMLTextAreaElement;
             refreshMention(target.value, target.selectionStart ?? 0);
+            refreshSlash(target.value, target.selectionStart ?? 0);
           }}
           placeholder={
             mode === 'auto'
-              ? 'Describe a task — Director will plan & auto-spawn… (type @ to reference an agent)'
-              : 'Ask the Director for advice… (type @ to reference an agent)'
+              ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ to reference an agent)'
+              : 'Ask the Director for advice… (/ for commands, @ to reference an agent)'
           }
           rows={3}
         />
+        {slashState.open && slashMatches.length > 0 && (
+          <div className="mention-picker slash-picker">
+            {slashMatches.map((c, i) => (
+              <div
+                key={`${c.scope}:${c.name}`}
+                className={'mention-item' + (i === slashState.selected ? ' on' : '')}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertSlash(c.name);
+                }}
+                title={c.body || c.description}
+              >
+                <span className="m-name">/{c.name}</span>
+                {c.argumentHint && (
+                  <span className="m-role">{c.argumentHint}</span>
+                )}
+                <span
+                  className="m-status"
+                  style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: 320,
+                  }}
+                >
+                  {c.description}
+                </span>
+                <span
+                  className="m-status"
+                  style={{
+                    fontSize: 9,
+                    color: 'var(--muted-2)',
+                    marginLeft: 4,
+                  }}
+                  title={c.source}
+                >
+                  {c.scope}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         {mentionState.open && mentionMatches.length > 0 && (
           <div className="mention-picker">
             {mentionMatches.map((a, i) => (
@@ -543,6 +775,106 @@ function Composer({
           <Icon name="send" size={11} /> {busy ? 'Working…' : 'Send'}
           <span className="kbd">↵</span>
         </button>
+      </div>
+      {helpOpen && (
+        <SlashHelpModal
+          commands={commands}
+          onClose={() => setHelpOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SlashHelpModal({
+  commands,
+  onClose,
+}: {
+  commands: SlashCommand[];
+  onClose: () => void;
+}) {
+  const byScope = {
+    builtin: commands.filter((c) => c.scope === 'builtin'),
+    project: commands.filter((c) => c.scope === 'project'),
+    user: commands.filter((c) => c.scope === 'user'),
+  };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 560, maxHeight: '80vh', overflow: 'auto' }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>Slash commands</b>
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onClose} title="Close">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div className="modal-body" style={{ gap: 14 }}>
+          {(['builtin', 'project', 'user'] as const).map((scope) =>
+            byScope[scope].length === 0 ? null : (
+              <section key={scope}>
+                <h3 className="settings-h" style={{ marginBottom: 6 }}>
+                  {scope === 'builtin'
+                    ? 'Built-in'
+                    : scope === 'project'
+                    ? `Project (.claude/commands/)`
+                    : `User (~/.claude/commands/)`}
+                </h3>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                  }}
+                >
+                  {byScope[scope].map((c) => (
+                    <div
+                      key={c.name}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '120px 1fr',
+                        gap: 10,
+                        alignItems: 'baseline',
+                      }}
+                    >
+                      <span style={{ color: 'var(--accent)' }}>
+                        /{c.name}
+                        {c.argumentHint ? (
+                          <span style={{ color: 'var(--muted)' }}>
+                            {' '}
+                            {c.argumentHint}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span style={{ color: 'var(--text)' }}>
+                        {c.description}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ),
+          )}
+          <p
+            style={{
+              margin: 0,
+              fontSize: 11,
+              color: 'var(--muted)',
+            }}
+          >
+            Project commands shadow user-scoped commands with the same name.
+            Built-in names are reserved. Custom commands support{' '}
+            <code>$ARGUMENTS</code> (everything after the command name) and
+            positional <code>$1</code>/<code>$2</code> placeholders.
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,9 @@
-import { KNOWN_MODELS, MODEL_LABELS } from '../../shared/models';
+import {
+  KNOWN_MODELS,
+  MODEL_LABELS,
+  modelsForProvider,
+} from '../../shared/models';
+import type { Provider } from '../../shared/types';
 
 interface Props {
   value: string;
@@ -7,6 +12,8 @@ interface Props {
   compact?: boolean;
   /** Disable the picker (e.g. while saving). */
   disabled?: boolean;
+  /** Filter the dropdown to one provider's models. Omit to show all. */
+  provider?: Provider;
 }
 
 /**
@@ -20,8 +27,32 @@ export function ModelPicker({
   onChange,
   compact = false,
   disabled,
+  provider,
 }: Props) {
-  const isCustom = !!value && !KNOWN_MODELS.includes(value);
+  const visible = provider ? modelsForProvider(provider) : KNOWN_MODELS;
+
+  // No selectable models (e.g. codex on a ChatGPT plan): render a
+  // read-only label instead of a picker. The runner skips -m so codex
+  // picks the right model server-side for the user's account.
+  if (visible.length === 0) {
+    return (
+      <span
+        className={
+          'text-input settings-select model-picker-managed' +
+          (compact ? ' model-picker-compact' : '')
+        }
+        title={
+          provider === 'codex'
+            ? 'Codex picks the model based on your account. Override via ~/.codex/config.toml if you need to.'
+            : 'No selectable models for this provider'
+        }
+      >
+        managed by {provider ?? 'cli'} config
+      </span>
+    );
+  }
+
+  const isCustom = !!value && !visible.includes(value);
   return (
     <select
       className={
@@ -32,7 +63,7 @@ export function ModelPicker({
       disabled={disabled}
     >
       {isCustom && <option value={value}>{value} (custom)</option>}
-      {KNOWN_MODELS.map((m) => (
+      {visible.map((m) => (
         <option key={m} value={m}>
           {MODEL_LABELS[m] ?? m}
         </option>

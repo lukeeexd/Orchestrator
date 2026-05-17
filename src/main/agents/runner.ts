@@ -11,7 +11,11 @@ import type {
 } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { DEFAULT_EFFORT } from '../../shared/efforts';
-import { resolveModel } from '../../shared/models';
+import {
+  defaultModelForProvider,
+  modelMatchesProvider,
+  resolveModel,
+} from '../../shared/models';
 import { estimateCost } from '../../shared/rates';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';
@@ -20,7 +24,21 @@ import * as director from '../director/runner';
 import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
 import { getProject } from '../projects';
+import { effectiveSkill } from '../skills';
+
+/**
+ * Build the role's effective system prompt: its hardcoded prompt plus
+ * any per-role skill body the project has authored (or the in-app
+ * default). Empty skill content is a no-op.
+ */
+function buildSystemPromptFor(role: AgentRole, projectId: string): string {
+  const base = ROLES[role].systemPrompt;
+  const skill = effectiveSkill(projectId, role).trim();
+  if (!skill) return base;
+  return `${base}\n\n## Project skill\n\n${skill}`;
+}
 import { runClaudeQuery } from '../cli/spawn';
+import { runCodexQuery } from '../cli/codex';
 
 /**
  * Resolve the tool allow-list for an agent: per-project role override
@@ -126,9 +144,21 @@ export async function spawnAgent(
 
   // Cascade per-spawn → settings → role/SDK default for model + effort.
   // Lets users pick both per agent without editing global settings.
+  // Provider-aware: if the project is codex, the fallback uses a codex
+  // model, never the claude-flavoured settings.defaultModel. The
+  // req.model is also validated against the project provider — if
+  // someone managed to spawn with a mismatched id, we ignore it.
   const baseSettings = readSettings();
+  const spawnProvider = getProject(req.projectId)?.provider ?? 'claude';
+  const requestedModel =
+    req.model && modelMatchesProvider(req.model, spawnProvider)
+      ? req.model
+      : undefined;
   const effectiveModel =
-    req.model || baseSettings.defaultModel || role.model;
+    requestedModel ||
+    (spawnProvider === 'claude'
+      ? baseSettings.defaultModel || role.model
+      : defaultModelForProvider(spawnProvider));
   const effectiveEffort: EffortLevel =
     req.effort || baseSettings.defaultEffort || DEFAULT_EFFORT;
   const budget: AgentBudget = {
@@ -204,6 +234,14 @@ export async function forkAgent(
     return {
       ok: false,
       error: 'parent has no SDK session id yet — wait for its first result event',
+    };
+  }
+  const provider = getProject(parent.agent.projectId)?.provider ?? 'claude';
+  if (provider === 'codex') {
+    return {
+      ok: false,
+      error:
+        'fork is not supported for codex projects yet — codex exec exposes JSON resume, but not JSON fork',
     };
   }
 
@@ -313,25 +351,43 @@ ${task}`;
       msg: `Forked from ${entry.agent.forkedFromName ?? 'unknown'} (parent session ${parentSessionId})`,
     });
 
-    const q = runClaudeQuery({
-      cwd: entry.agent.workspace,
-      env,
-      prompt,
-      abortController: controller,
-      resume: parentSessionId,
-      forkSession: true,
-      agent: 'main',
-      agents: {
-        main: {
-          description: `${role.label} for the Orchestrator app`,
-          prompt: role.systemPrompt,
-          tools: effectiveTools,
-          model: resolved.model,
-          effort: effectiveEffort,
-        },
-      },
-      betas: resolved.betas,
-    });
+    const project = getProject(entry.agent.projectId);
+    const provider = project?.provider ?? 'claude';
+
+    const q =
+      provider === 'codex'
+        ? runCodexQuery({
+            cwd: entry.agent.workspace,
+            env,
+            prompt: `[role: ${role.label}]\n${role.systemPrompt}\n\n---\n\n${prompt}`,
+            model: effectiveModel,
+            effort: effectiveEffort,
+            resume: parentSessionId,
+            forkSession: true,
+            abortController: controller,
+          })
+        : runClaudeQuery({
+            cwd: entry.agent.workspace,
+            env,
+            prompt,
+            abortController: controller,
+            resume: parentSessionId,
+            forkSession: true,
+            agent: 'main',
+            agents: {
+              main: {
+                description: `${role.label} for the Orchestrator app`,
+                prompt: buildSystemPromptFor(
+                  entry.agent.role,
+                  entry.agent.projectId,
+                ),
+                tools: effectiveTools,
+                model: resolved.model,
+                effort: effectiveEffort,
+              },
+            },
+            betas: resolved.betas,
+          });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
@@ -355,9 +411,19 @@ async function run(
     // The agent's model + effort were resolved in spawnAgent and saved
     // to the registry. Read from there so we honour per-spawn overrides
     // (and any setAgentModel / setAgentEffort changes that landed between
-    // spawnAgent and this point).
+    // spawnAgent and this point). The fallback respects project provider
+    // and validates the stored model id against it.
     const entry = registry.get(agentId);
-    const effectiveModel = entry?.agent.model || settings.defaultModel || role.model;
+    const runProvider = getProject(req.projectId)?.provider ?? 'claude';
+    const storedAgentModel =
+      entry?.agent.model && modelMatchesProvider(entry.agent.model, runProvider)
+        ? entry.agent.model
+        : undefined;
+    const effectiveModel =
+      storedAgentModel ||
+      (runProvider === 'claude'
+        ? settings.defaultModel || role.model
+        : defaultModelForProvider(runProvider));
     const effectiveEffort: EffortLevel =
       entry?.agent.effort || DEFAULT_EFFORT;
     // Pseudo-ids like `*-1m` resolve to a base model id + a beta header.
@@ -375,24 +441,39 @@ ${attachmentBlock}Task:
 ${req.task}`;
 
     const effectiveTools = resolveTools(req.role, req.projectId);
+    const project = getProject(req.projectId);
+    const provider = project?.provider ?? 'claude';
 
-    const q = runClaudeQuery({
-      cwd: workdir,
-      env,
-      prompt: promptWithContext,
-      abortController: controller,
-      agent: 'main',
-      agents: {
-        main: {
-          description: `${role.label} for the Orchestrator app`,
-          prompt: role.systemPrompt,
-          tools: effectiveTools,
-          model: resolved.model,
-          effort: effectiveEffort,
-        },
-      },
-      betas: resolved.betas,
-    });
+    const q =
+      provider === 'codex'
+        ? runCodexQuery({
+            cwd: workdir,
+            env,
+            // Codex has no inline system-prompt flag — bake the role
+            // prompt into the user prompt as a preamble so the model
+            // still sees its persona instructions.
+            prompt: `[role: ${role.label}]\n${buildSystemPromptFor(req.role, req.projectId)}\n\n---\n\n${promptWithContext}`,
+            model: effectiveModel,
+            effort: effectiveEffort,
+            abortController: controller,
+          })
+        : runClaudeQuery({
+            cwd: workdir,
+            env,
+            prompt: promptWithContext,
+            abortController: controller,
+            agent: 'main',
+            agents: {
+              main: {
+                description: `${role.label} for the Orchestrator app`,
+                prompt: buildSystemPromptFor(req.role, req.projectId),
+                tools: effectiveTools,
+                model: resolved.model,
+                effort: effectiveEffort,
+              },
+            },
+            betas: resolved.betas,
+          });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
@@ -517,27 +598,45 @@ ${body}`;
       }`,
     });
 
-    const q = runClaudeQuery({
-      cwd: entry.agent.workspace,
-      env,
-      prompt,
-      abortController: controller,
-      resume: entry.agent.sessionId,
-      // Pass the agent config explicitly so the resumed turn uses
-      // our chosen model + tools + effort, not whatever the saved
-      // session had.
-      agent: 'main',
-      agents: {
-        main: {
-          description: `${role.label} for the Orchestrator app`,
-          prompt: role.systemPrompt,
-          tools: resolveTools(entry.agent.role, entry.agent.projectId),
-          model: resolved.model,
-          effort: effectiveEffort,
-        },
-      },
-      betas: resolved.betas,
-    });
+    const project = getProject(entry.agent.projectId);
+    const provider = project?.provider ?? 'claude';
+
+    const q =
+      provider === 'codex'
+        ? runCodexQuery({
+            cwd: entry.agent.workspace,
+            env,
+            // Same role-prompt preamble approach as initial spawn.
+            prompt: `[role: ${role.label}]\n${buildSystemPromptFor(entry.agent.role, entry.agent.projectId)}\n\n---\n\n${prompt}`,
+            model: effectiveModel,
+            effort: effectiveEffort,
+            resume: entry.agent.sessionId,
+            abortController: controller,
+          })
+        : runClaudeQuery({
+            cwd: entry.agent.workspace,
+            env,
+            prompt,
+            abortController: controller,
+            resume: entry.agent.sessionId,
+            // Pass the agent config explicitly so the resumed turn uses
+            // our chosen model + tools + effort, not whatever the saved
+            // session had.
+            agent: 'main',
+            agents: {
+              main: {
+                description: `${role.label} for the Orchestrator app`,
+                prompt: buildSystemPromptFor(
+                  entry.agent.role,
+                  entry.agent.projectId,
+                ),
+                tools: resolveTools(entry.agent.role, entry.agent.projectId),
+                model: resolved.model,
+                effort: effectiveEffort,
+              },
+            },
+            betas: resolved.betas,
+          });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {

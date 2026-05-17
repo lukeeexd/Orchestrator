@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AgentRole, EffortLevel, Project } from '../../shared/types';
+import type {
+  AgentRole,
+  EffortLevel,
+  Project,
+  Provider,
+} from '../../shared/types';
 
 interface UseProjectsResult {
   projects: Project[];
   activeId: string | null;
   setActive: (id: string) => Promise<void>;
-  create: (name: string, workspace: string) => Promise<Project>;
+  create: (
+    name: string,
+    workspace: string,
+    provider?: Provider,
+  ) => Promise<Project>;
   rename: (id: string, name: string) => Promise<void>;
   setWorkspace: (id: string, workspace: string) => Promise<void>;
   setDirectorModel: (id: string, model: string) => Promise<void>;
@@ -48,8 +57,8 @@ export function useProjects(): UseProjectsResult {
   );
 
   const create = useCallback(
-    async (name: string, workspace: string) => {
-      const p = await window.api.createProject(name, workspace);
+    async (name: string, workspace: string, provider?: Provider) => {
+      const p = await window.api.createProject(name, workspace, provider);
       await reload();
       return p;
     },

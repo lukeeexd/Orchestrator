@@ -105,11 +105,12 @@ const api: OrchestratorApi = {
   // Projects
   listProjects: () =>
     ipcRenderer.invoke(IpcChannels.ProjectList) as Promise<Project[]>,
-  createProject: (name, workspace) =>
+  createProject: (name, workspace, provider) =>
     ipcRenderer.invoke(
       IpcChannels.ProjectCreate,
       name,
       workspace,
+      provider,
     ) as Promise<Project>,
   setActiveProject: (id) =>
     ipcRenderer.invoke(IpcChannels.ProjectSetActive, id) as Promise<{
@@ -156,6 +157,13 @@ const api: OrchestratorApi = {
       available: boolean;
       version: string | null;
     }>,
+  getCliStatus: (provider) =>
+    ipcRenderer.invoke(
+      IpcChannels.AppCliStatusByProvider,
+      provider,
+    ) as Promise<{ available: boolean; version: string | null }>,
+  openClaudeUsage: () =>
+    ipcRenderer.invoke(IpcChannels.AppOpenUsage) as Promise<{ ok: boolean }>,
   getSpendSummary: () =>
     ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
       import('../shared/types').SpendSummary
@@ -164,6 +172,25 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.HistoryList) as Promise<
       import('../shared/types').HistoryRow[]
     >,
+  listSlashCommands: (projectId) =>
+    ipcRenderer.invoke(IpcChannels.CommandsList, projectId) as Promise<
+      import('../shared/commands').SlashCommand[]
+    >,
+  listSkills: (projectId) =>
+    ipcRenderer.invoke(IpcChannels.SkillsList, projectId) as Promise<
+      import('../shared/ipc').SkillEntry[]
+    >,
+  setSkill: (projectId, role, content) =>
+    ipcRenderer.invoke(
+      IpcChannels.SkillsSet,
+      projectId,
+      role,
+      content,
+    ) as Promise<{
+      ok: boolean;
+      entry?: import('../shared/ipc').SkillEntry;
+      error?: string;
+    }>,
 
   restartToUpdate: () =>
     ipcRenderer.invoke(IpcChannels.UpdaterRestart) as Promise<void>,

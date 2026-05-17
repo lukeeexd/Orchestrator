@@ -250,11 +250,18 @@ async function* parseStdout(
  * success or null if the CLI isn't on PATH or fails to launch. Used to
  * surface a helpful error before any spawn attempt.
  */
-export async function probeClaudeCli(
+/**
+ * Probe `<bin> --version` once. Returns the version string on success
+ * or null if the binary isn't on PATH or fails to launch. Used to
+ * surface a helpful error before any spawn attempt. Same shape for
+ * both claude and codex probes — caller picks the bin name.
+ */
+export async function probeCli(
+  bin: string,
   env: NodeJS.ProcessEnv,
 ): Promise<string | null> {
   return new Promise((resolve) => {
-    const proc = spawn('claude', ['--version'], {
+    const proc = spawn(bin, ['--version'], {
       env,
       shell: false,
       windowsHide: true,
@@ -267,4 +274,11 @@ export async function probeClaudeCli(
       else resolve(null);
     });
   });
+}
+
+/** Backwards-compatible wrapper kept for the existing call site. */
+export async function probeClaudeCli(
+  env: NodeJS.ProcessEnv,
+): Promise<string | null> {
+  return probeCli('claude', env);
 }

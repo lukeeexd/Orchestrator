@@ -42,8 +42,13 @@ export const IpcChannels = {
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
   AppCliStatus: 'app:cliStatus',
+  AppCliStatusByProvider: 'app:cliStatusByProvider',
+  AppOpenUsage: 'app:openUsage',
   SpendGet: 'spend:get',
   HistoryList: 'history:list',
+  CommandsList: 'commands:list',
+  SkillsList: 'skills:list',
+  SkillsSet: 'skills:set',
   UpdaterRestart: 'updater:restart',
   UpdaterEventDownloaded: 'updater:event:update-downloaded',
   // Renderer-bound streaming events:
@@ -137,6 +142,13 @@ export interface ProjectActiveChangedPayload {
   projectId: string;
 }
 
+export interface SkillEntry {
+  key: import('./types').SkillKey;
+  content: string;
+  hasFile: boolean;
+  path: string | null;
+}
+
 export interface AcceptPlanRequest {
   projectId: string;
   rows: PlanRow[];
@@ -185,7 +197,11 @@ export interface OrchestratorApi {
   wipeDirector: (projectId: string) => Promise<{ ok: true }>;
   // Projects
   listProjects: () => Promise<Project[]>;
-  createProject: (name: string, workspace: string) => Promise<Project>;
+  createProject: (
+    name: string,
+    workspace: string,
+    provider?: import('./types').Provider,
+  ) => Promise<Project>;
   setActiveProject: (id: string) => Promise<{ ok: true }>;
   renameProject: (id: string, name: string) => Promise<{ ok: true }>;
   setProjectDirectorModel: (id: string, model: string) => Promise<{ ok: true }>;
@@ -205,8 +221,22 @@ export interface OrchestratorApi {
     available: boolean;
     version: string | null;
   }>;
+  /** Status for a specific provider's CLI (claude / codex). */
+  getCliStatus: (
+    provider: import('./types').Provider,
+  ) => Promise<{ available: boolean; version: string | null }>;
+  openClaudeUsage: () => Promise<{ ok: boolean }>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   listHistory: () => Promise<import('./types').HistoryRow[]>;
+  listSlashCommands: (
+    projectId: string | null,
+  ) => Promise<import('./commands').SlashCommand[]>;
+  listSkills: (projectId: string) => Promise<SkillEntry[]>;
+  setSkill: (
+    projectId: string,
+    key: import('./types').SkillKey,
+    content: string,
+  ) => Promise<{ ok: boolean; entry?: SkillEntry; error?: string }>;
   restartToUpdate: () => Promise<void>;
   onUpdateDownloaded: (
     cb: (p: { version: string; notes: string }) => void,

@@ -52,6 +52,10 @@ export function StatusBar({ agentCount }: Props) {
         <span className="k">Ctrl+.</span>
         <span className="v">Abort selected</span>
       </div>
+      <div className="seg">
+        <span className="k">Ctrl+B</span>
+        <span className="v">Toggle inspector</span>
+      </div>
     </div>
   );
 }

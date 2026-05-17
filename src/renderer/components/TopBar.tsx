@@ -1,11 +1,13 @@
-import { Icon } from './Icon';
+export type ViewMode = 'compact' | 'stream';
 
 interface Props {
   workspace: string;
   model: string;
   totalTokens: number;
   totalCost: number;
+  viewMode: ViewMode;
   onChangeWorkspace: () => void;
+  onViewModeChange: (next: ViewMode) => void;
 }
 
 function formatTokens(n: number): string {
@@ -19,7 +21,9 @@ export function TopBar({
   model,
   totalTokens,
   totalCost,
+  viewMode,
   onChangeWorkspace,
+  onViewModeChange,
 }: Props) {
   return (
     <div className="topbar">
@@ -37,6 +41,24 @@ export function TopBar({
       </div>
 
       <div className="tb-spacer" />
+
+      <div
+        className="view-toggle"
+        title="Compact: chat bubbles + agent tiles. Stream: terminal-style live log for Director and every agent."
+      >
+        <button
+          className={viewMode === 'compact' ? 'on' : ''}
+          onClick={() => onViewModeChange('compact')}
+        >
+          compact
+        </button>
+        <button
+          className={viewMode === 'stream' ? 'on' : ''}
+          onClick={() => onViewModeChange('stream')}
+        >
+          stream
+        </button>
+      </div>
 
       <div className="tb-pill" title="Total tokens across all agents this session">
         <span className="label">tokens</span>

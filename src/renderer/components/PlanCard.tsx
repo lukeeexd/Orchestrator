@@ -7,6 +7,7 @@ const ROLE_TINT: Record<AgentRole, string> = {
   coder: '#c084fc',
   qa: '#fbbf24',
   devops: '#f97316',
+  security: '#f87171',
 };
 
 interface Props {

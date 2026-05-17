@@ -188,6 +188,15 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE agents ADD COLUMN model_usage TEXT;`);
     },
   },
+  {
+    version: 12,
+    up: (db) => {
+      // Which CLI backend a project runs against. NULL → 'claude' at
+      // runtime so existing projects stay on the original runtime
+      // without manual migration.
+      db.exec(`ALTER TABLE projects ADD COLUMN provider TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

@@ -8,9 +8,15 @@ import type {
   PlanRow,
 } from '../../shared/types';
 import { DEFAULT_EFFORT } from '../../shared/efforts';
-import { resolveModel } from '../../shared/models';
+import {
+  defaultModelForProvider,
+  modelMatchesProvider,
+  resolveModel,
+} from '../../shared/models';
 import { runClaudeQuery } from '../cli/spawn';
+import { runCodexQuery } from '../cli/codex';
 import { readSettings } from '../settings';
+import { effectiveSkill } from '../skills';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractDirectives } from './parse';
 import { nowTs } from '../agents/classifier';
@@ -18,6 +24,17 @@ import * as persistence from '../persistence';
 import { inlineAttachments } from '../attachments';
 import * as registry from '../agents/registry';
 import { getProject } from '../projects';
+
+/**
+ * Build the Director's effective system prompt: the hardcoded base
+ * plus any per-project Director skill the user has authored. Empty
+ * skill is a no-op.
+ */
+function buildDirectorSystemPrompt(projectId: string): string {
+  const skill = effectiveSkill(projectId, 'director').trim();
+  if (!skill) return DIRECTOR_SYSTEM_PROMPT;
+  return `${DIRECTOR_SYSTEM_PROMPT}\n\n## Project guidance\n\n${skill}`;
+}
 
 export interface DirectorSinks {
   onMessage: (projectId: string, msg: DirectorMessage) => void;
@@ -239,13 +256,29 @@ class DirectorSession {
 
     // Per-project Director model + effort win over the global Director
     // defaults, which are separate from the agent defaults — the Director
-    // gets a heavier model out of the box.
+    // gets a heavier model out of the box. The fallback respects the
+    // project's provider so a codex project doesn't end up trying to
+    // spawn `codex exec -m claude-opus-4-7-1m` (which is what happened
+    // before this branch was provider-aware — silent empty response).
     const project = getProject(this.projectId);
+    const provider = project?.provider ?? 'claude';
+    // The persisted directorModel might be stale (e.g. left over from
+    // before the project was a codex project, or hand-edited). Validate
+    // it matches the project provider — if not, fall through to the
+    // provider's default. Without this, `codex exec -m claude-opus-4-7-1m`
+    // returns an empty agent_message and the Director chat shows
+    // "(empty response)" with no clue why.
+    const persistedDirector =
+      project?.directorModel && modelMatchesProvider(project.directorModel, provider)
+        ? project.directorModel
+        : undefined;
     const directorModel =
-      project?.directorModel ||
-      settings.defaultDirectorModel ||
-      settings.defaultModel ||
-      'claude-opus-4-7-1m';
+      persistedDirector ||
+      (provider === 'claude'
+        ? settings.defaultDirectorModel ||
+          settings.defaultModel ||
+          'claude-opus-4-7-1m'
+        : defaultModelForProvider(provider));
     const directorEffort: EffortLevel =
       project?.directorEffort ||
       settings.defaultDirectorEffort ||
@@ -259,26 +292,51 @@ class DirectorSession {
           ? inlineAttachments(attachments)
           : '';
       const agentBlock = this.buildFleetBlock();
-      const q = runClaudeQuery({
-        cwd: app.getPath('userData'),
-        env,
-        prompt: `[mode: ${mode}]\n${agentBlock}${attachmentBlock}${promptBody}`,
-        abortController: this.controller,
-        agent: 'director',
-        agents: {
-          director: {
-            description: 'Orchestrator director — plans and supervises agents.',
-            prompt: DIRECTOR_SYSTEM_PROMPT,
-            tools: [] as string[],
-            model: resolved.model,
-            effort: directorEffort,
-          },
-        },
-        ...(this.sessionId ? { resume: this.sessionId } : {}),
-        betas: resolved.betas,
-      });
+      const fullPrompt = `[mode: ${mode}]\n${agentBlock}${attachmentBlock}${promptBody}`;
+
+      const q =
+        provider === 'codex'
+          ? runCodexQuery({
+              cwd: app.getPath('userData'),
+              env,
+              // Codex has no inline system-prompt knob; prepend the
+              // Director instructions as a preamble. End-of-prompt
+              // reminder added too because Codex tends to skip the
+              // orchestrator-plan block for "trivial" tasks and just
+              // describe the plan in prose, which leaves our parser
+              // with nothing to spawn from.
+              prompt: `[director-role]\n${buildDirectorSystemPrompt(this.projectId)}\n\n---\n\n${fullPrompt}\n\n---\n\nREMINDER (auto mode): Always emit the \`orchestrator-plan\` fenced JSON block, even for a single-agent task. Do not describe the plan in prose only — our parser needs the block to auto-spawn anything. If the task is trivial, emit a one-row plan.`,
+              model: directorModel,
+              effort: directorEffort,
+              // The Director only plans — it never edits files. read-only
+              // sandbox avoids codex trying to set up workspace-write
+              // mounts in app.getPath('userData') which isn't a real
+              // project dir (and codex exits 1 trying).
+              sandbox: 'read-only',
+              resume: this.sessionId ?? undefined,
+              abortController: this.controller,
+            })
+          : runClaudeQuery({
+              cwd: app.getPath('userData'),
+              env,
+              prompt: fullPrompt,
+              abortController: this.controller,
+              agent: 'director',
+              agents: {
+                director: {
+                  description: 'Orchestrator director — plans and supervises agents.',
+                  prompt: buildDirectorSystemPrompt(this.projectId),
+                  tools: [] as string[],
+                  model: resolved.model,
+                  effort: directorEffort,
+                },
+              },
+              ...(this.sessionId ? { resume: this.sessionId } : {}),
+              betas: resolved.betas,
+            });
 
       let bodyBuf = '';
+      let runtimeError: string | null = null;
       for await (const event of q) {
         if (this.controller.signal.aborted) break;
         const ev = event as { type: string; [k: string]: unknown };
@@ -294,17 +352,33 @@ class DirectorSession {
             }
           }
         } else if (ev.type === 'result') {
-          const result = ev as unknown as { session_id?: string };
+          const result = ev as unknown as {
+            session_id?: string;
+            subtype?: string;
+            is_error?: boolean;
+            errors?: string[];
+          };
           if (result.session_id) {
             this.sessionId = result.session_id;
             persistence.saveDirectorSessionId(this.projectId, result.session_id);
+          }
+          // Surface non-success result events. Without this, codex's
+          // process_error / spawn_error / parse_error events were silently
+          // discarded and the chat just showed "(empty response)" with no
+          // indication of what went wrong.
+          if (result.is_error || (result.subtype && result.subtype !== 'success')) {
+            const reason = (result.errors ?? [result.subtype ?? 'unknown']).join(' · ');
+            runtimeError = reason;
           }
         }
       }
 
       const { text, plan, redirect } = extractDirectives(bodyBuf);
+      const fallbackBody = runtimeError
+        ? `Error: ${runtimeError}`
+        : '(empty response)';
       this.patchMessage(directorMessage.id, {
-        body: text || (plan || redirect ? '' : '(empty response)'),
+        body: text || (plan || redirect ? '' : fallbackBody),
         plan: plan ?? undefined,
         redirect: redirect ?? undefined,
         live: false,

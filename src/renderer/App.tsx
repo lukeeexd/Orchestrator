@@ -5,14 +5,16 @@ import type {
   EffortLevel,
   PlanRow,
   Project,
+  Provider,
 } from '../shared/types';
 import { DEFAULT_EFFORT } from '../shared/efforts';
+import { defaultModelForProvider, modelMatchesProvider } from '../shared/models';
 import { useLocalStorageState } from './hooks/useLocalStorageState';
 import { useAgents } from './hooks/useAgents';
 import { useDirector } from './hooks/useDirector';
 import { useSettings } from './hooks/useSettings';
 import { useProjects } from './hooks/useProjects';
-import { TopBar } from './components/TopBar';
+import { TopBar, type ViewMode } from './components/TopBar';
 import { LeftRail, type RailScreen } from './components/LeftRail';
 import { StatusBar } from './components/StatusBar';
 import { DirectorPane } from './components/DirectorPane';
@@ -25,6 +27,7 @@ import { ToolsScreen } from './components/ToolsScreen';
 import { SpendScreen } from './components/SpendScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { CliMissingGate } from './components/CliMissingGate';
+import type { BuiltinAction } from '../shared/builtinCommands';
 import {
   ProjectTabs,
   NewProjectForm,
@@ -53,17 +56,38 @@ export function App() {
     'orchestrator.directorMode',
     'auto',
   );
+  const [viewMode, setViewMode] = useLocalStorageState<ViewMode>(
+    'orchestrator.viewMode',
+    'compact',
+  );
+  const [drawerCollapsed, setDrawerCollapsed] = useLocalStorageState<boolean>(
+    'orchestrator.drawerCollapsed',
+    false,
+  );
   const [showNewProject, setShowNewProject] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [agentCountByProject, setAgentCountByProject] = useState<
     Record<string, number>
   >({});
-  // Whether the claude CLI is available on PATH. `null` while we're still
-  // probing for the first time; `false` shows the blocking install gate.
-  const [cliAvailable, setCliAvailable] = useState<boolean | null>(null);
+  // Whether each provider's CLI is on PATH. `null` while we're still
+  // probing for the first time. We check both at startup so the gate
+  // can be provider-aware — a claude-only user with no codex CLI isn't
+  // blocked unless they're sitting on a codex project.
+  const [cliStatus, setCliStatus] = useState<Record<Provider, boolean> | null>(
+    null,
+  );
 
   useEffect(() => {
-    void window.api.getClaudeCliStatus().then((s) => setCliAvailable(s.available));
+    void (async () => {
+      const [claudeStatus, codexStatus] = await Promise.all([
+        window.api.getCliStatus('claude'),
+        window.api.getCliStatus('codex'),
+      ]);
+      setCliStatus({
+        claude: claudeStatus.available,
+        codex: codexStatus.available,
+      });
+    })();
   }, []);
 
   const { settings } = useSettings();
@@ -81,10 +105,29 @@ export function App() {
   const activeProject: Project | null =
     projects.find((p) => p.id === activeProjectId) ?? null;
   const workspace = activeProject?.workspace ?? '';
-  const fallbackModel = settings?.defaultModel ?? 'claude-sonnet-4-6';
+  // Default chain. Falls through to a provider-appropriate default so a
+  // codex project doesn't silently get the global claude default
+  // (claude-opus-4-7-1m), which codex would reject as an unknown model.
+  const activeProvider = activeProject?.provider ?? 'claude';
+  const providerDefaultModel = defaultModelForProvider(activeProvider);
+  const fallbackModel =
+    activeProvider === 'claude'
+      ? settings?.defaultModel ?? providerDefaultModel
+      : providerDefaultModel;
   const directorFallbackModel =
-    settings?.defaultDirectorModel || fallbackModel;
-  const directorModel = activeProject?.directorModel || directorFallbackModel;
+    activeProvider === 'claude'
+      ? settings?.defaultDirectorModel || fallbackModel
+      : providerDefaultModel;
+  // If the stored directorModel doesn't match the project's provider
+  // (e.g. legacy value or a project that was created codex but acquired
+  // a claude model via picker before this fix landed), fall through to
+  // the provider-appropriate default.
+  const persistedDirector =
+    activeProject?.directorModel &&
+    modelMatchesProvider(activeProject.directorModel, activeProvider)
+      ? activeProject.directorModel
+      : undefined;
+  const directorModel = persistedDirector || directorFallbackModel;
   const fallbackEffort: EffortLevel = settings?.defaultEffort ?? DEFAULT_EFFORT;
   const directorFallbackEffort: EffortLevel =
     settings?.defaultDirectorEffort ?? fallbackEffort;
@@ -93,8 +136,9 @@ export function App() {
   // Spawn-form pre-fill stays on the agent defaults — we don't want a
   // 1M-context Opus Director to silently pre-select Opus for every new
   // worker the user spawns by hand. If the user pinned a project-level
-  // Director model/effort, we honour that intent and pre-fill with it.
-  const spawnDefaultModel = activeProject?.directorModel || fallbackModel;
+  // Director model/effort, we honour that intent and pre-fill with it
+  // (when it matches the provider; otherwise fall through).
+  const spawnDefaultModel = persistedDirector || fallbackModel;
   const spawnDefaultEffort: EffortLevel =
     activeProject?.directorEffort || fallbackEffort;
 
@@ -130,7 +174,7 @@ export function App() {
   }, [projects]);
 
   useEffect(() => {
-    const offAgent = window.api.onAgent(({ projectId, agent }) => {
+    const offAgent = window.api.onAgent(({ projectId }) => {
       setAgentCountByProject((prev) => {
         // Recompute from scratch by polling the registry would be expensive;
         // approximate by bumping/decrementing based on the running flag.
@@ -254,7 +298,6 @@ export function App() {
         }
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, mode, activeProjectId, agents]);
 
   useEffect(() => {
@@ -271,11 +314,14 @@ export function App() {
       } else if (e.key === '.' && !typing) {
         e.preventDefault();
         if (selectedId) void window.api.abortAgent(selectedId);
+      } else if ((e.key === 'b' || e.key === 'B') && !typing) {
+        e.preventDefault();
+        setDrawerCollapsed(!drawerCollapsed);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId]);
+  }, [selectedId, drawerCollapsed, setDrawerCollapsed]);
 
   const isHome = active === 'agents';
 
@@ -286,11 +332,13 @@ export function App() {
         model={settings?.defaultModel ?? 'claude-sonnet-4-6'}
         totalTokens={totalTokens}
         totalCost={totalCost}
+        viewMode={viewMode}
         onChangeWorkspace={async () => {
           if (!activeProjectId) return;
           const { path } = await window.api.pickWorkspace();
           if (path) await setProjectWorkspace(activeProjectId, path);
         }}
+        onViewModeChange={setViewMode}
       />
       <ProjectTabs
         projects={projects}
@@ -330,6 +378,41 @@ export function App() {
                 if (activeProjectId)
                   await window.api.wipeDirector(activeProjectId);
               }}
+              viewMode={viewMode}
+              provider={activeProject?.provider ?? 'claude'}
+              projectId={activeProjectId}
+              onSlashAction={async (action: BuiltinAction) => {
+                switch (action) {
+                  case 'wipe-director':
+                    if (activeProjectId)
+                      await window.api.wipeDirector(activeProjectId);
+                    break;
+                  case 'open-usage':
+                    await window.api.openClaudeUsage();
+                    break;
+                  case 'go-agents':
+                    setActive('agents');
+                    break;
+                  case 'go-spend':
+                    setActive('cost');
+                    break;
+                  case 'go-history':
+                    setActive('history');
+                    break;
+                  case 'go-settings':
+                    setActive('settings');
+                    break;
+                  case 'go-tools':
+                    setActive('tools');
+                    break;
+                  case 'go-templates':
+                    setActive('templates');
+                    break;
+                  case 'show-help':
+                    // Handled locally inside the Composer (opens modal).
+                    break;
+                }
+              }}
             />
             <ResizeHandle
               value={dirW}
@@ -347,21 +430,28 @@ export function App() {
               defaultModel={spawnDefaultModel}
               defaultEffort={spawnDefaultEffort}
               spawning={spawning}
+              viewMode={viewMode}
+              provider={activeProject?.provider ?? 'claude'}
               setSpawning={setSpawning}
               onSelect={setSelectedId}
               onToggle={toggle}
             />
-            <ResizeHandle
-              value={drawerW}
-              onChange={setDrawerW}
-              min={340}
-              max={680}
-              edge="right"
-            />
+            {!drawerCollapsed && (
+              <ResizeHandle
+                value={drawerW}
+                onChange={setDrawerW}
+                min={340}
+                max={680}
+                edge="right"
+              />
+            )}
             <Drawer
               width={drawerW}
               agent={selectedAgent}
+              collapsed={drawerCollapsed}
+              provider={activeProject?.provider ?? 'claude'}
               onAbort={(id) => void window.api.abortAgent(id)}
+              onToggleCollapsed={() => setDrawerCollapsed(!drawerCollapsed)}
             />
           </>
         ) : active === 'settings' ? (
@@ -403,8 +493,8 @@ export function App() {
 
       {showNewProject && (
         <NewProjectForm
-          onCreate={async (name, ws) => {
-            const p = await createProject(name, ws);
+          onCreate={async (name, ws, provider) => {
+            const p = await createProject(name, ws, provider);
             await setActiveProject(p.id);
             setShowNewProject(false);
           }}
@@ -434,8 +524,15 @@ export function App() {
             />
           );
         })()}
-      {cliAvailable === false && (
-        <CliMissingGate onResolved={() => setCliAvailable(true)} />
+      {cliStatus && !cliStatus[activeProvider] && (
+        <CliMissingGate
+          provider={activeProvider}
+          onResolved={() =>
+            setCliStatus((prev) =>
+              prev ? { ...prev, [activeProvider]: true } : prev,
+            )
+          }
+        />
       )}
     </div>
   );

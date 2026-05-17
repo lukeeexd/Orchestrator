@@ -11,13 +11,16 @@ import {
 import type {
   Agent,
   DirectorMessage,
+  EffortLevel,
   Project,
   SpawnAgentRequest,
 } from '../shared/types';
 import { readSettings, writeSettings, settingsFilePath } from './settings';
-import { getClaudeCliStatus } from './cli/status';
+import { getClaudeCliStatus, getCliStatus } from './cli/status';
 import { getSpendSummary } from './spend';
 import { listHistory } from './history';
+import { listSlashCommands } from './commands';
+import { listSkills, writeSkill } from './skills';
 import { quitAndInstallUpdate } from './updater';
 import {
   spawnAgent,
@@ -43,7 +46,6 @@ import {
   setProjectWorkspace,
 } from './projects';
 import { isEffortLevel } from '../shared/efforts';
-import type { EffortLevel } from '../shared/types';
 
 const startedAt = Date.now();
 
@@ -81,6 +83,29 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IpcChannels.AppCliStatusByProvider,
+    (
+      _event,
+      provider: import('../shared/types').Provider,
+    ): { available: boolean; version: string | null } => getCliStatus(provider),
+  );
+
+  ipcMain.handle(
+    IpcChannels.AppOpenUsage,
+    async (): Promise<{ ok: boolean }> => {
+      // Hardcoded URL on the main side — preload doesn't accept a URL arg
+      // so the renderer can't redirect this anywhere else (e.g. to a
+      // phishing lookalike).
+      try {
+        await shell.openExternal('https://claude.ai/settings/usage');
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
+    },
+  );
+
+  ipcMain.handle(
     IpcChannels.SpendGet,
     (): import('../shared/types').SpendSummary => getSpendSummary(),
   );
@@ -88,6 +113,38 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IpcChannels.HistoryList,
     (): import('../shared/types').HistoryRow[] => listHistory(),
+  );
+
+  ipcMain.handle(
+    IpcChannels.CommandsList,
+    (
+      _event,
+      projectId: string | null,
+    ): import('../shared/commands').SlashCommand[] =>
+      listSlashCommands(projectId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.SkillsList,
+    (_event, projectId: string): import('../shared/ipc').SkillEntry[] =>
+      listSkills(projectId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.SkillsSet,
+    (
+      _event,
+      projectId: string,
+      key: import('../shared/types').SkillKey,
+      content: string,
+    ): { ok: boolean; entry?: import('../shared/ipc').SkillEntry; error?: string } => {
+      try {
+        const entry = writeSkill(projectId, key, content);
+        return { ok: true, entry };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
   );
 
   ipcMain.handle(IpcChannels.UpdaterRestart, (): void => {
@@ -118,8 +175,12 @@ export function registerIpcHandlers(): void {
   );
   ipcMain.handle(
     IpcChannels.ProjectCreate,
-    (_event, name: string, workspace: string): Project =>
-      createProject(name, workspace),
+    (
+      _event,
+      name: string,
+      workspace: string,
+      provider?: import('../shared/types').Provider,
+    ): Project => createProject(name, workspace, provider ?? 'claude'),
   );
   ipcMain.handle(
     IpcChannels.ProjectSetActive,
@@ -223,7 +284,18 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IpcChannels.AgentAbort,
-    (_event, id: string): { ok: boolean } => ({ ok: registry.abort(id) }),
+    (_event, id: string): { ok: boolean } => {
+      const ok = registry.abort(id);
+      if (ok) {
+        const patch: Partial<Agent> = {
+          status: 'aborted',
+          statusLabel: 'Aborted',
+        };
+        registry.patch(id, patch);
+        agentSinks.onPatch(id, patch);
+      }
+      return { ok };
+    },
   );
 
   ipcMain.handle(

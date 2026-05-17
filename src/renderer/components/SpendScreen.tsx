@@ -14,6 +14,7 @@ const ROLE_TINT: Record<AgentRole, string> = {
   coder: '#c084fc',
   qa: '#fbbf24',
   devops: '#f97316',
+  security: '#f87171',
 };
 
 const STATUS_TINT: Record<string, string> = {
@@ -83,6 +84,13 @@ export function SpendScreen() {
           <b>Spend</b>
         </span>
         <span className="spacer" />
+        <button
+          className="tb-btn"
+          onClick={() => void window.api.openClaudeUsage()}
+          title="Open claude.ai/settings/usage in your browser for Anthropic's official rate-limit numbers"
+        >
+          View official usage ↗
+        </button>
         <button
           className="tb-btn"
           onClick={() => void load()}

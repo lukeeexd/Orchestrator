@@ -1,5 +1,10 @@
 import { useState } from 'react';
-import type { Agent, AgentRole, EffortLevel } from '../../shared/types';
+import type {
+  Agent,
+  AgentRole,
+  EffortLevel,
+  Provider,
+} from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { Icon } from './Icon';
 import { LogLineRow } from './LogLineRow';
@@ -12,6 +17,7 @@ const ROLE_TINT: Record<AgentRole, string> = {
   coder: '#c084fc',
   qa: '#fbbf24',
   devops: '#f97316',
+  security: '#f87171',
 };
 
 const CONTEXT_CAP_DEFAULT = 200_000;
@@ -29,18 +35,54 @@ function formatCap(cap: number): string {
 
 type TabId = 'logs' | 'tools' | 'memory' | 'context' | 'config';
 
+const COLLAPSED_WIDTH = 36;
+
 interface Props {
   width: number;
   agent: Agent | null;
+  collapsed: boolean;
+  provider: Provider;
   onAbort: (id: string) => void;
+  onToggleCollapsed: () => void;
 }
 
-export function Drawer({ width, agent, onAbort }: Props) {
+export function Drawer({
+  width,
+  agent,
+  collapsed,
+  provider,
+  onAbort,
+  onToggleCollapsed,
+}: Props) {
   const [tab, setTab] = useState<TabId>('logs');
+
+  // Collapsed: thin vertical strip with an expand button. Stays present
+  // (rather than disappearing entirely) so the affordance to bring the
+  // drawer back is always visible, and the expand state survives the
+  // user clicking around different agents.
+  if (collapsed) {
+    return (
+      <div className="drawer drawer-collapsed" style={{ width: COLLAPSED_WIDTH }}>
+        <button
+          className="drawer-collapse-btn"
+          onClick={onToggleCollapsed}
+          title="Expand inspector"
+        >
+          <Icon name="chevron" size={11} />
+        </button>
+        {agent && (
+          <span className="drawer-collapsed-name" title={`${agent.name} selected`}>
+            {agent.name}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   if (!agent) {
     return (
       <div className="drawer" style={{ width }}>
+        <DrawerCollapseBar onToggle={onToggleCollapsed} />
         <div className="empty" style={{ height: '100%' }}>
           <div className="empty-glyph">
             <Icon name="agents" size={24} color="var(--muted)" stroke={1.2} />
@@ -61,7 +103,8 @@ export function Drawer({ width, agent, onAbort }: Props) {
 
   return (
     <div className="drawer" style={{ width }}>
-      <Header agent={agent} onAbort={() => onAbort(agent.id)} />
+      <DrawerCollapseBar onToggle={onToggleCollapsed} />
+      <Header agent={agent} provider={provider} onAbort={() => onAbort(agent.id)} />
 
       <div className="tabs">
         <TabHead id="logs" label="Logs" count={agent.log.length} active={tab} onSelect={setTab} />
@@ -76,19 +119,45 @@ export function Drawer({ width, agent, onAbort }: Props) {
         {tab === 'tools' && <ToolsTab agent={agent} />}
         {tab === 'memory' && <MemoryTab />}
         {tab === 'context' && <ContextTab agent={agent} />}
-        {tab === 'config' && <ConfigTab agent={agent} />}
+        {tab === 'config' && <ConfigTab agent={agent} provider={provider} />}
       </div>
     </div>
   );
 }
 
-function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
+function DrawerCollapseBar({ onToggle }: { onToggle: () => void }) {
+  return (
+    <div className="drawer-collapse-bar">
+      <button
+        className="drawer-collapse-btn"
+        onClick={onToggle}
+        title="Collapse inspector"
+      >
+        <Icon name="chevron-down" size={11} />
+      </button>
+    </div>
+  );
+}
+
+function Header({
+  agent,
+  provider,
+  onAbort,
+}: {
+  agent: Agent;
+  provider: Provider;
+  onAbort: () => void;
+}) {
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
   const canRedirect = !isRunning && !!agent.sessionId;
   // Fork can happen any time the parent has produced a session id — even
   // mid-flight. The fork is a separate session and doesn't disturb the
-  // parent's run, so we don't gate on isRunning.
-  const canFork = !!agent.sessionId;
+  // parent's run, so we don't gate on isRunning. Codex's `fork` is a
+  // TUI-only subcommand (no --json / no -p), so we can't drive it from
+  // a subprocess — fork stays disabled for codex agents until either
+  // codex adds a non-interactive fork or we build one ourselves on top
+  // of `codex exec resume`.
+  const canFork = !!agent.sessionId && provider !== 'codex';
   const [redirectOpen, setRedirectOpen] = useState(false);
   const [forkOpen, setForkOpen] = useState(false);
 
@@ -143,7 +212,9 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
           disabled={!canFork}
           onClick={() => setForkOpen((v) => !v)}
           title={
-            !agent.sessionId
+            provider === 'codex'
+              ? "Fork isn't available on codex agents — `codex fork` is a TUI-only subcommand with no --json output, so we can't drive it from a subprocess yet."
+              : !agent.sessionId
               ? 'No session captured yet (no result event)'
               : 'Branch a new agent off this one — parent stays intact'
           }
@@ -164,6 +235,7 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
           agentId={agent.id}
           currentModel={agent.model}
           currentEffort={agent.effort}
+          provider={provider}
           onClose={() => setRedirectOpen(false)}
         />
       )}
@@ -172,6 +244,7 @@ function Header({ agent, onAbort }: { agent: Agent; onAbort: () => void }) {
           parentAgentId={agent.id}
           currentModel={agent.model}
           currentEffort={agent.effort}
+          provider={provider}
           onClose={() => setForkOpen(false)}
         />
       )}
@@ -183,11 +256,13 @@ function ForkForm({
   parentAgentId,
   currentModel,
   currentEffort,
+  provider,
   onClose,
 }: {
   parentAgentId: string;
   currentModel: string;
   currentEffort: EffortLevel;
+  provider: Provider;
   onClose: () => void;
 }) {
   const [task, setTask] = useState('');
@@ -224,12 +299,19 @@ function ForkForm({
     <div className="redirect-form">
       <div className="redirect-model-row">
         <span className="lbl">Model</span>
-        <ModelPicker value={model} onChange={setModel} compact />
+        <ModelPicker
+          value={model}
+          onChange={setModel}
+          compact
+          provider={provider}
+        />
       </div>
-      <div className="redirect-model-row">
-        <span className="lbl">Effort</span>
-        <EffortPicker value={effort} onChange={setEffort} compact />
-      </div>
+      {provider === 'claude' && (
+        <div className="redirect-model-row">
+          <span className="lbl">Effort</span>
+          <EffortPicker value={effort} onChange={setEffort} compact />
+        </div>
+      )}
       <textarea
         className="text-input task-input"
         value={task}
@@ -259,11 +341,13 @@ function RedirectForm({
   agentId,
   currentModel,
   currentEffort,
+  provider,
   onClose,
 }: {
   agentId: string;
   currentModel: string;
   currentEffort: EffortLevel;
+  provider: Provider;
   onClose: () => void;
 }) {
   const [body, setBody] = useState('');
@@ -300,12 +384,19 @@ function RedirectForm({
     <div className="redirect-form">
       <div className="redirect-model-row">
         <span className="lbl">Model</span>
-        <ModelPicker value={model} onChange={setModel} compact />
+        <ModelPicker
+          value={model}
+          onChange={setModel}
+          compact
+          provider={provider}
+        />
       </div>
-      <div className="redirect-model-row">
-        <span className="lbl">Effort</span>
-        <EffortPicker value={effort} onChange={setEffort} compact />
-      </div>
+      {provider === 'claude' && (
+        <div className="redirect-model-row">
+          <span className="lbl">Effort</span>
+          <EffortPicker value={effort} onChange={setEffort} compact />
+        </div>
+      )}
       <textarea
         className="text-input task-input"
         value={body}
@@ -491,7 +582,13 @@ function ContextTab({ agent }: { agent: Agent }) {
   );
 }
 
-function ConfigTab({ agent }: { agent: Agent }) {
+function ConfigTab({
+  agent,
+  provider,
+}: {
+  agent: Agent;
+  provider: Provider;
+}) {
   const [expanded, setExpanded] = useState(false);
   const role = ROLES[agent.role];
   return (
@@ -516,6 +613,7 @@ function ConfigTab({ agent }: { agent: Agent }) {
           <ModelPicker
             value={agent.model}
             compact
+            provider={provider}
             onChange={(m) => {
               if (m && m !== agent.model) void window.api.setAgentModel(agent.id, m);
             }}
@@ -527,7 +625,8 @@ function ConfigTab({ agent }: { agent: Agent }) {
           )}
         </span>
       </div>
-      <div className="field">
+      {provider === 'claude' && (
+        <div className="field">
         <span className="lbl">Reasoning effort</span>
         <span className="v">
           <EffortPicker
@@ -544,6 +643,7 @@ function ConfigTab({ agent }: { agent: Agent }) {
           )}
         </span>
       </div>
+      )}
       <div className="field">
         <span className="lbl">Workspace</span>
         <span className="v">
