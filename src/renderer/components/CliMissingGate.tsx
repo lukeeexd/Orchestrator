@@ -1,57 +1,95 @@
 import { useEffect, useState } from 'react';
+import type { Provider } from '../../shared/types';
 import { Icon } from './Icon';
 
+interface ProviderInfo {
+  binName: string;
+  productName: string;
+  installCommand: string;
+  installUrl: string;
+}
+
+const PROVIDER_INFO: Record<Provider, ProviderInfo> = {
+  claude: {
+    binName: 'claude',
+    productName: 'Claude Code',
+    installCommand: 'npm install -g @anthropic-ai/claude-code',
+    installUrl: 'https://docs.claude.com/en/docs/claude-code',
+  },
+  codex: {
+    binName: 'codex',
+    productName: 'OpenAI Codex CLI',
+    installCommand: 'npm install -g @openai/codex',
+    installUrl: 'https://platform.openai.com/docs/codex',
+  },
+};
+
 /**
- * Blocking overlay shown when the user's machine doesn't have the
- * `claude` CLI on PATH. From v0.4.0 onwards Orchestrator shells out to
- * the user's installed CLI instead of bundling a 200MB native binary,
- * so a missing CLI means nothing will work — the user has to install
- * it before doing anything else.
+ * Blocking overlay shown when the CLI required by the active project's
+ * provider isn't on PATH. Probes every 5s so a fresh install unlocks
+ * the gate without restarting the app.
  *
- * Polls every 5s while open so the user can install and have the gate
- * auto-dismiss without having to restart the app.
+ * Provider-aware: a claude-only user creating a codex project will see
+ * the codex install prompt, and vice versa. Defaults to claude when
+ * called without a provider (legacy callers / no-project state).
  */
-export function CliMissingGate({ onResolved }: { onResolved: () => void }) {
+export function CliMissingGate({
+  provider,
+  onResolved,
+}: {
+  provider: Provider;
+  onResolved: () => void;
+}) {
+  const info = PROVIDER_INFO[provider];
   const [version, setVersion] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
+    let alive = true;
     const check = async () => {
       setChecking(true);
       try {
-        const status = await window.api.getClaudeCliStatus();
+        const status = await window.api.getCliStatus(provider);
+        if (!alive) return;
         if (status.available) {
           setVersion(status.version);
           // Brief celebration before clearing — feels less abrupt than
           // a hard cut, and confirms the version they just installed.
-          setTimeout(() => onResolved(), 400);
+          setTimeout(() => {
+            if (alive) onResolved();
+          }, 400);
         }
       } finally {
-        setChecking(false);
+        if (alive) setChecking(false);
       }
     };
     void check();
     const t = setInterval(() => void check(), 5000);
-    return () => clearInterval(t);
-  }, [onResolved]);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [provider, onResolved]);
 
   return (
     <div className="modal-backdrop">
       <div className="modal" style={{ maxWidth: 520 }}>
         <div className="modal-head">
           <span className="title">
-            <b>Claude CLI not found</b>
+            <b>{info.productName} CLI not found</b>
           </span>
         </div>
         <div className="modal-body" style={{ gap: 12 }}>
           <p style={{ margin: 0, color: 'var(--text)', fontSize: 13 }}>
-            Orchestrator runs your fleet by shelling out to the{' '}
-            <code>claude</code> command from Anthropic&apos;s official CLI.
-            It isn&apos;t on your PATH right now, so nothing can be spawned.
+            This project&apos;s runtime is <strong>{provider}</strong> —
+            Orchestrator shells out to the{' '}
+            <code>{info.binName}</code> command, which isn&apos;t on your
+            PATH right now.
           </p>
           <p style={{ margin: 0, color: 'var(--muted)', fontSize: 12 }}>
-            Install Claude Code, then leave this window open — it&apos;ll
-            detect the CLI within a few seconds and unlock itself.
+            Install {info.productName}, then leave this window open —
+            it&apos;ll detect the CLI within a few seconds and unlock
+            itself.
           </p>
           <div
             className="field"
@@ -67,11 +105,16 @@ export function CliMissingGate({ onResolved }: { onResolved: () => void }) {
             <div style={{ color: 'var(--muted)', marginBottom: 6 }}>
               Quick install:
             </div>
-            <div>npm install -g @anthropic-ai/claude-code</div>
-            <div style={{ color: 'var(--muted-2)', marginTop: 8, fontSize: 11 }}>
-              or visit{' '}
-              <code>https://docs.claude.com/en/docs/claude-code</code> for the
-              official installer.
+            <div>{info.installCommand}</div>
+            <div
+              style={{
+                color: 'var(--muted-2)',
+                marginTop: 8,
+                fontSize: 11,
+              }}
+            >
+              or visit <code>{info.installUrl}</code> for the official
+              installer.
             </div>
           </div>
           {version && (

@@ -7,8 +7,8 @@ import { markRunningAgentsAsInterrupted } from './persistence';
 import * as director from './director/runner';
 import * as registry from './agents/registry';
 import { ensureDefaultProject, listProjects } from './projects';
-import { probeClaudeCli } from './cli/spawn';
-import { setClaudeCliStatus } from './cli/status';
+import { probeCli } from './cli/spawn';
+import { setCliStatus } from './cli/status';
 import { setupAutoUpdater } from './updater';
 
 if (started) {
@@ -41,11 +41,24 @@ const createWindow = (): void => {
 
 app.whenReady().then(async () => {
   await openDb();
-  // Probe for the `claude` CLI on PATH. Stored so the renderer can show
-  // a "Claude CLI not found" gate before the user tries to spawn anything.
-  // Cheap (one subprocess); only runs at startup.
-  const version = await probeClaudeCli(process.env);
-  setClaudeCliStatus({ available: version !== null, version });
+  // Probe each supported CLI on PATH. Stored so the renderer can show a
+  // provider-aware "CLI not found" gate before any spawn attempt. Cheap
+  // (one subprocess per provider); only runs at startup. The gate
+  // checks the active project's provider — a claude-only user with no
+  // codex installed isn't blocked unless they create a codex project,
+  // and vice versa.
+  const [claudeVersion, codexVersion] = await Promise.all([
+    probeCli('claude', process.env),
+    probeCli('codex', process.env),
+  ]);
+  setCliStatus('claude', {
+    available: claudeVersion !== null,
+    version: claudeVersion,
+  });
+  setCliStatus('codex', {
+    available: codexVersion !== null,
+    version: codexVersion,
+  });
   // Any agent left in 'running' state from a previous run is dead now —
   // we can't resume its session. Flip those to 'error: Interrupted'
   // before hydrating so the renderer sees the right state.

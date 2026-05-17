@@ -5,6 +5,7 @@ import type {
   EffortLevel,
   PlanRow,
   Project,
+  Provider,
 } from '../shared/types';
 import { DEFAULT_EFFORT } from '../shared/efforts';
 import { defaultModelForProvider, modelMatchesProvider } from '../shared/models';
@@ -68,12 +69,25 @@ export function App() {
   const [agentCountByProject, setAgentCountByProject] = useState<
     Record<string, number>
   >({});
-  // Whether the claude CLI is available on PATH. `null` while we're still
-  // probing for the first time; `false` shows the blocking install gate.
-  const [cliAvailable, setCliAvailable] = useState<boolean | null>(null);
+  // Whether each provider's CLI is on PATH. `null` while we're still
+  // probing for the first time. We check both at startup so the gate
+  // can be provider-aware — a claude-only user with no codex CLI isn't
+  // blocked unless they're sitting on a codex project.
+  const [cliStatus, setCliStatus] = useState<Record<Provider, boolean> | null>(
+    null,
+  );
 
   useEffect(() => {
-    void window.api.getClaudeCliStatus().then((s) => setCliAvailable(s.available));
+    void (async () => {
+      const [claudeStatus, codexStatus] = await Promise.all([
+        window.api.getCliStatus('claude'),
+        window.api.getCliStatus('codex'),
+      ]);
+      setCliStatus({
+        claude: claudeStatus.available,
+        codex: codexStatus.available,
+      });
+    })();
   }, []);
 
   const { settings } = useSettings();
@@ -510,8 +524,15 @@ export function App() {
             />
           );
         })()}
-      {cliAvailable === false && (
-        <CliMissingGate onResolved={() => setCliAvailable(true)} />
+      {cliStatus && !cliStatus[activeProvider] && (
+        <CliMissingGate
+          provider={activeProvider}
+          onResolved={() =>
+            setCliStatus((prev) =>
+              prev ? { ...prev, [activeProvider]: true } : prev,
+            )
+          }
+        />
       )}
     </div>
   );

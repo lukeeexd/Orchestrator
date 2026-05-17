@@ -42,6 +42,7 @@ export const IpcChannels = {
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
   AppCliStatus: 'app:cliStatus',
+  AppCliStatusByProvider: 'app:cliStatusByProvider',
   AppOpenUsage: 'app:openUsage',
   SpendGet: 'spend:get',
   HistoryList: 'history:list',
@@ -220,6 +221,10 @@ export interface OrchestratorApi {
     available: boolean;
     version: string | null;
   }>;
+  /** Status for a specific provider's CLI (claude / codex). */
+  getCliStatus: (
+    provider: import('./types').Provider,
+  ) => Promise<{ available: boolean; version: string | null }>;
   openClaudeUsage: () => Promise<{ ok: boolean }>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   listHistory: () => Promise<import('./types').HistoryRow[]>;

@@ -16,7 +16,7 @@ import type {
   SpawnAgentRequest,
 } from '../shared/types';
 import { readSettings, writeSettings, settingsFilePath } from './settings';
-import { getClaudeCliStatus } from './cli/status';
+import { getClaudeCliStatus, getCliStatus } from './cli/status';
 import { getSpendSummary } from './spend';
 import { listHistory } from './history';
 import { listSlashCommands } from './commands';
@@ -80,6 +80,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IpcChannels.AppCliStatus,
     (): { available: boolean; version: string | null } => getClaudeCliStatus(),
+  );
+
+  ipcMain.handle(
+    IpcChannels.AppCliStatusByProvider,
+    (
+      _event,
+      provider: import('../shared/types').Provider,
+    ): { available: boolean; version: string | null } => getCliStatus(provider),
   );
 
   ipcMain.handle(

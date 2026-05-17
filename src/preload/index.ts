@@ -157,6 +157,11 @@ const api: OrchestratorApi = {
       available: boolean;
       version: string | null;
     }>,
+  getCliStatus: (provider) =>
+    ipcRenderer.invoke(
+      IpcChannels.AppCliStatusByProvider,
+      provider,
+    ) as Promise<{ available: boolean; version: string | null }>,
   openClaudeUsage: () =>
     ipcRenderer.invoke(IpcChannels.AppOpenUsage) as Promise<{ ok: boolean }>,
   getSpendSummary: () =>
