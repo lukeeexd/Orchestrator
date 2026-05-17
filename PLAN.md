@@ -1,39 +1,43 @@
-# Orchestrator — v1 Plan
+# Orchestrator — Plan
 
-> A self-hosted Windows desktop app that runs an LLM **Director** which chats with the user and spawns specialised **agents** (pm / researcher / coder / qa / devops) to write code. Built on the Claude Agent SDK.
+> A self-hosted Windows desktop app that runs an LLM **Director** which chats with the user and spawns specialised **agents** (pm / researcher / coder / qa / devops / security) to write code. Drives the user's installed `claude` (and optionally `codex`) CLI — no SDK bundled.
 
 ## How to use this doc
 
 This file is the source of truth for what the project is, where it stands, and what to build next.
 
 - **Update the Status section + Milestone checkboxes** as work progresses.
-- A new Claude Code session should read this file, then `docs/design/README.md`, then proceed from "Current milestone".
+- A new Claude Code session should read this file, then `docs/design/README.md`, then proceed from "Current focus".
 - Decisions move from "Open questions" → "Decisions locked" once confirmed by the user. Do not silently revisit a locked decision.
 
 ## Status
 
 | Field | Value |
 |---|---|
-| Current milestone | **v1 shipped (2026-05-15) · ready to tag** |
-| Last updated | 2026-05-15 |
-| Repo | `github.com/lukeeexd/Orchestrator` (private). Branches: `main` (release), `dev` (working). |
+| Current focus | **Post-v1 cadence — roughly one minor every couple of days.** Next: v0.7.0 (first end-to-end test of the curated-tag-body release-notes workflow). |
+| Latest release | **v0.6.0** (Director skill slot) |
+| Last updated | 2026-05-18 |
+| Repo | `github.com/lukeeexd/Orchestrator` (**public** as of 2026-05-17). Branches: `main` (release), `dev` (working). |
 
 ## Decisions locked
 
 | Decision | Choice | Notes |
 |---|---|---|
 | Orchestration model | Director-led | An LLM Director plans and delegates; not manual routing |
-| Frontend shell | Electron Forge + Vite + React + TypeScript | TS-first because the Claude Agent SDK is TS |
-| Agent runtime | `@anthropic-ai/claude-agent-sdk` | One in-process session per agent |
+| Frontend shell | Electron Forge + Vite + React + TypeScript | TS-first because the original runtime (Claude Agent SDK) was TS |
+| Agent runtime | **Shell out to the user's installed `claude` (or `codex`) CLI** via `child_process.spawn`, structured-event stream over stdout | Originally the `@anthropic-ai/claude-agent-sdk` was bundled, but the 218 MB `claude.exe` it shipped made the installer huge and asar-hostile (see [a0676b8]). v0.2.0 onward we drive the user's own CLI install and stay out of the binary-distribution business. |
+| Providers | `claude` (default) and `codex` (`codex exec --json`) | Each project picks one at creation. Codex Fork is disabled (no `--json` mode for `codex fork`); ChatGPT-plan codex users skip the `-m` flag. |
 | Storage | `sql.js` (WASM SQLite, main process only) | Originally `better-sqlite3`; swapped because native rebuild needs a Python + MSVC toolchain not present on the dev machine. WASM is portable and fine for single-user scale. Revisit if perf bites. |
 | Per-agent isolation | None — sequential agents share the workspace | Original M2 plan used git worktrees; dropped after M4 once we made spawning sequential. Worktrees prevented downstream agents from reading what upstream agents had written. |
-| Repo target | User points the app at a folder; agents work there | Manual merge back in v1 |
-| API keys | Plain JSON in user data dir | Move to OS keychain in v1.1 |
-| Branch model | `dev` → `main`, mirrors KnittingApp | Releases tagged on main |
-| Packaging | Electron Forge `MakerSquirrel` (`.exe` installer) | Windows-only for v1. Switch to `MakerWix` if `.msi` becomes a requirement. |
-| Repo location | `github.com/lukeeexd/Orchestrator`, private | Created at M0 with `--source . --push` |
+| Repo target | User points the app at a folder; agents work there | Manual merge back |
+| API keys | Plain JSON in user data dir | OS keychain still pending — not yet a priority for a single-user app |
+| Branch model | `dev` → `main`, mirrors KnittingApp | Releases tagged on main; tags `vX.Y.Z` trigger `.github/workflows/release.yml` which builds the installer and creates the GitHub Release. Curated notes live in the annotated tag body. |
+| Packaging | Electron Forge `MakerSquirrel` (`.exe` installer) | Windows-only. Switch to `MakerWix` if `.msi` becomes a requirement. |
+| Auto-update | `update-electron-app` polling `update.electronjs.org` every 10 min | Only works because repo is public (`update.electronjs.org` doesn't serve private repos). Pill appears post-download, not at check time. |
+| ASAR integrity fuses | `EnableEmbeddedAsarIntegrityValidation` + `OnlyLoadAppFromAsar` **deliberately off** | Re-enabling them in v0.4.0 broke installs silently (process launched, integrity check failed, no error dialog). Don't re-enable without verifying the integrity-hash flow end-to-end through Squirrel. |
+| Repo location | `github.com/lukeeexd/Orchestrator`, **public** as of 2026-05-17 | History was rewritten before the privacy flip to scrub personal identifiers. Do not reintroduce real name / personal email anywhere. |
 
-## v1 fleet (the five roles)
+## The fleet (six roles + Director)
 
 | Role | Color | System prompt focus | Default tool set |
 |---|---|---|---|
@@ -42,22 +46,26 @@ This file is the source of truth for what the project is, where it stands, and w
 | coder | purple | Read + edit + run tests | read + edit + shell |
 | qa | amber | Write/run tests, report failures | read + edit + shell |
 | devops | orange | Build, deploy, CI | read + shell |
+| security | red | Audit code for vulns / unsafe patterns / leaked secrets | read + shell + web (read-only by default) |
 
-System prompts are authored in M4. Tool allow-lists are hardcoded in v1; user-editable allow-lists land in v1.1 with the Tools screen.
+Director itself runs as a long-lived planner-supervisor session. From v0.6.0 it also has its own skill slot, mirroring per-agent skills.
 
-## Out of scope for v1
+System prompts live in `src/shared/roles.ts`. Tool allow-lists are hardcoded; user-editable allow-lists are still on the deferred list.
 
-The rail nav has slots for these; in v1 they route to a "Coming in v1.1" placeholder screen.
+## Out of scope (placeholder rail items)
+
+The rail nav has slots for these; they route to a "coming soon" placeholder screen.
 
 - Templates (saved agent fleets)
 - Tools registry (per-role allow-lists)
-- Spend (cost analytics, history)
 - Runs (past sessions browser)
-- Settings beyond a single API-key field
+- Most of Settings beyond API-key / provider / model defaults
 
-## Deferred features (post-v1)
+Already shipped (no longer placeholders): the **Spend** screen (real per-day cost chart + deep link to claude.ai for official usage).
 
-Things that landed partially or are explicitly tabled for a later milestone. New sessions should pick from here when v1 ships.
+## Deferred features
+
+Things that landed partially or are explicitly tabled. New sessions can pick from here when looking for the next slice.
 
 - **Better attachments.** v1 supports text-file attachments (md / code / config / json / yaml) inlined into the prompt as fenced code blocks, 100 KiB cap per file. Deferred:
   - Image attachments via Anthropic vision content blocks (`{type: 'image', source: {type: 'base64', media_type, data}}`). Needs the SDK call to switch from `prompt: string` to `prompt: AsyncIterable<SDKUserMessage>` so we can send structured content blocks instead of a single string.
@@ -65,17 +73,16 @@ Things that landed partially or are explicitly tabled for a later milestone. New
   - Larger file caps (current 100 KiB is conservative; raise once we have the streaming pipeline).
   - File picker filtered to text-like extensions instead of "all files + show error chip" UX.
   - Drag-and-drop into the composer.
-- **Agent Redirect.** Inject a user message into an already-running agent's session. SDK exposes `Query.streamInput(stream)` (sdk.d.ts:2248) — needs a spike. Currently agents are one-shot; mid-flight redirection isn't possible.
-- **Agent Fork.** SDK has `forkSession(id)` + `query({options:{resume}})` — drawer Fork button is rendered but disabled. Wiring is mostly UX work.
-- **Memory pins.** Drawer Memory tab is a placeholder. Should use the SDK's memory tool to let users pin facts the agent carries between turns.
+- **Agent Redirect.** Inject a user message into an already-running agent's session. Currently agents are one-shot; mid-flight redirection isn't possible. The original v1 spike against `Query.streamInput()` is obsolete now that we shell out to the CLI — needs a fresh spike against whatever `claude --append-system-prompt` / stdin patterns the CLI actually accepts mid-session.
+- **Agent Fork.** Drawer Fork button is rendered but disabled. The original v1 spike found `forkSession()` + `resume` in the TS SDK; the CLI exposes session resume via `claude --resume <session_id>`, so wiring is feasible but needs to confirm the fork-vs-resume semantics on the CLI side.
+- **Memory pins.** Drawer Memory tab is a placeholder. Original v1 plan was to use the TS SDK's memory tool; with the CLI shell-out, the path is now whatever the `claude` CLI exposes (skills already cover some of this ground).
 - **Plan editing.** In auto mode, plans auto-spawn. Add an Edit button to the plan card for tighter control without flipping to manual mode.
 - **Session-wide budget.** Per-agent budgets exist; a global "session won't exceed $X" cap (rolling across all agents in a session) doesn't.
 - **Wipe session.** Truly nuke a session — agents, Director chat, attachments, settings.json `oauthToken` — for handing the machine off.
-- **Other LLM providers.** *(Way down the line — not v1.x.)* Today the whole app sits on `@anthropic-ai/claude-agent-sdk`, which is Claude-only and ships its own `claude.exe` for tool execution. Adding GPT-5 / Gemini / open models would require either:
-  - **(a)** A provider-abstraction layer that swaps the SDK call out for each provider, with a re-implementation of the Read / Write / Edit / Bash / Glob / Grep tool surface for non-Claude providers (since they don't ship their own tool runner). Big lift — easily a milestone of its own.
-  - **(b)** Route through a multi-provider router (OpenRouter, LiteLLM) and accept that non-Claude models won't have the same tool ergonomics.
-  - **(c)** Keep Claude as the Director (for orchestration smarts) and let individual agents target other models for cheap/fast specialised work. Per-agent provider field on `Agent`, per-provider runner module. The least invasive variant.
-  Option (c) is probably the right first step if/when this is needed.
+- **More LLM providers.** *(Updated v0.5.x — Codex already shipped as a second provider.)* The runner now branches on a `provider` field per project (`claude` vs `codex`). Adding a third (GPT-5 via the standalone API, Gemini, open models) is feasible but needs:
+  - A per-provider runner module that translates the structured event stream into the same `LogLine[]` shape the UI expects.
+  - A re-implementation (or wrapping) of the Read / Write / Edit / Bash / Glob / Grep tool surface for providers that don't ship their own tool runner. Codex sidesteps this because `codex exec` has its own equivalent tool surface; a pure-API provider wouldn't.
+  - Either keep the project-level provider pick (current shape) or add a per-agent provider field so the Director can stay on Claude while specialists run elsewhere. The per-agent variant is the most flexible and the least disruptive to add later.
 
 ## Milestones
 
@@ -146,8 +153,25 @@ Things that landed partially or are explicitly tabled for a later milestone. New
 - [x] **asar disabled** — SDK's `child_process.spawn(claude.exe)` doesn't have asar-transparent path translation that `fs.*` does; files now live at `resources/app/` as plain JS
 - [x] `afterCopy` hook plants `@anthropic-ai/claude-agent-sdk-win32-x64` + `sql.js` into the package's `node_modules` so externals resolve at runtime
 - [x] Vite externals tuned: bundle most deps, leave only the SDK platform-binary packages and sql.js outside the bundle
-- [x] Code signing deferred — SmartScreen warning is acceptable for self-install of a private build
-- [ ] Dogfood on a real task / tag v0.1.0 on main — pending
+- [x] Code signing deferred — SmartScreen warning is acceptable for self-install
+- [x] Dogfood + tag v0.1.0 on main — shipped 2026-05-15. Post-v1 cadence picked up from there; see "Post-v1 highlights" below for what landed v0.2 – v0.6.
+
+## Post-v1 highlights (v0.2 → v0.6)
+
+Bundled here because the cadence ran roughly one minor every couple of days and the per-release detail lives in the curated annotated-tag bodies on GitHub.
+
+- **Drop the bundled SDK; shell out to the user's `claude` CLI.** Was the architectural shift of v0.2. Killed the 218 MB installer bloat, the asar-can't-spawn-from-archive problem, and the entire native-binary distribution headache. We now drive the user's own login. (`a0676b8`)
+- **Stream view.** Terminal-style live log for Director and agents, alongside the structured drawer. (`e3494fb`)
+- **Real Spend screen.** Replaces the v1.1 placeholder. Daily cost chart over the last 30 days; per-turn `modelUsage` captured for true by-model accounting; "View official usage" deep-links to claude.ai. (`124293a`, `4ce11a0`, `ff7048d`, `dcbe8c1`)
+- **Codex provider.** Projects pick `claude` or `codex` at creation; the runner branches on provider. Codex Fork is disabled (no `--json` on `codex fork`); ChatGPT-plan users skip `-m`; `gpt-5-codex` is the default model. Many small fixes followed (`cb9c977` and the trailing fix series).
+- **Auto-update channel.** `update-electron-app` polling `update.electronjs.org` every 10 min. The privacy flip on 2026-05-17 made this actually work — `update.electronjs.org` doesn't serve private repos.
+- **Slash commands in the Director composer** (Tier 2). (`f5fec48`)
+- **Per-role skills + new `security` role.** Each role can opt into a skill slot; security audits code for vulns / leaked secrets / unsafe patterns. (`327ace4`)
+- **Director skill slot.** v0.6.0. Director itself can now have a skill, mirroring per-agent slots. (`dbb9360`)
+- **Provider-aware CLI install gate.** Project creation only allows providers whose CLI is installed and logged in. (`f184e62`)
+- **ASAR integrity-fuse reversal.** v0.4.0 tried turning the fuses on — silent install failure. Reverted; fuses stay off until the integrity-hash flow is verified end-to-end. (`0a61b6b`)
+- **Release-notes workflow fix.** `actions/checkout` now fetches tag objects so curated annotated-tag bodies show up on the GitHub Release without a manual `gh release edit`. **v0.7.0 will be the first end-to-end test.** A `Write-Host` diagnostic in `release.yml` is there for debugging if it doesn't render.
+- **Going public.** Personal identifiers scrubbed from history; repo flipped public on 2026-05-17.
 
 ## Hardest unknowns (spike when their milestone arrives)
 
@@ -164,7 +188,9 @@ Things that landed partially or are explicitly tabled for a later milestone. New
 - React + CSS reference: `docs/design/design-reference/`
 - Sibling project (release-workflow patterns to mirror): `D:\ClaudeCode\KnittingApp`
 
-## Recently completed
+## v1 milestone log (2026-05-15)
+
+The original v1 push was a single-day blitz; the per-milestone deep-dives below are kept for historical context. For everything since, see "Post-v1 highlights" above.
 
 - **2026-05-15 — M6 Installer.** `npm run make` produces a working `Orchestrator-Setup.exe` from Forge's MakerSquirrel. Real fight was the SDK's bundled `claude.exe`: bundling a 218 MB native binary isn't possible, externalising it puts it in `node_modules` at runtime — but Forge's plugin-vite strips `node_modules` from the package, so a custom `afterCopy` hook plants the SDK platform-binary package + `sql.js` (UMD wrapper doesn't survive Rollup bundling) back into the build. Then asar.unpack vs spawn() turned out to be a known Electron gotcha: `fs.existsSync` is asar-transparent but `spawn` isn't, so even with unpack the SDK got "exists but failed to launch". Final shape: drop asar entirely, files live at `resources/app/`, real filesystem paths everywhere. Installer is 204 MB, install + spawn verified.
 - **2026-05-15 — M5 Budgets + persistence.** Per-agent budgets (dollars, tokens, wall-clock) with hard-stop on the runner side: tokens accumulate from each assistant message's `message.usage` (now also counting `cache_creation_input_tokens` + `cache_read_input_tokens` — the original miss that hid all the cached input on Sonnet runs). Spawn form has optional inputs; Drawer Config tab shows live progress bars. Session persistence via SQLite schema v2: Director chat, agents, log lines, and the Director's resumable SDK session id all write through on every event (debounced flush) and rehydrate on startup. In-flight agents at shutdown get flipped to `error: Interrupted`. Per-turn NOTE log line is kept as a feature, not just debug — useful to watch spend in real time. Memory pins deferred (not blocking for v1).
