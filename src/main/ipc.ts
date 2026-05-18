@@ -39,6 +39,12 @@ import {
   savePastedImage,
   supportedAttachmentExtensions,
 } from './attachments';
+import * as marketplace from './marketplace';
+import type {
+  MarketplaceBundleView,
+  MarketplaceSourceView,
+  MarketplaceSubscriptionView,
+} from '../shared/ipc';
 import {
   createProject,
   deleteProject,
@@ -657,6 +663,150 @@ export function registerIpcHandlers(): void {
       })();
 
       return { spawnedAgentIds: spawned.map((s) => s.id) };
+    },
+  );
+
+  // ─────────────────────── Skill marketplace ──────────────────────
+
+  function sourceView(row: marketplace.SkillSourceRow): MarketplaceSourceView {
+    return {
+      id: row.id,
+      repo: row.repo,
+      defaultBranch: row.defaultBranch,
+      enabled: row.enabled,
+      addedAt: row.addedAt,
+      lastSyncAt: row.lastSyncAt,
+      lastSyncSha: row.lastSyncSha,
+    };
+  }
+
+  ipcMain.handle(IpcChannels.MarketplaceListSources, (): MarketplaceSourceView[] =>
+    marketplace.listSources().map(sourceView),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceListBundles,
+    (_event, sourceId: string): MarketplaceBundleView[] =>
+      marketplace.loadBundles(sourceId).map((b) => ({
+        id: b.id,
+        source: b.source,
+        description: b.description,
+        version: b.version,
+        category: b.category,
+        keywords: b.keywords,
+      })),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceListSubscriptions,
+    (_event, projectId: string): MarketplaceSubscriptionView[] =>
+      marketplace.listSubscriptions(projectId).map((s) => ({
+        projectId: s.projectId,
+        sourceId: s.sourceId,
+        bundleId: s.bundleId,
+        subscribedAt: s.subscribedAt,
+        installedVersion: s.installedVersion,
+      })),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceSubscribe,
+    (
+      _event,
+      projectId: string,
+      sourceId: string,
+      bundleId: string,
+    ): { ok: boolean; error?: string } => {
+      const bundle = marketplace.findBundle(sourceId, bundleId);
+      if (!bundle) {
+        return {
+          ok: false,
+          error: 'bundle not found — has the source been synced?',
+        };
+      }
+      marketplace.subscribeBundle(
+        projectId,
+        sourceId,
+        bundleId,
+        bundle.version,
+      );
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceUnsubscribe,
+    (
+      _event,
+      projectId: string,
+      sourceId: string,
+      bundleId: string,
+    ): { ok: true } => {
+      marketplace.unsubscribeBundle(projectId, sourceId, bundleId);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceRefresh,
+    async (
+      _event,
+      sourceId: string,
+    ): Promise<{
+      ok: boolean;
+      sha?: string;
+      changed?: boolean;
+      error?: string;
+    }> => {
+      const source = marketplace.getSource(sourceId);
+      if (!source) return { ok: false, error: 'source not found' };
+      broadcast(IpcChannels.MarketplaceEventSourcePatch, {
+        sourceId,
+        patch: { syncing: true, syncError: undefined },
+      });
+      try {
+        const { sha, changed } = await marketplace.syncSource(source);
+        const syncedAt = Date.now();
+        marketplace.recordSourceSync(sourceId, sha, syncedAt);
+        broadcast(IpcChannels.MarketplaceEventSourcePatch, {
+          sourceId,
+          patch: {
+            syncing: false,
+            lastSyncAt: syncedAt,
+            lastSyncSha: sha,
+            syncError: undefined,
+          },
+        });
+        return { ok: true, sha, changed };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        broadcast(IpcChannels.MarketplaceEventSourcePatch, {
+          sourceId,
+          patch: { syncing: false, syncError: msg },
+        });
+        return { ok: false, error: msg };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceAckUpdate,
+    (
+      _event,
+      projectId: string,
+      sourceId: string,
+      bundleId: string,
+    ): { ok: true } => {
+      const bundle = marketplace.findBundle(sourceId, bundleId);
+      if (bundle) {
+        marketplace.acknowledgeBundleVersion(
+          projectId,
+          sourceId,
+          bundleId,
+          bundle.version,
+        );
+      }
+      return { ok: true };
     },
   );
 }

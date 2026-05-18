@@ -231,6 +231,49 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE projects ADD COLUMN mcp_config TEXT;`);
     },
   },
+  {
+    version: 16,
+    up: (db) => {
+      // Skill marketplace: a set of GitHub repos that publish
+      // Claude-Code-compatible plugin bundles, plus per-project
+      // subscriptions to specific bundles. The local cache lives in
+      // userData/skill-marketplaces/<sourceId>/ — see
+      // src/main/marketplace.ts — and on each claude spawn we append
+      // --plugin-dir <cache>/<bundle.source> for every subscribed
+      // bundle for the project.
+      //
+      // skill_sources: one row per GitHub-hosted marketplace.
+      //   last_sync_sha tracks the last cloned/pulled commit.
+      // project_subscribed_bundles: many-to-many between projects and
+      //   marketplace bundles. installed_version is the version the
+      //   user last acknowledged — when a sync pulls in a newer
+      //   marketplace.json version, the diff drives the "update
+      //   available" toast + badge.
+      db.exec(`
+        CREATE TABLE skill_sources (
+          id TEXT PRIMARY KEY,
+          repo TEXT NOT NULL,
+          default_branch TEXT NOT NULL DEFAULT 'main',
+          enabled INTEGER NOT NULL DEFAULT 1,
+          added_at INTEGER NOT NULL,
+          last_sync_at INTEGER,
+          last_sync_sha TEXT
+        );
+
+        CREATE TABLE project_subscribed_bundles (
+          project_id TEXT NOT NULL,
+          source_id TEXT NOT NULL,
+          bundle_id TEXT NOT NULL,
+          subscribed_at INTEGER NOT NULL,
+          installed_version TEXT,
+          PRIMARY KEY (project_id, source_id, bundle_id)
+        );
+
+        CREATE INDEX idx_subscribed_bundles_project
+          ON project_subscribed_bundles (project_id);
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

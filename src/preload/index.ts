@@ -176,6 +176,53 @@ const api: OrchestratorApi = {
       id,
       config,
     ) as Promise<{ ok: boolean; error?: string }>,
+
+  // ─────────────────────────── Marketplace ───────────────────────────
+  listMarketplaceSources: () =>
+    ipcRenderer.invoke(IpcChannels.MarketplaceListSources) as Promise<
+      import('../shared/ipc').MarketplaceSourceView[]
+    >,
+  listMarketplaceBundles: (sourceId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceListBundles,
+      sourceId,
+    ) as Promise<import('../shared/ipc').MarketplaceBundleView[]>,
+  listMarketplaceSubscriptions: (projectId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceListSubscriptions,
+      projectId,
+    ) as Promise<import('../shared/ipc').MarketplaceSubscriptionView[]>,
+  subscribeMarketplaceBundle: (projectId, sourceId, bundleId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceSubscribe,
+      projectId,
+      sourceId,
+      bundleId,
+    ) as Promise<{ ok: boolean; error?: string }>,
+  unsubscribeMarketplaceBundle: (projectId, sourceId, bundleId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceUnsubscribe,
+      projectId,
+      sourceId,
+      bundleId,
+    ) as Promise<{ ok: true }>,
+  refreshMarketplaceSource: (sourceId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceRefresh,
+      sourceId,
+    ) as Promise<{ ok: boolean; sha?: string; changed?: boolean; error?: string }>,
+  acknowledgeMarketplaceUpdate: (projectId, sourceId, bundleId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceAckUpdate,
+      projectId,
+      sourceId,
+      bundleId,
+    ) as Promise<{ ok: true }>,
+  onMarketplaceSourcePatch: (cb) =>
+    subscribe<{
+      sourceId: string;
+      patch: Partial<import('../shared/ipc').MarketplaceSourceView>;
+    }>(IpcChannels.MarketplaceEventSourcePatch, cb),
   setProjectRoleTools: (id, roleTools) =>
     ipcRenderer.invoke(
       IpcChannels.ProjectSetRoleTools,

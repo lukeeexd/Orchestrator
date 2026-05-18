@@ -43,6 +43,14 @@ export const IpcChannels = {
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
   ProjectSetDirectorProvider: 'project:setDirectorProvider',
   ProjectSetMcpConfig: 'project:setMcpConfig',
+  MarketplaceListSources: 'marketplace:listSources',
+  MarketplaceListBundles: 'marketplace:listBundles',
+  MarketplaceListSubscriptions: 'marketplace:listSubscriptions',
+  MarketplaceSubscribe: 'marketplace:subscribe',
+  MarketplaceUnsubscribe: 'marketplace:unsubscribe',
+  MarketplaceRefresh: 'marketplace:refresh',
+  MarketplaceAckUpdate: 'marketplace:ackUpdate',
+  MarketplaceEventSourcePatch: 'marketplace:event:sourcePatch',
   ProjectSetRoleTools: 'project:setRoleTools',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
@@ -118,6 +126,42 @@ export interface PastedImageInfo {
   ok: boolean;
   reason?: string;
   kind?: 'text' | 'image' | 'unsupported';
+}
+
+/** Renderer-shaped view of one skill_sources row. */
+export interface MarketplaceSourceView {
+  id: string;
+  repo: string;
+  defaultBranch: string;
+  enabled: boolean;
+  addedAt: number;
+  lastSyncAt: number | null;
+  lastSyncSha: string | null;
+  /** Set when a sync is in flight (UI shows a spinner). */
+  syncing?: boolean;
+  /** Set when the last sync attempt failed. Cleared on the next success. */
+  syncError?: string;
+}
+
+/** Renderer-shaped view of one marketplace.json bundle entry. */
+export interface MarketplaceBundleView {
+  id: string;
+  /** Relative path from the repo root, mirrors marketplace.json::plugins[].source. */
+  source: string;
+  description: string;
+  version: string;
+  category?: string;
+  keywords?: string[];
+}
+
+/** Renderer-shaped view of a project's subscribed bundle. */
+export interface MarketplaceSubscriptionView {
+  projectId: string;
+  sourceId: string;
+  bundleId: string;
+  subscribedAt: number;
+  /** Version the user last acknowledged. Compare to current bundle.version for "update available". */
+  installedVersion: string | null;
 }
 
 export interface AgentEventAgentPayload {
@@ -298,6 +342,43 @@ export interface OrchestratorApi {
     id: string,
     config: string | null,
   ) => Promise<{ ok: boolean; error?: string }>;
+  // ───────────────────────── Skill marketplace ─────────────────────────
+  /** Configured marketplace sources (the alirezarezvani repo etc.). */
+  listMarketplaceSources: () => Promise<MarketplaceSourceView[]>;
+  /** Bundles available from a synced source. Empty until the source has been synced at least once. */
+  listMarketplaceBundles: (
+    sourceId: string,
+  ) => Promise<MarketplaceBundleView[]>;
+  /** A project's installed-bundle subscriptions (which (source, bundle) pairs to load on spawn). */
+  listMarketplaceSubscriptions: (
+    projectId: string,
+  ) => Promise<MarketplaceSubscriptionView[]>;
+  /** Install a bundle for a project. Sets installed_version to the current marketplace version. */
+  subscribeMarketplaceBundle: (
+    projectId: string,
+    sourceId: string,
+    bundleId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /** Uninstall. */
+  unsubscribeMarketplaceBundle: (
+    projectId: string,
+    sourceId: string,
+    bundleId: string,
+  ) => Promise<{ ok: true }>;
+  /** Force a sync now. Returns the new SHA + whether anything changed. */
+  refreshMarketplaceSource: (
+    sourceId: string,
+  ) => Promise<{ ok: boolean; sha?: string; changed?: boolean; error?: string }>;
+  /** Acknowledge a bundle update, snapping installed_version forward to current. Clears the update badge for that subscription. */
+  acknowledgeMarketplaceUpdate: (
+    projectId: string,
+    sourceId: string,
+    bundleId: string,
+  ) => Promise<{ ok: true }>;
+  /** Subscribe to source-row patches (sync state, badges, error). */
+  onMarketplaceSourcePatch: (
+    cb: (p: { sourceId: string; patch: Partial<MarketplaceSourceView> }) => void,
+  ) => () => void;
   setProjectRoleTools: (
     id: string,
     roleTools: Partial<Record<import('./types').AgentRole, string[]>> | null,
