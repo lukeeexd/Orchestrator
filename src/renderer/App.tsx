@@ -14,6 +14,7 @@ import { useAgents } from './hooks/useAgents';
 import { useDirector } from './hooks/useDirector';
 import { useSettings } from './hooks/useSettings';
 import { useProjects } from './hooks/useProjects';
+import { useMarketplace } from './hooks/useMarketplace';
 import { TopBar, type ViewMode } from './components/TopBar';
 import { LeftRail, type RailScreen } from './components/LeftRail';
 import { StatusBar } from './components/StatusBar';
@@ -24,6 +25,7 @@ import { ResizeHandle } from './components/ResizeHandle';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { ToolsScreen } from './components/ToolsScreen';
+import { MarketplaceScreen } from './components/MarketplaceScreen';
 import { SpendScreen } from './components/SpendScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { CliMissingGate } from './components/CliMissingGate';
@@ -35,7 +37,10 @@ import {
 } from './components/ProjectTabs';
 
 const PLACEHOLDERS: Record<
-  Exclude<RailScreen, 'agents' | 'settings' | 'tools' | 'cost' | 'history'>,
+  Exclude<
+    RailScreen,
+    'agents' | 'settings' | 'tools' | 'cost' | 'history' | 'marketplace'
+  >,
   { title: string; icon: Parameters<typeof PlaceholderScreen>[0]['icon']; body: string }
 > = {
   templates: {
@@ -99,9 +104,44 @@ export function App() {
     setWorkspace: setProjectWorkspace,
     setDirectorModel: setProjectDirectorModel,
     setDirectorEffort: setProjectDirectorEffort,
+    setDirectorProvider: setProjectDirectorProvider,
+    setMcpConfig,
     setRoleTools: setProjectRoleTools,
     remove: removeProject,
   } = useProjects();
+  const marketplace = useMarketplace(activeProjectId);
+
+  // Transient toast surfacing newly-arrived marketplace bundle updates.
+  // The persistent rail badge already shows the count; this is the
+  // "hey, something just landed" flash so the user notices without
+  // having to glance at the rail.
+  const [marketplaceToast, setMarketplaceToast] = useState<{
+    count: number;
+  } | null>(null);
+  // Tracks the last pendingUpdates count we've observed so we only
+  // toast on *increases*. null = haven't seen the first reload yet
+  // (so we don't toast for updates that were already pending when the
+  // app launched).
+  const lastSeenPendingUpdatesRef = useRef<number | null>(null);
+  useEffect(() => {
+    const current = marketplace.pendingUpdates.length;
+    const previous = lastSeenPendingUpdatesRef.current;
+    lastSeenPendingUpdatesRef.current = current;
+    // Initial load → record the count and stay silent.
+    if (previous === null) return;
+    // Only toast when the count grew, and there's at least one update.
+    if (current > previous && current > 0) {
+      const newlyAdded = current - previous;
+      setMarketplaceToast({ count: newlyAdded });
+    }
+  }, [marketplace.pendingUpdates.length]);
+  // Auto-dismiss after 6s so the toast doesn't linger.
+  useEffect(() => {
+    if (!marketplaceToast) return;
+    const t = setTimeout(() => setMarketplaceToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [marketplaceToast]);
+
   const activeProject: Project | null =
     projects.find((p) => p.id === activeProjectId) ?? null;
   const workspace = activeProject?.workspace ?? '';
@@ -109,22 +149,29 @@ export function App() {
   // codex project doesn't silently get the global claude default
   // (claude-opus-4-7-1m), which codex would reject as an unknown model.
   const activeProvider = activeProject?.provider ?? 'claude';
+  // The Director can opt into a different CLI than the agents via
+  // directorProvider. Default → use the project's agent provider, same
+  // as before this knob existed.
+  const directorProvider =
+    activeProject?.directorProvider ?? activeProvider;
   const providerDefaultModel = defaultModelForProvider(activeProvider);
+  const directorProviderDefaultModel =
+    defaultModelForProvider(directorProvider);
   const fallbackModel =
     activeProvider === 'claude'
       ? settings?.defaultModel ?? providerDefaultModel
       : providerDefaultModel;
   const directorFallbackModel =
-    activeProvider === 'claude'
-      ? settings?.defaultDirectorModel || fallbackModel
-      : providerDefaultModel;
-  // If the stored directorModel doesn't match the project's provider
-  // (e.g. legacy value or a project that was created codex but acquired
-  // a claude model via picker before this fix landed), fall through to
-  // the provider-appropriate default.
+    directorProvider === 'claude'
+      ? settings?.defaultDirectorModel || directorProviderDefaultModel
+      : directorProviderDefaultModel;
+  // If the stored directorModel doesn't match the Director's effective
+  // provider (e.g. legacy value, or the Director provider was just
+  // flipped to one whose model picker hasn't been touched yet), fall
+  // through to the provider-appropriate default.
   const persistedDirector =
     activeProject?.directorModel &&
-    modelMatchesProvider(activeProject.directorModel, activeProvider)
+    modelMatchesProvider(activeProject.directorModel, directorProvider)
       ? activeProject.directorModel
       : undefined;
   const directorModel = persistedDirector || directorFallbackModel;
@@ -374,6 +421,7 @@ export function App() {
         <LeftRail
           active={active}
           agentCount={agents.length}
+          marketplaceUpdateCount={marketplace.pendingUpdates.length}
           onSelect={setActive}
         />
 
@@ -387,12 +435,22 @@ export function App() {
               mode={mode}
               model={directorModel}
               effort={directorEffort}
+              directorProvider={directorProvider}
+              projectProvider={activeProvider}
               onModeChange={setMode}
               onModelChange={(m) => {
                 if (activeProjectId) void setProjectDirectorModel(activeProjectId, m);
               }}
               onEffortChange={(e) => {
                 if (activeProjectId) void setProjectDirectorEffort(activeProjectId, e);
+              }}
+              onDirectorProviderChange={(p) => {
+                if (!activeProjectId) return;
+                // null = clear override → fall back to project default.
+                void setProjectDirectorProvider(
+                  activeProjectId,
+                  p === activeProvider ? null : p,
+                );
               }}
               onSend={send}
               onSpawnPlan={spawnPlan}
@@ -401,7 +459,6 @@ export function App() {
                   await window.api.wipeDirector(activeProjectId);
               }}
               viewMode={viewMode}
-              provider={activeProject?.provider ?? 'claude'}
               projectId={activeProjectId}
               onSlashAction={async (action: BuiltinAction) => {
                 switch (action) {
@@ -485,6 +542,18 @@ export function App() {
               if (activeProjectId)
                 await setProjectRoleTools(activeProjectId, roleTools);
             }}
+            onMcpChange={async (config) => {
+              if (!activeProjectId)
+                return { ok: false, error: 'no active project' };
+              return setMcpConfig(activeProjectId, config);
+            }}
+          />
+        ) : active === 'marketplace' ? (
+          <MarketplaceScreen
+            projectId={activeProjectId}
+            projectName={activeProject?.name ?? null}
+            projectProvider={activeProject?.provider ?? null}
+            directorProvider={activeProject ? directorProvider : null}
           />
         ) : active === 'cost' ? (
           <SpendScreen />
@@ -512,6 +581,22 @@ export function App() {
         )}
       </div>
       <StatusBar agentCount={agents.length} />
+
+      {marketplaceToast && (
+        <button
+          className="marketplace-toast"
+          onClick={() => {
+            setMarketplaceToast(null);
+            setActive('marketplace');
+          }}
+          title="Click to open the Marketplace"
+        >
+          {marketplaceToast.count === 1
+            ? '1 new bundle update available'
+            : `${marketplaceToast.count} new bundle updates available`}{' '}
+          · Marketplace
+        </button>
+      )}
 
       {showNewProject && (
         <NewProjectForm

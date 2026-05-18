@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { app } from 'electron';
 import type {
   AgentRole,
   EffortLevel,
@@ -7,6 +10,34 @@ import type {
 } from '../shared/types';
 import { isEffortLevel } from '../shared/efforts';
 import { getDb, scheduleSave } from './db';
+
+/**
+ * Path to the on-disk mirror of a project's MCP config. The DB stores
+ * the JSON string; we sync it to a real file because `claude
+ * --mcp-config` reads a path and we don't want to risk Windows' argv
+ * length cap with a long inline JSON string.
+ */
+export function mcpConfigPath(projectId: string): string {
+  return path.join(
+    app.getPath('userData'),
+    'mcp-configs',
+    `${projectId}.json`,
+  );
+}
+
+/**
+ * Returns the on-disk MCP config path for a project IF a config has
+ * been saved, else null. Runner callers use this to decide whether to
+ * pass --mcp-config to the CLI.
+ */
+export function getMcpConfigPath(projectId: string): string | null {
+  const p = mcpConfigPath(projectId);
+  try {
+    return fs.existsSync(p) ? p : null;
+  } catch {
+    return null;
+  }
+}
 
 function asProvider(v: unknown): Provider {
   return v === 'codex' ? 'codex' : 'claude';
@@ -23,7 +54,7 @@ function asInt(v: unknown, fallback = 0): number {
 export function listProjects(): Project[] {
   const db = getDb();
   const res = db.exec(
-    `SELECT id, name, workspace, created_at, director_model, director_effort, role_tools, provider FROM projects ORDER BY created_at ASC`,
+    `SELECT id, name, workspace, created_at, director_model, director_effort, role_tools, provider, director_provider, mcp_config FROM projects ORDER BY created_at ASC`,
   );
   if (res.length === 0) return [];
   return res[0].values.map((row) => {
@@ -31,6 +62,8 @@ export function listProjects(): Project[] {
     const de = row[5];
     const rt = row[6];
     const pv = row[7];
+    const dpv = row[8];
+    const mcp = row[9];
     return {
       id: asStr(row[0]),
       name: asStr(row[1]),
@@ -39,7 +72,10 @@ export function listProjects(): Project[] {
       provider: asProvider(pv),
       directorModel: typeof dm === 'string' && dm.length > 0 ? dm : undefined,
       directorEffort: isEffortLevel(de) ? de : undefined,
+      directorProvider:
+        dpv === 'claude' || dpv === 'codex' ? dpv : undefined,
       roleTools: parseRoleTools(rt),
+      mcpConfig: typeof mcp === 'string' && mcp.length > 0 ? mcp : undefined,
     };
   });
 }
@@ -84,6 +120,73 @@ export function setProjectDirectorEffort(
     `UPDATE projects SET director_effort = ? WHERE id = ?`,
   );
   stmt.run([effort && isEffortLevel(effort) ? effort : null, id]);
+  stmt.free();
+  scheduleSave();
+}
+
+/**
+ * Set the project's MCP server config — a JSON string in the shape
+ * `claude --mcp-config` expects. Pass null (or empty) to clear. The
+ * string is stored in the DB and mirrored to a file in app userData
+ * so the CLI can read a real path. Returns the on-disk path that the
+ * runner will pass via `--mcp-config`, or null if the config was
+ * cleared.
+ *
+ * Validation is the caller's job: this writes whatever you hand it.
+ * The IPC handler does the JSON.parse check before calling.
+ */
+export function setProjectMcpConfig(
+  id: string,
+  config: string | null,
+): string | null {
+  const db = getDb();
+  const value = config && config.trim().length > 0 ? config : null;
+  const stmt = db.prepare(`UPDATE projects SET mcp_config = ? WHERE id = ?`);
+  stmt.run([value, id]);
+  stmt.free();
+  scheduleSave();
+
+  // Mirror to disk for the CLI to read.
+  const filePath = mcpConfigPath(id);
+  if (value) {
+    try {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, value, 'utf8');
+      return filePath;
+    } catch {
+      // If the file write fails the DB is still correct; subsequent
+      // spawns will skip --mcp-config because the file isn't there.
+      return null;
+    }
+  } else {
+    try {
+      fs.unlinkSync(filePath);
+    } catch {
+      // already gone
+    }
+    return null;
+  }
+}
+
+/**
+ * Set the Director's provider override for a project. Pass `null` (or
+ * an invalid value) to clear, returning the Director to the project's
+ * default. The caller is responsible for resetting any in-memory and
+ * persisted Director session id — switching providers invalidates the
+ * existing session id because the new CLI can't resume a session
+ * created by the old one.
+ */
+export function setProjectDirectorProvider(
+  id: string,
+  provider: Provider | null,
+): void {
+  const db = getDb();
+  const value =
+    provider === 'claude' || provider === 'codex' ? provider : null;
+  const stmt = db.prepare(
+    `UPDATE projects SET director_provider = ? WHERE id = ?`,
+  );
+  stmt.run([value, id]);
   stmt.free();
   scheduleSave();
 }

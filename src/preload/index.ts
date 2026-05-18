@@ -1,4 +1,9 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import {
+  contextBridge,
+  ipcRenderer,
+  webUtils,
+  type IpcRendererEvent,
+} from 'electron';
 import {
   IpcChannels,
   type AcceptPlanRequest,
@@ -79,6 +84,17 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.AttachmentDispose, path) as Promise<{
       ok: boolean;
     }>,
+  describeAttachmentPaths: (paths) =>
+    ipcRenderer.invoke(
+      IpcChannels.AttachmentDescribePaths,
+      paths,
+    ) as Promise<import('../shared/ipc').PastedImageInfo[]>,
+  // Runs synchronously in the preload context using Electron's webUtils.
+  // Returning a string (not a Promise) makes the drop-handler glue much
+  // tidier — no extra await before we even have the path.
+  getDroppedFilePath: (file: File) => webUtils.getPathForFile(file),
+  readAttachmentThumb: (path) =>
+    ipcRenderer.invoke(IpcChannels.AttachmentReadThumb, path) as Promise<string>,
 
   listDirectorMessages: (projectId) =>
     ipcRenderer.invoke(
@@ -148,6 +164,131 @@ const api: OrchestratorApi = {
       id,
       effort,
     ) as Promise<{ ok: true }>,
+  setProjectDirectorProvider: (id, provider) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetDirectorProvider,
+      id,
+      provider,
+    ) as Promise<{ ok: true }>,
+  setProjectMcpConfig: (id, config) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetMcpConfig,
+      id,
+      config,
+    ) as Promise<{ ok: boolean; error?: string }>,
+
+  // ─────────────────────────── Marketplace ───────────────────────────
+  listMarketplaceSources: () =>
+    ipcRenderer.invoke(IpcChannels.MarketplaceListSources) as Promise<
+      import('../shared/ipc').MarketplaceSourceView[]
+    >,
+  listMarketplaceBundles: (sourceId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceListBundles,
+      sourceId,
+    ) as Promise<import('../shared/ipc').MarketplaceBundleView[]>,
+  listMarketplaceSubscriptions: (projectId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceListSubscriptions,
+      projectId,
+    ) as Promise<import('../shared/ipc').MarketplaceSubscriptionView[]>,
+  subscribeMarketplaceBundle: (projectId, sourceId, bundleId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceSubscribe,
+      projectId,
+      sourceId,
+      bundleId,
+    ) as Promise<{ ok: boolean; error?: string }>,
+  unsubscribeMarketplaceBundle: (projectId, sourceId, bundleId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceUnsubscribe,
+      projectId,
+      sourceId,
+      bundleId,
+    ) as Promise<{ ok: true }>,
+  refreshMarketplaceSource: (sourceId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceRefresh,
+      sourceId,
+    ) as Promise<{ ok: boolean; sha?: string; changed?: boolean; error?: string }>,
+  acknowledgeMarketplaceUpdate: (projectId, sourceId, bundleId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceAckUpdate,
+      projectId,
+      sourceId,
+      bundleId,
+    ) as Promise<{ ok: true }>,
+  setMarketplaceBundleRoles: (projectId, sourceId, bundleId, roles) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceSetRoles,
+      projectId,
+      sourceId,
+      bundleId,
+      roles,
+    ) as Promise<{ ok: true }>,
+  moveMarketplaceSubscription: (
+    sourceId,
+    bundleId,
+    fromProjectId,
+    toProjectId,
+  ) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceMoveScope,
+      sourceId,
+      bundleId,
+      fromProjectId,
+      toProjectId,
+    ) as Promise<{ ok: boolean; error?: string }>,
+  addMarketplaceSource: (repo, branch) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceAddSource,
+      repo,
+      branch,
+    ) as Promise<{ ok: boolean; sourceId?: string; error?: string }>,
+  removeMarketplaceSource: (sourceId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceRemoveSource,
+      sourceId,
+    ) as Promise<{ ok: boolean; error?: string }>,
+  setMarketplaceSourceEnabled: (sourceId, enabled) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceSetSourceEnabled,
+      sourceId,
+      enabled,
+    ) as Promise<{ ok: true }>,
+  listMarketplaceBundleSkills: (sourceId, bundleId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceListBundleSkills,
+      sourceId,
+      bundleId,
+    ) as Promise<import('../shared/ipc').MarketplaceBundleSkillView[]>,
+  setMarketplaceBundleSkills: (projectId, sourceId, bundleId, skills) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceSetSkills,
+      projectId,
+      sourceId,
+      bundleId,
+      skills,
+    ) as Promise<{ ok: true }>,
+  getMarketplaceChangelog: (sourceId, fromVersion, toVersion) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceGetChangelog,
+      sourceId,
+      fromVersion,
+      toVersion,
+    ) as Promise<import('../shared/ipc').MarketplaceChangelogEntry[]>,
+  onMarketplaceSourcePatch: (cb) =>
+    subscribe<{
+      sourceId: string;
+      patch: Partial<import('../shared/ipc').MarketplaceSourceView>;
+    }>(IpcChannels.MarketplaceEventSourcePatch, cb),
+  onMarketplaceSubscriptionsChanged: (cb) =>
+    subscribe<{ projectId: string }>(
+      IpcChannels.MarketplaceEventSubscriptionsChanged,
+      cb,
+    ),
+  onMarketplaceSourcesChanged: (cb) =>
+    subscribe<void>(IpcChannels.MarketplaceEventSourcesChanged, () => cb()),
   setProjectRoleTools: (id, roleTools) =>
     ipcRenderer.invoke(
       IpcChannels.ProjectSetRoleTools,

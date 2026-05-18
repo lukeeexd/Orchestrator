@@ -6,6 +6,7 @@ import type {
   EffortLevel,
   ForkAgentRequest,
   LogLine,
+  Provider,
   RedirectAgentRequest,
   SpawnAgentRequest,
 } from '../../shared/types';
@@ -23,7 +24,8 @@ import { readSettings } from '../settings';
 import * as director from '../director/runner';
 import * as persistence from '../persistence';
 import { prepareAttachments } from '../attachments';
-import { getProject } from '../projects';
+import { getMcpConfigPath, getProject } from '../projects';
+import { pluginDirsForProject } from '../marketplace';
 import { effectiveSkill } from '../skills';
 
 /**
@@ -149,7 +151,12 @@ export async function spawnAgent(
   // req.model is also validated against the project provider — if
   // someone managed to spawn with a mismatched id, we ignore it.
   const baseSettings = readSettings();
-  const spawnProvider = getProject(req.projectId)?.provider ?? 'claude';
+  // Resolve provider: explicit per-agent override wins over the project
+  // default. The resolved value is stored on the agent so subsequent
+  // run/redirect/fork code paths read it from the agent record (stable
+  // even if project provider changes later).
+  const projectProvider = getProject(req.projectId)?.provider ?? 'claude';
+  const spawnProvider: Provider = req.provider ?? projectProvider;
   const requestedModel =
     req.model && modelMatchesProvider(req.model, spawnProvider)
       ? req.model
@@ -185,6 +192,7 @@ export async function spawnAgent(
     workspace: req.workspace,
     budget,
     spawnedBy: req.spawnedBy ?? 'user',
+    provider: spawnProvider,
     log: [],
     startedAt: Date.now(),
   };
@@ -236,12 +244,19 @@ export async function forkAgent(
       error: 'parent has no SDK session id yet — wait for its first result event',
     };
   }
-  const provider = getProject(parent.agent.projectId)?.provider ?? 'claude';
+  // Fork inherits the parent agent's provider, which may differ from
+  // the project default (per-agent override). The codex fork restriction
+  // is provider-specific, not project-specific, so we gate on the
+  // parent's effective provider.
+  const provider =
+    parent.agent.provider ??
+    getProject(parent.agent.projectId)?.provider ??
+    'claude';
   if (provider === 'codex') {
     return {
       ok: false,
       error:
-        'fork is not supported for codex projects yet — codex exec exposes JSON resume, but not JSON fork',
+        'fork is not supported for codex agents yet — codex exec exposes JSON resume, but not JSON fork',
     };
   }
 
@@ -279,6 +294,7 @@ export async function forkAgent(
       seconds: baseSettings.defaultBudgetSeconds,
     },
     spawnedBy: 'user',
+    provider: parent.agent.provider,
     log: [],
     startedAt: Date.now(),
     forkedFromId: parent.agent.id,
@@ -341,8 +357,13 @@ async function runFork(
     const resolved = resolveModel(effectiveModel);
     const effectiveTools = resolveTools(entry.agent.role, entry.agent.projectId);
 
+    // Forks already inherit their parent's stored provider in
+    // forkAgent. Honour that here rather than re-reading project, so
+    // a fork of an overridden-provider parent stays consistent even
+    // if the project provider has since changed.
     const project = getProject(entry.agent.projectId);
-    const provider = project?.provider ?? 'claude';
+    const provider =
+      entry.agent.provider ?? project?.provider ?? 'claude';
     const prep = prepareAttachments(attachments, provider);
     for (const line of prep.warnLines) {
       sinks.onLog(agentId, { ts: nowTs(), kind: 'warn', msg: line });
@@ -376,6 +397,15 @@ ${task}`;
             ...(prep.documents.length > 0
               ? { documents: prep.documents }
               : {}),
+            ...((p) => (p ? { mcpConfigPath: p } : {}))(
+              getMcpConfigPath(entry.agent.projectId),
+            ),
+            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
+              pluginDirsForProject(
+                entry.agent.projectId,
+                entry.agent.role,
+              ),
+            ),
             abortController: controller,
             resume: parentSessionId,
             forkSession: true,
@@ -420,7 +450,13 @@ async function run(
     // spawnAgent and this point). The fallback respects project provider
     // and validates the stored model id against it.
     const entry = registry.get(agentId);
-    const runProvider = getProject(req.projectId)?.provider ?? 'claude';
+    // Honour the per-agent provider override stored at spawn time;
+    // fall back to the project's provider for agents persisted before
+    // schema v13.
+    const runProvider: Provider =
+      entry?.agent.provider ??
+      getProject(req.projectId)?.provider ??
+      'claude';
     const storedAgentModel =
       entry?.agent.model && modelMatchesProvider(entry.agent.model, runProvider)
         ? entry.agent.model
@@ -437,6 +473,25 @@ async function run(
     const prep = prepareAttachments(req.attachments, runProvider);
     for (const line of prep.warnLines) {
       sinks.onLog(agentId, { ts: nowTs(), kind: 'warn', msg: line });
+    }
+    // Diagnostic: surface the marketplace plugins we're about to load
+    // so the user can verify --plugin-dir is being passed correctly.
+    // Emitted only when the spawn is going to claude (codex ignores
+    // pluginDirs); skipped silently when no bundles are subscribed.
+    if (runProvider === 'claude') {
+      const pluginDirs = pluginDirsForProject(req.projectId, req.role);
+      if (pluginDirs.length > 0) {
+        const summary = pluginDirs
+          .map((p) => p.split(/[/\\]/).pop() ?? p)
+          .join(', ');
+        sinks.onLog(agentId, {
+          ts: nowTs(),
+          kind: 'note',
+          msg: `Loading ${pluginDirs.length} skill bundle${
+            pluginDirs.length === 1 ? '' : 's'
+          } via --plugin-dir: ${summary}`,
+        });
+      }
     }
     const promptWithContext = `[workspace] ${workdir}
 All file paths resolve here — your Read, Write, Edit, Glob, Grep tools all operate inside this folder. Use simple relative paths like "notes.md" (preferred) or the absolute path above.
@@ -469,6 +524,12 @@ ${req.task}`;
             ...(prep.documents.length > 0
               ? { documents: prep.documents }
               : {}),
+            ...((p) => (p ? { mcpConfigPath: p } : {}))(
+              getMcpConfigPath(req.projectId),
+            ),
+            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
+              pluginDirsForProject(req.projectId, req.role),
+            ),
             abortController: controller,
             agent: 'main',
             agents: {
@@ -590,8 +651,12 @@ async function runRedirect(
   const resolved = resolveModel(effectiveModel);
 
   try {
+    // Redirect uses the provider the agent originally spawned with —
+    // resuming a session on a different provider doesn't make sense
+    // (the session id is tied to one CLI).
     const project = getProject(entry.agent.projectId);
-    const provider = project?.provider ?? 'claude';
+    const provider =
+      entry.agent.provider ?? project?.provider ?? 'claude';
     const prep = prepareAttachments(attachments, provider);
     for (const line of prep.warnLines) {
       sinks.onLog(agentId, { ts: nowTs(), kind: 'warn', msg: line });
@@ -630,6 +695,15 @@ ${body}`;
             ...(prep.documents.length > 0
               ? { documents: prep.documents }
               : {}),
+            ...((p) => (p ? { mcpConfigPath: p } : {}))(
+              getMcpConfigPath(entry.agent.projectId),
+            ),
+            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
+              pluginDirsForProject(
+                entry.agent.projectId,
+                entry.agent.role,
+              ),
+            ),
             abortController: controller,
             resume: entry.agent.sessionId,
             // Pass the agent config explicitly so the resumed turn uses

@@ -35,9 +35,21 @@ import { deleteAgent } from './persistence';
 import {
   describeAttachments,
   disposePastedFile,
+  pasteTempDir,
+  readAttachmentAsDataUrl,
   savePastedImage,
   supportedAttachmentExtensions,
 } from './attachments';
+import * as marketplace from './marketplace';
+import type {
+  MarketplaceBundleView,
+  MarketplaceSourceView,
+  MarketplaceSubscriptionView,
+} from '../shared/ipc';
+import {
+  MARKETPLACE_DEFAULT_SOURCE_ID,
+  MARKETPLACE_GLOBAL_SCOPE_ID,
+} from '../shared/ipc';
 import {
   createProject,
   deleteProject,
@@ -48,6 +60,8 @@ import {
   setActiveProjectId,
   setProjectDirectorEffort,
   setProjectDirectorModel,
+  setProjectDirectorProvider,
+  setProjectMcpConfig,
   setProjectRoleTools,
   setProjectWorkspace,
 } from './projects';
@@ -186,7 +200,47 @@ export function registerIpcHandlers(): void {
       name: string,
       workspace: string,
       provider?: import('../shared/types').Provider,
-    ): Project => createProject(name, workspace, provider ?? 'claude'),
+    ): Project => {
+      const project = createProject(name, workspace, provider ?? 'claude');
+      // If the user has the "copy globals to new projects" toggle on,
+      // snapshot every current global marketplace sub into the new
+      // project as a project-scoped clone (preserving its roles +
+      // selectedSkills + installedVersion). Lets the user customize
+      // per project from a global baseline.
+      if (readSettings().copyGlobalSubsToNewProjects) {
+        const globals = marketplace.listSubscriptions(
+          MARKETPLACE_GLOBAL_SCOPE_ID,
+        );
+        for (const g of globals) {
+          marketplace.subscribeBundle(
+            project.id,
+            g.sourceId,
+            g.bundleId,
+            g.installedVersion,
+          );
+          if (g.roles !== null) {
+            marketplace.setSubscriptionRoles(
+              project.id,
+              g.sourceId,
+              g.bundleId,
+              g.roles,
+            );
+          }
+          if (g.selectedSkills !== null) {
+            marketplace.setSubscriptionSkills(
+              project.id,
+              g.sourceId,
+              g.bundleId,
+              g.selectedSkills,
+            );
+          }
+        }
+        broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+          projectId: project.id,
+        });
+      }
+      return project;
+    },
   );
   ipcMain.handle(
     IpcChannels.ProjectSetActive,
@@ -221,6 +275,48 @@ export function registerIpcHandlers(): void {
     IpcChannels.ProjectSetDirectorEffort,
     (_event, id: string, effort: EffortLevel | null): { ok: true } => {
       setProjectDirectorEffort(id, isEffortLevel(effort) ? effort : null);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetDirectorProvider,
+    (
+      _event,
+      id: string,
+      provider: import('../shared/types').Provider | null,
+    ): { ok: true } => {
+      const value =
+        provider === 'claude' || provider === 'codex' ? provider : null;
+      setProjectDirectorProvider(id, value);
+      // The new CLI can't resume the old CLI's session id, so drop the
+      // saved Director session and any in-memory state. Chat history
+      // stays — the user can still see what was said; the next turn
+      // just doesn't have model-side memory of it.
+      director.resetSessionForProviderChange(id);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetMcpConfig,
+    (
+      _event,
+      id: string,
+      config: string | null,
+    ): { ok: boolean; error?: string } => {
+      // Validate the payload parses as JSON before persisting — a bad
+      // config string would otherwise wreck every subsequent spawn for
+      // the project. Empty / null clears the config (no validation).
+      if (config && config.trim().length > 0) {
+        try {
+          JSON.parse(config);
+        } catch (e) {
+          return {
+            ok: false,
+            error: e instanceof Error ? e.message : 'invalid JSON',
+          };
+        }
+      }
+      setProjectMcpConfig(id, config);
       return { ok: true };
     },
   );
@@ -406,8 +502,29 @@ export function registerIpcHandlers(): void {
       // with other apps. App-startup sweep handles long-term hygiene;
       // per-chip dispose (below) handles the immediate "user clicked ×"
       // case.
-      const tempDir = path.join(app.getPath('temp'), 'orchestrator-paste');
-      return savePastedImage(tempDir, base64, mediaType);
+      return savePastedImage(pasteTempDir(), base64, mediaType);
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AttachmentReadThumb,
+    (_event, target: string): string => {
+      // Gateway lives inside readAttachmentAsDataUrl — only image
+      // extensions get served, oversize / missing / non-file paths
+      // return an empty string and the renderer falls back to the
+      // generic icon.
+      return readAttachmentAsDataUrl(target);
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AttachmentDescribePaths,
+    (_event, paths: string[]) => {
+      // Wraps describeAttachments so the drag-drop handler can validate
+      // non-image files (text, PDF) the same way the picker does. Image
+      // drops go through savePastedImage instead — we don't have a
+      // ready disk path for an in-memory blob.
+      return describeAttachments(Array.isArray(paths) ? paths : []);
     },
   );
 
@@ -418,8 +535,7 @@ export function registerIpcHandlers(): void {
       // so it's safe for the renderer to call this for every chip
       // removal — picked attachments outside the subdir are silently
       // ignored.
-      const tempDir = path.join(app.getPath('temp'), 'orchestrator-paste');
-      return { ok: disposePastedFile(tempDir, target) };
+      return { ok: disposePastedFile(pasteTempDir(), target) };
     },
   );
 
@@ -535,6 +651,12 @@ export function registerIpcHandlers(): void {
                 workspace: req.workspace,
                 spawnedBy: 'director',
                 ...directorOverrides,
+                // Per-row provider override (mixed-provider plans).
+                // Undefined → spawnAgent falls back to the project's
+                // default, same behaviour as before this field existed.
+                ...(req.rows[0].provider
+                  ? { provider: req.rows[0].provider }
+                  : {}),
                 ...(planAttachments ? { attachments: planAttachments } : {}),
               },
               agentSinks,
@@ -570,6 +692,7 @@ export function registerIpcHandlers(): void {
               workspace: req.workspace,
               spawnedBy: 'director',
               ...directorOverrides,
+              ...(row.provider ? { provider: row.provider } : {}),
               ...(planAttachments ? { attachments: planAttachments } : {}),
             },
             agentSinks,
@@ -583,6 +706,374 @@ export function registerIpcHandlers(): void {
       })();
 
       return { spawnedAgentIds: spawned.map((s) => s.id) };
+    },
+  );
+
+  // ─────────────────────── Skill marketplace ──────────────────────
+
+  function sourceView(row: marketplace.SkillSourceRow): MarketplaceSourceView {
+    return {
+      id: row.id,
+      repo: row.repo,
+      defaultBranch: row.defaultBranch,
+      enabled: row.enabled,
+      addedAt: row.addedAt,
+      lastSyncAt: row.lastSyncAt,
+      lastSyncSha: row.lastSyncSha,
+    };
+  }
+
+  ipcMain.handle(IpcChannels.MarketplaceListSources, (): MarketplaceSourceView[] =>
+    marketplace.listSources().map(sourceView),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceListBundles,
+    (_event, sourceId: string): MarketplaceBundleView[] =>
+      marketplace.loadBundles(sourceId).map((b) => ({
+        id: b.id,
+        source: b.source,
+        description: b.description,
+        version: b.version,
+        category: b.category,
+        keywords: b.keywords,
+      })),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceListSubscriptions,
+    (_event, projectId: string): MarketplaceSubscriptionView[] =>
+      marketplace.listSubscriptions(projectId).map((s) => ({
+        projectId: s.projectId,
+        sourceId: s.sourceId,
+        bundleId: s.bundleId,
+        subscribedAt: s.subscribedAt,
+        installedVersion: s.installedVersion,
+        roles: s.roles,
+        selectedSkills: s.selectedSkills,
+        scope:
+          s.projectId === MARKETPLACE_GLOBAL_SCOPE_ID
+            ? ('global' as const)
+            : ('project' as const),
+      })),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceSubscribe,
+    (
+      _event,
+      projectId: string,
+      sourceId: string,
+      bundleId: string,
+    ): { ok: boolean; error?: string } => {
+      const bundle = marketplace.findBundle(sourceId, bundleId);
+      if (!bundle) {
+        return {
+          ok: false,
+          error: 'bundle not found — has the source been synced?',
+        };
+      }
+      marketplace.subscribeBundle(
+        projectId,
+        sourceId,
+        bundleId,
+        bundle.version,
+      );
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId,
+      });
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceUnsubscribe,
+    (
+      _event,
+      projectId: string,
+      sourceId: string,
+      bundleId: string,
+    ): { ok: true } => {
+      marketplace.unsubscribeBundle(projectId, sourceId, bundleId);
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId,
+      });
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceRefresh,
+    async (
+      _event,
+      sourceId: string,
+    ): Promise<{
+      ok: boolean;
+      sha?: string;
+      changed?: boolean;
+      error?: string;
+    }> => {
+      const source = marketplace.getSource(sourceId);
+      if (!source) return { ok: false, error: 'source not found' };
+      broadcast(IpcChannels.MarketplaceEventSourcePatch, {
+        sourceId,
+        patch: { syncing: true, syncError: undefined },
+      });
+      try {
+        const { sha, changed } = await marketplace.syncSource(source);
+        const syncedAt = Date.now();
+        marketplace.recordSourceSync(sourceId, sha, syncedAt);
+        broadcast(IpcChannels.MarketplaceEventSourcePatch, {
+          sourceId,
+          patch: {
+            syncing: false,
+            lastSyncAt: syncedAt,
+            lastSyncSha: sha,
+            syncError: undefined,
+          },
+        });
+        return { ok: true, sha, changed };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        broadcast(IpcChannels.MarketplaceEventSourcePatch, {
+          sourceId,
+          patch: { syncing: false, syncError: msg },
+        });
+        return { ok: false, error: msg };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceAckUpdate,
+    (
+      _event,
+      projectId: string,
+      sourceId: string,
+      bundleId: string,
+    ): { ok: true } => {
+      const bundle = marketplace.findBundle(sourceId, bundleId);
+      if (bundle) {
+        marketplace.acknowledgeBundleVersion(
+          projectId,
+          sourceId,
+          bundleId,
+          bundle.version,
+        );
+        broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+          projectId,
+        });
+      }
+      return { ok: true };
+    },
+  );
+
+  /**
+   * Normalize a user-typed repo string into the canonical "owner/repo"
+   * form we use as a source id. Accepts pasted https URLs, trailing
+   * slashes, .git suffixes. Returns null if the result isn't a plausible
+   * GitHub slug.
+   */
+  function normalizeRepo(input: string): string | null {
+    let s = input.trim();
+    s = s.replace(/^https?:\/\/github\.com\//i, '');
+    s = s.replace(/\/+$/, '');
+    s = s.replace(/\.git$/i, '');
+    if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(s)) return null;
+    return s;
+  }
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceAddSource,
+    async (
+      _event,
+      repo: string,
+      branch?: string,
+    ): Promise<{ ok: boolean; sourceId?: string; error?: string }> => {
+      const normalized = normalizeRepo(repo);
+      if (!normalized) {
+        return {
+          ok: false,
+          error: 'Repo must be in the form "owner/repo".',
+        };
+      }
+      const defaultBranch =
+        branch && branch.trim().length > 0 ? branch.trim() : 'main';
+      const inserted = marketplace.ensureSource({
+        id: normalized,
+        repo: normalized,
+        defaultBranch,
+      });
+      if (!inserted) {
+        return {
+          ok: false,
+          error: `Source "${normalized}" is already added.`,
+        };
+      }
+      // Run the first sync inline so a bad repo / missing branch / git
+      // error surfaces in the modal rather than leaving the user with a
+      // broken-looking source row. Roll back the row on failure.
+      const row = marketplace.getSource(normalized);
+      if (!row) {
+        return { ok: false, error: 'failed to read back inserted source' };
+      }
+      try {
+        const { sha } = await marketplace.syncSource(row);
+        marketplace.recordSourceSync(normalized, sha, Date.now());
+        broadcast(IpcChannels.MarketplaceEventSourcesChanged, undefined);
+        return { ok: true, sourceId: normalized };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        marketplace.removeSource(normalized);
+        broadcast(IpcChannels.MarketplaceEventSourcesChanged, undefined);
+        return { ok: false, error: msg };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceGetChangelog,
+    (
+      _event,
+      sourceId: string,
+      fromVersion: string | null,
+      toVersion: string,
+    ): marketplace.ChangelogEntry[] =>
+      marketplace.getSourceChangelog(sourceId, fromVersion, toVersion),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceListBundleSkills,
+    (
+      _event,
+      sourceId: string,
+      bundleId: string,
+    ): marketplace.BundleSkillInfo[] =>
+      marketplace.listBundleSkills(sourceId, bundleId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceSetSkills,
+    (
+      _event,
+      projectId: string,
+      sourceId: string,
+      bundleId: string,
+      skills: string[] | null,
+    ): { ok: true } => {
+      const sanitized = skills
+        ? skills.filter((s): s is string => typeof s === 'string')
+        : null;
+      marketplace.setSubscriptionSkills(
+        projectId,
+        sourceId,
+        bundleId,
+        sanitized,
+      );
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId,
+      });
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceSetSourceEnabled,
+    (
+      _event,
+      sourceId: string,
+      enabled: boolean,
+    ): { ok: true } => {
+      marketplace.setSourceEnabled(sourceId, !!enabled);
+      // Source-row patch covers the per-row state in the renderer; a
+      // sourcesChanged broadcast would over-trigger a full reload.
+      // The renderer's per-row patcher already handles this kind of
+      // update.
+      broadcast(IpcChannels.MarketplaceEventSourcePatch, {
+        sourceId,
+        patch: { enabled },
+      });
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceRemoveSource,
+    (_event, sourceId: string): { ok: boolean; error?: string } => {
+      if (sourceId === MARKETPLACE_DEFAULT_SOURCE_ID) {
+        return {
+          ok: false,
+          error:
+            'The default source cannot be removed (it would be re-seeded on the next launch). Disable it instead.',
+        };
+      }
+      const removed = marketplace.removeSource(sourceId);
+      if (!removed) {
+        return { ok: false, error: 'source not found' };
+      }
+      broadcast(IpcChannels.MarketplaceEventSourcesChanged, undefined);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceMoveScope,
+    (
+      _event,
+      sourceId: string,
+      bundleId: string,
+      fromProjectId: string,
+      toProjectId: string,
+    ): { ok: boolean; error?: string } => {
+      const moved = marketplace.moveSubscription(
+        sourceId,
+        bundleId,
+        fromProjectId,
+        toProjectId,
+      );
+      if (!moved) {
+        return {
+          ok: false,
+          error: 'no subscription to move at the source scope',
+        };
+      }
+      // Notify both scopes so the renderer's two parallel calls
+      // (project + global) both refresh.
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId: fromProjectId,
+      });
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId: toProjectId,
+      });
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceSetRoles,
+    (
+      _event,
+      projectId: string,
+      sourceId: string,
+      bundleId: string,
+      roles: string[] | null,
+    ): { ok: true } => {
+      // Defensive: ignore non-string entries in case the renderer
+      // hands us something weird; we'd rather store [] than corrupt
+      // the JSON. null passes through cleanly = "all roles".
+      const sanitized = roles
+        ? roles.filter((r): r is string => typeof r === 'string')
+        : null;
+      marketplace.setSubscriptionRoles(
+        projectId,
+        sourceId,
+        bundleId,
+        sanitized,
+      );
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId,
+      });
+      return { ok: true };
     },
   );
 }

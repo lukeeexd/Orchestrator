@@ -6,9 +6,13 @@ import type {
   Provider,
 } from '../../shared/types';
 import { Icon } from './Icon';
+import { AttachmentThumb } from './AttachmentThumb';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
-import { handleImageDrop, handleImagePaste } from '../lib/imagePaste';
+import {
+  handleAttachmentDrop,
+  handleAttachmentPaste,
+} from '../lib/attachmentDataTransfer';
 
 const ROLES: { id: AgentRole; label: string; tint: string }[] = [
   { id: 'pm', label: 'Project Manager', tint: '#4ade80' },
@@ -50,6 +54,12 @@ export function SpawnAgentForm({
 }: Props) {
   const [role, setRole] = useState<AgentRole>('coder');
   const [workspace, setWorkspace] = useState(defaultWorkspace);
+  // Provider starts at the project's default; user can flip for one
+  // spawn without changing the project itself. When the provider
+  // changes mid-form we blank the model so the runner cascades to the
+  // new provider's default (the existing model id won't validate
+  // against the new provider).
+  const [agentProvider, setAgentProvider] = useState<Provider>(provider);
   const [model, setModel] = useState(defaultModel);
   const [effort, setEffort] = useState<EffortLevel>(defaultEffort);
   const [task, setTask] = useState('');
@@ -130,6 +140,7 @@ export function SpawnAgentForm({
         task,
         ...(model ? { model } : {}),
         ...(effort ? { effort } : {}),
+        ...(agentProvider !== provider ? { provider: agentProvider } : {}),
         ...(hasBudget ? { budget } : {}),
         ...(okAttachments.length > 0 ? { attachments: okAttachments } : {}),
       });
@@ -191,15 +202,42 @@ export function SpawnAgentForm({
           </div>
 
           <div className="field">
+            <span className="lbl">
+              Provider · project default is {provider}
+            </span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(['claude', 'codex'] as const).map((p) => (
+                <button
+                  key={p}
+                  className={
+                    'tb-btn' + (agentProvider === p ? ' primary' : '')
+                  }
+                  onClick={() => {
+                    if (agentProvider === p) return;
+                    setAgentProvider(p);
+                    // Switching providers invalidates the current model
+                    // pick — let the runner cascade to the new
+                    // provider's default rather than forcing the user
+                    // to re-select.
+                    setModel('');
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="field">
             <span className="lbl">Model</span>
             <ModelPicker
               value={model}
               onChange={setModel}
-              provider={provider}
+              provider={agentProvider}
             />
           </div>
 
-          {provider === 'claude' && (
+          {agentProvider === 'claude' && (
             <div className="field">
               <span className="lbl">Reasoning effort</span>
               <EffortPicker value={effort} onChange={setEffort} />
@@ -213,7 +251,7 @@ export function SpawnAgentForm({
               value={task}
               onChange={(e) => setTask(e.target.value)}
               onPaste={(e: ClipboardEvent<HTMLTextAreaElement>) => {
-                void handleImagePaste(e, (info) =>
+                void handleAttachmentPaste(e, (info) =>
                   setAttachments((prev) => [...prev, info]),
                 );
               }}
@@ -221,18 +259,18 @@ export function SpawnAgentForm({
                 e.preventDefault()
               }
               onDrop={(e: DragEvent<HTMLTextAreaElement>) => {
-                void handleImageDrop(e, (info) =>
+                void handleAttachmentDrop(e, (info) =>
                   setAttachments((prev) => [...prev, info]),
                 );
               }}
-              placeholder="Describe what you want the agent to do… (paste or drop images to attach)"
+              placeholder="Describe what you want the agent to do… (paste or drop files to attach)"
               rows={6}
             />
           </div>
 
           <div className="field">
             <span className="lbl">
-              Attachments · optional · text files (md / code / config) or images (paste or pick)
+              Attachments · optional · text / images / PDF · paste, drop, or pick
             </span>
             <div className="att-row" style={{ marginBottom: 4 }}>
               {attachments.map((a) => (
@@ -241,7 +279,7 @@ export function SpawnAgentForm({
                   key={a.path}
                   title={a.reason ?? a.path}
                 >
-                  <Icon name="attach" size={10} />
+                  <AttachmentThumb path={a.path} />
                   {a.name}
                   <button
                     className="att-x"

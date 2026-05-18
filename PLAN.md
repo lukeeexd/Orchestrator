@@ -14,9 +14,9 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current focus | **Post-v1 cadence — roughly one minor every couple of days.** Next: v0.7.0 (first end-to-end test of the curated-tag-body release-notes workflow). |
-| Latest release | **v0.6.0** (Director skill slot) |
-| Last updated | 2026-05-18 |
+| Current focus | **Post-v1 cadence — roughly one minor every couple of days.** v0.8.0 ships the Skill Marketplace + MCP + cross-provider stack. Next: dogfood + Phase-3 polish backlog. |
+| Latest release | **v0.8.0** (Skill Marketplace, MCP, cross-provider) |
+| Last updated | 2026-05-19 |
 | Repo | `github.com/lukeeexd/Orchestrator` (**public** as of 2026-05-17). Branches: `main` (release), `dev` (working). |
 
 ## Decisions locked
@@ -73,10 +73,11 @@ What was deferred at v1.0 and has since landed. Kept here so future "next slice"
 
 Things that landed partially or are explicitly tabled. New sessions can pick from here when looking for the next slice.
 
-- **Attachments — current state.** Text files inline as fenced code blocks (100 KiB cap each). Images (png/jpg/jpeg/gif/webp, 5 MiB cap) and PDFs (10 MiB cap) ride alongside as Anthropic vision / document content blocks via `claude --input-format stream-json` over stdin. Pickable, pasteable, droppable. The picker dialog hides unsupported types. Codex projects drop image/document attachments with a warn — `codex exec` has no equivalent multimodal input. Still deferred: drag-drop for non-image files (text/PDF currently go through the picker), per-attachment preview thumbnails in chip rows.
+- **Attachments — current state.** Text files inline as fenced code blocks (100 KiB cap each). Images (png/jpg/jpeg/gif/webp, 5 MiB cap) and PDFs (10 MiB cap) ride alongside as Anthropic vision / document content blocks via `claude --input-format stream-json` over stdin. Pickable, pasteable, droppable for every supported type (drag a PDF or a text file onto the composer the same as an image — `webUtils.getPathForFile` resolves the disk path in the preload). The picker dialog hides unsupported types. Codex projects drop image/document attachments with a warn — `codex exec` has no equivalent multimodal input. Still deferred: per-attachment preview thumbnails in chip rows.
 - **Memory pins.** Drawer Memory tab still renders the "not wired up yet" placeholder. Skills already cover the "carry a persistent body of guidance into every turn" use case, so memory pins are lower priority than they were at v1.0.
 - **Session-wide budget.** Per-agent budgets exist; a global "session won't exceed $X" cap (rolling across all agents in a session) doesn't.
 - **Wipe session.** `wipeDirector` only clears the Director's chat. A full nuke — agents, log lines, attachments, settings.json `oauthToken` — for handing the machine off is still deferred.
+- **Skill marketplace codex integration.** Investigated, deferred. Codex's plugin model (`codex plugin marketplace add/remove`, global state in `~/.codex/config.toml` + `~/.codex/plugins/`) doesn't accept a per-spawn `--plugin-dir`, doesn't support per-bundle subscription within a marketplace, and isn't per-project scopable. Mirroring our subscription model onto codex would either mutate the user's global codex config (option 1: coarse marketplace mirror) or pollute `~/.codex/skills/` (option 2: per-bundle copy) — neither delivers the per-role / per-project / per-bundle granularity the marketplace UI implies. For now the Marketplace screen shows a banner on codex-only projects explaining that subscriptions are dormant there; users can run `codex plugin marketplace add <repo>` from their shell to wire skills into codex itself. Revisit if codex grows a `--plugin-dir` flag or equivalent ad-hoc loading.
 - **More LLM providers.** *(Updated v0.5.x — Codex already shipped as a second provider.)* The runner now branches on a `provider` field per project (`claude` vs `codex`). Adding a third (GPT-5 via the standalone API, Gemini, open models) is feasible but needs:
   - A per-provider runner module that translates the structured event stream into the same `LogLine[]` shape the UI expects.
   - A re-implementation (or wrapping) of the Read / Write / Edit / Bash / Glob / Grep tool surface for providers that don't ship their own tool runner. Codex sidesteps this because `codex exec` has its own equivalent tool surface; a pure-API provider wouldn't.
@@ -154,7 +155,7 @@ Things that landed partially or are explicitly tabled. New sessions can pick fro
 - [x] Code signing deferred — SmartScreen warning is acceptable for self-install
 - [x] Dogfood + tag v0.1.0 on main — shipped 2026-05-15. Post-v1 cadence picked up from there; see "Post-v1 highlights" below for what landed v0.2 – v0.6.
 
-## Post-v1 highlights (v0.2 → v0.6)
+## Post-v1 highlights (v0.2 → v0.8)
 
 Bundled here because the cadence ran roughly one minor every couple of days and the per-release detail lives in the curated annotated-tag bodies on GitHub.
 
@@ -170,6 +171,8 @@ Bundled here because the cadence ran roughly one minor every couple of days and 
 - **ASAR integrity-fuse reversal.** v0.4.0 tried turning the fuses on — silent install failure. Reverted; fuses stay off until the integrity-hash flow is verified end-to-end. (`0a61b6b`)
 - **Release-notes workflow fix.** `actions/checkout` now fetches tag objects so curated annotated-tag bodies show up on the GitHub Release without a manual `gh release edit`. **v0.7.0 will be the first end-to-end test.** A `Write-Host` diagnostic in `release.yml` is there for debugging if it doesn't render.
 - **Going public.** Personal identifiers scrubbed from history; repo flipped public on 2026-05-17.
+- **v0.7.0 — Multimodal attachments.** Images (paste / drag-drop / pick) and PDFs ride as Anthropic vision / document content blocks via `claude --input-format stream-json`. Director→agent attachment forwarding so the coder sees the same screenshot the Director saw. Picker filter, drag-drop for text + PDF, image thumbnails in chip rows.
+- **v0.8.0 — Skill Marketplace + MCP + cross-provider.** New rail item for installing Claude Code skill bundles from GitHub-hosted marketplaces (default: `alirezarezvani/claude-skills`). Hybrid global/project scope; per-role + per-skill granularity; "Add source" supports any GitHub repo with a `.claude-plugin/marketplace.json`. Per-project MCP server config with curated presets (GitHub, Brave/Tavily/Exa/DuckDuckGo, Sequential Thinking, etc). Cross-provider: per-agent provider override, `directorProvider` lets the Director run on a different CLI than the agents, mixed-provider plans where the Director picks claude or codex per plan row. Tools tab "skills" renamed to "prompts" to disambiguate from Marketplace skills.
 
 ## Hardest unknowns (spike when their milestone arrives)
 

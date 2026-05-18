@@ -26,6 +26,10 @@ const DEFAULTS: Settings = {
   defaultBudgetUsd: 0,
   defaultBudgetTokens: 0,
   defaultBudgetSeconds: 0,
+  // Marketplace "defaults for new projects" knob. Off so the simple
+  // global-applies-everywhere model is the default; users who want
+  // per-project customization opt in via the Settings checkbox.
+  copyGlobalSubsToNewProjects: false,
 };
 
 let cached: Settings | null = null;

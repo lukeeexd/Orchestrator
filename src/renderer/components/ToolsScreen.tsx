@@ -1,7 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { AgentRole, Project } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { KNOWN_TOOLS } from '../../shared/tools';
+import {
+  MCP_PRESETS,
+  parseMcpServers,
+  stringifyMcpServers,
+  type McpField,
+  type McpPreset,
+  type McpServerEntry,
+} from '../../shared/mcpPresets';
 import { Icon } from './Icon';
 import { SkillsEditor } from './SkillsEditor';
 
@@ -10,6 +18,9 @@ interface Props {
   onChange: (
     roleTools: Partial<Record<AgentRole, string[]>> | null,
   ) => Promise<void>;
+  onMcpChange: (
+    config: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const ROLE_TINT: Record<AgentRole, string> = {
@@ -23,7 +34,7 @@ const ROLE_TINT: Record<AgentRole, string> = {
 
 const ROLE_ORDER: AgentRole[] = ['pm', 'researcher', 'coder', 'qa', 'devops', 'security'];
 
-export function ToolsScreen({ project, onChange }: Props) {
+export function ToolsScreen({ project, onChange, onMcpChange }: Props) {
   // Compose the live allow-list for every role: project override (if any)
   // wins over the role's hardcoded default. Same precedence the runner
   // uses at spawn time — keep them in lockstep.
@@ -84,7 +95,7 @@ export function ToolsScreen({ project, onChange }: Props) {
     void setRoleAllowList(role, [...ROLES[role].tools]);
   };
 
-  const [tab, setTab] = useState<'tools' | 'skills'>('tools');
+  const [tab, setTab] = useState<'tools' | 'prompts' | 'mcp'>('tools');
 
   if (!project) {
     return (
@@ -116,7 +127,7 @@ export function ToolsScreen({ project, onChange }: Props) {
         <div
           className="mode-toggle"
           style={{ marginLeft: 12 }}
-          title="Per-role configuration: tool allow-lists (claude only) or skill prompts (both providers)."
+          title="Per-role configuration: tool allow-lists (claude only) or per-role prompt extensions (both providers). For Claude Code skills loaded from a marketplace, see the Marketplace rail item."
         >
           <button
             className={tab === 'tools' ? 'on' : ''}
@@ -125,27 +136,41 @@ export function ToolsScreen({ project, onChange }: Props) {
             tools
           </button>
           <button
-            className={tab === 'skills' ? 'on' : ''}
-            onClick={() => setTab('skills')}
+            className={tab === 'prompts' ? 'on' : ''}
+            onClick={() => setTab('prompts')}
+            title="Per-role prompt extensions appended to each agent's system prompt at spawn time. For Claude Code skills loaded from a marketplace, see the Marketplace rail item."
           >
-            skills
+            prompts
+          </button>
+          <button
+            className={tab === 'mcp' ? 'on' : ''}
+            onClick={() => setTab('mcp')}
+          >
+            mcp
           </button>
         </div>
         <span className="spacer" />
       </div>
 
       <div className="settings-body">
-        {tab === 'skills' ? (
+        {tab === 'mcp' ? (
+          <McpEditor project={project} onMcpChange={onMcpChange} />
+        ) : tab === 'prompts' ? (
           <section className="settings-section">
-            <h3 className="settings-h">Per-role skill prompts</h3>
+            <h3 className="settings-h">Per-role prompt extensions</h3>
             <p className="settings-help">
               Markdown appended to each role&apos;s system prompt at spawn
               time. Lets you teach a role about your codebase&apos;s
               conventions without editing the hardcoded prompts. Saved
               per-project at{' '}
               <code>{`<workspace>/.orchestrator/skills/<role>.md`}</code>.
-              Empty file means &quot;no skill&quot; (overrides any in-app
-              default).
+              Empty file means &quot;no extension&quot; (overrides any
+              in-app default). Distinct from{' '}
+              <strong>Marketplace</strong> skills — those are loaded as
+              Claude Code plugins via <code>--plugin-dir</code> and
+              surface as <code>/skill-name</code> commands the model can
+              invoke on demand; these prompt extensions are static text
+              that always shapes the role&apos;s disposition.
             </p>
             <SkillsEditor project={project} />
           </section>
@@ -159,7 +184,7 @@ export function ToolsScreen({ project, onChange }: Props) {
               allow-lists. Per-role sandbox overrides aren&apos;t exposed
               yet — every codex agent currently runs with{' '}
               <code>workspace-write</code>. Switch to the{' '}
-              <strong>skills</strong> tab to author per-role guidance that
+              <strong>prompts</strong> tab to author per-role guidance that
               <em> does</em> apply on codex.
             </div>
           </section>
@@ -263,6 +288,537 @@ export function ToolsScreen({ project, onChange }: Props) {
         </>
         )}
       </div>
+    </div>
+  );
+}
+
+const EXAMPLE_MCP_CONFIG = `{
+  "mcpServers": {
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    }
+  }
+}`;
+
+function McpEditor({
+  project,
+  onMcpChange,
+}: {
+  project: Project;
+  onMcpChange: (
+    config: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>;
+}) {
+  // Local draft state lets the user edit without spam-saving every
+  // keystroke. The Save button commits and only then does the project
+  // record (and the on-disk mirror file) update.
+  const [draft, setDraft] = useState(project.mcpConfig ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  // The preset modal — null when closed, otherwise the preset being
+  // added or edited.
+  const [modal, setModal] = useState<{
+    preset: McpPreset;
+    initial: Record<string, string>;
+  } | null>(null);
+
+  // Resync when the upstream project changes (e.g. switching projects).
+  useEffect(() => {
+    setDraft(project.mcpConfig ?? '');
+    setError(null);
+    setSaved(false);
+  }, [project.id, project.mcpConfig]);
+
+  const dirty = draft !== (project.mcpConfig ?? '');
+
+  // Preset state is derived from the SAVED config (project.mcpConfig),
+  // not the dirty draft — preset operations bypass the manual editor
+  // so the user can't accidentally lose preset state to an unsaved
+  // textarea edit.
+  const installedServers = useMemo(
+    () => parseMcpServers(project.mcpConfig),
+    [project.mcpConfig],
+  );
+
+  const applyPresetChange = async (
+    next: Record<string, McpServerEntry>,
+  ): Promise<void> => {
+    const nextStr = stringifyMcpServers(next);
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const res = await onMcpChange(nextStr.length > 0 ? nextStr : null);
+      if (!res.ok) {
+        setError(res.error ?? 'save failed');
+      } else {
+        // Pull the textarea draft back in line with the saved config
+        // so the user sees the merged JSON they just produced.
+        setDraft(nextStr);
+        setSaved(true);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openAdd = (preset: McpPreset) => {
+    if (preset.fields.length === 0) {
+      // Zero-config preset: skip the modal, install immediately.
+      void applyPresetChange({
+        ...installedServers,
+        [preset.id]: preset.build({}),
+      });
+      return;
+    }
+    setModal({ preset, initial: {} });
+  };
+
+  const openEdit = (preset: McpPreset) => {
+    const existing = installedServers[preset.id];
+    if (!existing) {
+      openAdd(preset);
+      return;
+    }
+    setModal({ preset, initial: preset.parse(existing) });
+  };
+
+  const removePreset = (preset: McpPreset) => {
+    const next = { ...installedServers };
+    delete next[preset.id];
+    void applyPresetChange(next);
+  };
+
+  const handleModalSubmit = (values: Record<string, string>) => {
+    if (!modal) return;
+    const entry = modal.preset.build(values);
+    setModal(null);
+    void applyPresetChange({
+      ...installedServers,
+      [modal.preset.id]: entry,
+    });
+  };
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const value = draft.trim().length > 0 ? draft : null;
+      const res = await onMcpChange(value);
+      if (!res.ok) {
+        setError(res.error ?? 'save failed');
+      } else {
+        setSaved(true);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const res = await onMcpChange(null);
+      if (!res.ok) {
+        setError(res.error ?? 'clear failed');
+      } else {
+        setDraft('');
+        setSaved(true);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="settings-section">
+      <h3 className="settings-h">MCP server config</h3>
+      <p className="settings-help">
+        JSON config in the shape <code>claude --mcp-config</code> expects.
+        Passed to every claude-provider spawn in this project — the
+        Director and all auto-spawned agents inherit it. Saved per-project
+        in app data; not committed to your workspace. See the{' '}
+        <a
+          href="https://modelcontextprotocol.io/quickstart/user"
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          MCP docs
+        </a>{' '}
+        for available servers and their setup.
+      </p>
+      {project.provider === 'codex' && project.directorProvider !== 'claude' && (
+        <div
+          className="inline-empty"
+          style={{ padding: 14, marginBottom: 10 }}
+        >
+          This project runs against <code>codex exec</code>, which has no
+          equivalent to <code>--mcp-config</code>. Anything saved here
+          will sit on disk but never be applied — switch the project (or
+          just the Director) to claude to make use of MCP.
+        </div>
+      )}
+
+      <h4
+        className="settings-help"
+        style={{
+          fontSize: 11,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+          color: 'var(--muted-2)',
+          margin: '6px 0',
+        }}
+      >
+        Presets
+      </h4>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+          gap: 8,
+          marginBottom: 14,
+        }}
+      >
+        {MCP_PRESETS.map((p) => (
+          <PresetCard
+            key={p.id}
+            preset={p}
+            installed={!!installedServers[p.id]}
+            disabled={busy}
+            onAdd={() => openAdd(p)}
+            onEdit={() => openEdit(p)}
+            onRemove={() => removePreset(p)}
+          />
+        ))}
+      </div>
+
+      <h4
+        className="settings-help"
+        style={{
+          fontSize: 11,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+          color: 'var(--muted-2)',
+          margin: '6px 0',
+        }}
+      >
+        JSON config (advanced)
+      </h4>
+      <textarea
+        className="text-input"
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setSaved(false);
+        }}
+        placeholder={EXAMPLE_MCP_CONFIG}
+        rows={18}
+        spellCheck={false}
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 12,
+          whiteSpace: 'pre',
+          overflowX: 'auto',
+        }}
+      />
+      {error && (
+        <div className="form-error" style={{ marginTop: 6 }}>
+          {error}
+        </div>
+      )}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginTop: 8,
+        }}
+      >
+        <button
+          className="tb-btn primary"
+          onClick={() => void save()}
+          disabled={busy || !dirty}
+          title={
+            dirty
+              ? 'Validate JSON and save for this project'
+              : 'No unsaved changes'
+          }
+        >
+          {busy ? 'Saving…' : dirty ? 'Save' : 'Saved'}
+        </button>
+        {project.mcpConfig && (
+          <button
+            className="tb-btn"
+            onClick={() => void clear()}
+            disabled={busy}
+            title="Drop the saved config; future spawns won't pass --mcp-config"
+          >
+            <Icon name="x" size={11} /> Clear
+          </button>
+        )}
+        {saved && !dirty && !error && (
+          <span style={{ color: 'var(--accent)', fontSize: 11 }}>
+            Saved — next spawn picks it up.
+          </span>
+        )}
+      </div>
+      {modal && (
+        <PresetModal
+          preset={modal.preset}
+          initial={modal.initial}
+          onCancel={() => setModal(null)}
+          onSubmit={handleModalSubmit}
+        />
+      )}
+    </section>
+  );
+}
+
+function PresetCard({
+  preset,
+  installed,
+  disabled,
+  onAdd,
+  onEdit,
+  onRemove,
+}: {
+  preset: McpPreset;
+  installed: boolean;
+  disabled: boolean;
+  onAdd: () => void;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div
+      className="settings-section"
+      style={{
+        padding: 10,
+        margin: 0,
+        background: 'var(--sub)',
+        border: '1px solid var(--border)',
+        borderRadius: 6,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <strong style={{ fontSize: 12 }}>{preset.label}</strong>
+        {installed && (
+          <span
+            className="badge"
+            style={{
+              background: 'var(--sub-2)',
+              color: 'var(--accent)',
+              fontSize: 9,
+            }}
+          >
+            installed
+          </span>
+        )}
+        <span className="spacer" />
+        {preset.docs && (
+          <a
+            href={preset.docs}
+            target="_blank"
+            rel="noreferrer noopener"
+            style={{ fontSize: 11, color: 'var(--muted)' }}
+            title="MCP server docs"
+          >
+            docs
+          </a>
+        )}
+      </div>
+      <p
+        className="settings-help"
+        style={{ fontSize: 11, margin: 0, lineHeight: 1.4 }}
+      >
+        {preset.description}
+      </p>
+      <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
+        {installed ? (
+          <>
+            {preset.fields.length > 0 && (
+              <button
+                className="tb-btn"
+                style={{ height: 22 }}
+                onClick={onEdit}
+                disabled={disabled}
+                title="Edit this preset's configuration"
+              >
+                Edit
+              </button>
+            )}
+            <button
+              className="tb-btn"
+              style={{ height: 22 }}
+              onClick={onRemove}
+              disabled={disabled}
+              title="Remove this preset from the MCP config"
+            >
+              <Icon name="x" size={11} /> Remove
+            </button>
+          </>
+        ) : (
+          <button
+            className="tb-btn primary"
+            style={{ height: 22 }}
+            onClick={onAdd}
+            disabled={disabled}
+            title={
+              preset.fields.length === 0
+                ? 'Install — no configuration needed'
+                : 'Configure and install'
+            }
+          >
+            <Icon name="check" size={11} /> Add
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PresetModal({
+  preset,
+  initial,
+  onCancel,
+  onSubmit,
+}: {
+  preset: McpPreset;
+  initial: Record<string, string>;
+  onCancel: () => void;
+  onSubmit: (values: Record<string, string>) => void;
+}) {
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const out: Record<string, string> = {};
+    for (const f of preset.fields) out[f.key] = initial[f.key] ?? '';
+    return out;
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = () => {
+    for (const f of preset.fields) {
+      if (f.required && !values[f.key]?.trim()) {
+        setError(`${f.label} is required.`);
+        return;
+      }
+    }
+    onSubmit(values);
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 520 }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>Configure {preset.label}</b>
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onCancel} title="Cancel">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div className="modal-body">
+          {preset.fields.map((field) => (
+            <PresetFieldRow
+              key={field.key}
+              field={field}
+              value={values[field.key] ?? ''}
+              onChange={(v) => {
+                setValues((prev) => ({ ...prev, [field.key]: v }));
+                setError(null);
+              }}
+            />
+          ))}
+          {error && (
+            <div className="form-error" style={{ marginTop: 6 }}>
+              {error}
+            </div>
+          )}
+        </div>
+        <div
+          className="modal-foot"
+          style={{
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+            padding: 12,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button className="tb-btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="tb-btn primary" onClick={submit}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PresetFieldRow({
+  field,
+  value,
+  onChange,
+}: {
+  field: McpField;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const isMulti = field.type === 'paths';
+  return (
+    <div className="field">
+      <span className="lbl">
+        {field.label}
+        {field.required && (
+          <span style={{ color: 'var(--accent)' }}> *</span>
+        )}
+      </span>
+      {isMulti ? (
+        <textarea
+          className="text-input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={field.placeholder}
+          rows={4}
+          spellCheck={false}
+          style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}
+        />
+      ) : (
+        <input
+          className="text-input"
+          type={field.type === 'password' ? 'password' : 'text'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={field.placeholder}
+          spellCheck={false}
+        />
+      )}
+      {field.help && (
+        <span
+          className="meta"
+          style={{
+            fontSize: 11,
+            color: 'var(--muted)',
+            marginTop: 2,
+          }}
+        >
+          {field.help}
+        </span>
+      )}
     </div>
   );
 }

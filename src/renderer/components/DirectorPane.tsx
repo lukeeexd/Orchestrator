@@ -19,13 +19,17 @@ import type { SlashCommand } from '../../shared/commands';
 import { applyCommandArguments } from '../../shared/commands';
 import { BUILTIN_COMMANDS } from '../../shared/builtinCommands';
 import { Icon } from './Icon';
+import { AttachmentThumb } from './AttachmentThumb';
 import { PlanCard } from './PlanCard';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
 import { DirectorStream } from './DirectorStream';
 import type { ViewMode } from './TopBar';
 import type { BuiltinAction } from '../../shared/builtinCommands';
-import { handleImageDrop, handleImagePaste } from '../lib/imagePaste';
+import {
+  handleAttachmentDrop,
+  handleAttachmentPaste,
+} from '../lib/attachmentDataTransfer';
 
 const ROLE_TINT: Record<Agent['role'], string> = {
   pm: '#4ade80',
@@ -44,9 +48,19 @@ interface Props {
   mode: DirectorMode;
   model: string;
   effort: EffortLevel;
+  /**
+   * The Director's effective provider. Computed in the parent as
+   * project.directorProvider ?? project.provider — lets the Director
+   * run on a different CLI than the project's agent default.
+   */
+  directorProvider: Provider;
+  /** The project's main provider (used for the codex agents badge etc). */
+  projectProvider: Provider;
   onModeChange: (next: DirectorMode) => void;
   onModelChange: (next: string) => void;
   onEffortChange: (next: EffortLevel) => void;
+  /** Switches the Director to a specific CLI. Pass project default to clear the override. */
+  onDirectorProviderChange: (next: Provider) => void;
   onSend: (
     body: string,
     mode: DirectorMode,
@@ -55,7 +69,6 @@ interface Props {
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   onWipe: () => Promise<void>;
   viewMode: ViewMode;
-  provider: Provider;
   /** Project id used to scope which `.claude/commands/` directory to load from. */
   projectId: string | null;
   /** Dispatches built-in slash command actions (rail nav, wipe, etc). */
@@ -77,14 +90,16 @@ export function DirectorPane({
   mode,
   model,
   effort,
+  directorProvider,
+  projectProvider,
   onModeChange,
   onModelChange,
   onEffortChange,
+  onDirectorProviderChange,
   onSend,
   onSpawnPlan,
   onWipe,
   viewMode,
-  provider,
   projectId,
   onSlashAction,
 }: Props) {
@@ -95,23 +110,43 @@ export function DirectorPane({
         <span className="title">
           <b>Director</b>
         </span>
-        {provider === 'codex' && (
+        {projectProvider === 'codex' && (
           <span
             className="badge"
-            title="This project runs against the `codex` CLI. Effort + tool allow-lists are simpler/different for Codex agents."
+            title="This project's agents run against the `codex` CLI. Effort + tool allow-lists are simpler/different for Codex agents."
             style={{ background: 'var(--sub-2)', color: 'var(--muted)' }}
           >
-            codex
+            agents: codex
+          </span>
+        )}
+        {directorProvider !== projectProvider && (
+          <span
+            className="badge"
+            title={`Director is overridden to ${directorProvider} (project default for agents is ${projectProvider}).`}
+            style={{ background: 'var(--sub-2)', color: 'var(--accent)' }}
+          >
+            director: {directorProvider}
           </span>
         )}
         <ModeToggle mode={mode} onChange={onModeChange} />
+        <select
+          className="text-input settings-select model-picker-compact"
+          value={directorProvider}
+          onChange={(e) =>
+            onDirectorProviderChange(e.target.value as Provider)
+          }
+          title="Director's CLI provider. Can differ from the project's agent default — useful for e.g. running a claude Director over codex specialists. Switching providers resets the Director's session (chat history stays)."
+        >
+          <option value="claude">claude</option>
+          <option value="codex">codex</option>
+        </select>
         <ModelPicker
           value={model}
           onChange={onModelChange}
           compact
-          provider={provider}
+          provider={directorProvider}
         />
-        {provider === 'claude' && (
+        {directorProvider === 'claude' && (
           <EffortPicker value={effort} onChange={onEffortChange} compact />
         )}
         <span className="spacer" />
@@ -322,7 +357,7 @@ function Message({
         <div className="msg-attachments">
           {message.attachments.map((a, i) => (
             <span className="att-chip" key={`${a.path}-${i}`} title={a.path}>
-              <Icon name="attach" size={10} /> {a.name}
+              <AttachmentThumb path={a.path} /> {a.name}
             </span>
           ))}
         </div>
@@ -652,7 +687,7 @@ function Composer({
               key={a.path}
               title={a.reason ?? a.path}
             >
-              <Icon name="attach" size={10} />
+              <AttachmentThumb path={a.path} />
               {a.name}
               <button
                 className="att-x"
@@ -687,7 +722,7 @@ function Composer({
             refreshSlash(target.value, target.selectionStart ?? 0);
           }}
           onPaste={(e: ClipboardEvent<HTMLTextAreaElement>) => {
-            void handleImagePaste(e, (info) =>
+            void handleAttachmentPaste(e, (info) =>
               setAttachments((prev) => [...prev, info]),
             );
           }}
@@ -695,14 +730,14 @@ function Composer({
             e.preventDefault()
           }
           onDrop={(e: DragEvent<HTMLTextAreaElement>) => {
-            void handleImageDrop(e, (info) =>
+            void handleAttachmentDrop(e, (info) =>
               setAttachments((prev) => [...prev, info]),
             );
           }}
           placeholder={
             mode === 'auto'
-              ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ for agents, paste or drop images to attach)'
-              : 'Ask the Director for advice… (/ for commands, @ for agents, paste or drop images to attach)'
+              ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ for agents, paste or drop files to attach)'
+              : 'Ask the Director for advice… (/ for commands, @ for agents, paste or drop files to attach)'
           }
           rows={3}
         />
@@ -778,7 +813,7 @@ function Composer({
           style={{ height: 22 }}
           onClick={() => void pick()}
           disabled={busy}
-          title="Attach text files (md / code / config) or images (or paste images directly)"
+          title="Attach text / images / PDF — or paste / drop them directly into the textarea"
         >
           <Icon name="attach" size={11} /> Attach
         </button>

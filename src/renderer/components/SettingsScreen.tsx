@@ -242,6 +242,49 @@ export function SettingsScreen() {
         </section>
 
         <section className="settings-section">
+          <h3 className="settings-h">Marketplace</h3>
+          <div className="field">
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 8,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={draft.copyGlobalSubsToNewProjects}
+                onChange={(e) =>
+                  patch('copyGlobalSubsToNewProjects', e.target.checked)
+                }
+                style={{ marginTop: 3 }}
+              />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12 }}>
+                  Copy global subscriptions to new projects
+                </div>
+                <div
+                  className="settings-help"
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--muted)',
+                    marginTop: 2,
+                  }}
+                >
+                  When a new project is created, snapshot every current
+                  global marketplace subscription as a project-scoped
+                  clone in the new project. Lets you customize per
+                  project (different roles / skills) from a global
+                  baseline. Off by default — global subs already apply
+                  to every project automatically.
+                </div>
+              </div>
+            </label>
+          </div>
+        </section>
+
+        <section className="settings-section">
           <h3 className="settings-h">About</h3>
           <div className="field">
             <span className="lbl">Version</span>

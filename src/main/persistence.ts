@@ -209,6 +209,20 @@ export function saveDirectorSessionId(
   scheduleSave();
 }
 
+/**
+ * Drop just the saved Director session id, leaving chat messages
+ * intact. Used when the Director's provider changes — the new CLI
+ * can't resume a session created by the old one, so the next turn
+ * has to start fresh.
+ */
+export function clearDirectorSessionId(projectId: string): void {
+  const db = getDb();
+  const stmt = db.prepare(`DELETE FROM kv WHERE key = ?`);
+  stmt.run([sessionKey(projectId)]);
+  stmt.free();
+  scheduleSave();
+}
+
 export function loadDirectorSessionId(projectId: string): string | null {
   const db = getDb();
   const stmt = db.prepare(`SELECT value FROM kv WHERE key = ?`);
@@ -233,8 +247,8 @@ export function saveAgent(a: Agent): void {
        tokens, cost, elapsed, model, workspace,
        budget_usd, budget_tokens, budget_seconds,
        spawned_by, started_at, session_id, project_id, effort,
-       forked_from_id, forked_from_name, model_usage)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       forked_from_id, forked_from_name, model_usage, provider)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     a.id,
@@ -262,6 +276,7 @@ export function saveAgent(a: Agent): void {
     a.forkedFromId ?? null,
     a.forkedFromName ?? null,
     a.modelUsage ? JSON.stringify(a.modelUsage) : null,
+    a.provider ?? null,
   ]);
   stmt.free();
   scheduleSave();
@@ -314,7 +329,7 @@ export function loadAgents(): Agent[] {
     SELECT id, ordering, role, role_label, name, status, status_label, step, task,
            tokens, cost, elapsed, model, workspace,
            budget_usd, budget_tokens, budget_seconds, spawned_by, started_at, session_id, project_id, effort,
-           forked_from_id, forked_from_name, model_usage
+           forked_from_id, forked_from_name, model_usage, provider
     FROM agents ORDER BY ordering ASC
   `);
   if (res.length === 0) return [];
@@ -325,6 +340,7 @@ export function loadAgents(): Agent[] {
     const forkedId = row[22];
     const forkedName = row[23];
     const modelUsageRaw = row[24];
+    const providerRaw = row[25];
     out.push({
       id: asStr(row[0]),
       projectId: asStr(row[20]),
@@ -361,6 +377,10 @@ export function loadAgents(): Agent[] {
           ? forkedName
           : undefined,
       modelUsage: parseModelUsage(modelUsageRaw),
+      provider:
+        providerRaw === 'claude' || providerRaw === 'codex'
+          ? providerRaw
+          : undefined,
     });
     agentOrdering = Math.max(agentOrdering, asInt(row[1]));
   }

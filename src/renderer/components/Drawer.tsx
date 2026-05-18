@@ -150,6 +150,10 @@ function Header({
 }) {
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
   const canRedirect = !isRunning && !!agent.sessionId;
+  // Provider checks below run against the agent's own provider, not the
+  // project's, so a codex-overridden agent on a claude project is gated
+  // correctly (and vice versa).
+  const effectiveProvider = agent.provider ?? provider;
   // Fork can happen any time the parent has produced a session id — even
   // mid-flight. The fork is a separate session and doesn't disturb the
   // parent's run, so we don't gate on isRunning. Codex's `fork` is a
@@ -157,7 +161,7 @@ function Header({
   // a subprocess — fork stays disabled for codex agents until either
   // codex adds a non-interactive fork or we build one ourselves on top
   // of `codex exec resume`.
-  const canFork = !!agent.sessionId && provider !== 'codex';
+  const canFork = !!agent.sessionId && effectiveProvider !== 'codex';
   const [redirectOpen, setRedirectOpen] = useState(false);
   const [forkOpen, setForkOpen] = useState(false);
 
@@ -212,7 +216,7 @@ function Header({
           disabled={!canFork}
           onClick={() => setForkOpen((v) => !v)}
           title={
-            provider === 'codex'
+            effectiveProvider === 'codex'
               ? "Fork isn't available on codex agents — `codex fork` is a TUI-only subcommand with no --json output, so we can't drive it from a subprocess yet."
               : !agent.sessionId
               ? 'No session captured yet (no result event)'
@@ -235,7 +239,7 @@ function Header({
           agentId={agent.id}
           currentModel={agent.model}
           currentEffort={agent.effort}
-          provider={provider}
+          provider={effectiveProvider}
           onClose={() => setRedirectOpen(false)}
         />
       )}
@@ -244,7 +248,7 @@ function Header({
           parentAgentId={agent.id}
           currentModel={agent.model}
           currentEffort={agent.effort}
-          provider={provider}
+          provider={effectiveProvider}
           onClose={() => setForkOpen(false)}
         />
       )}
@@ -591,6 +595,11 @@ function ConfigTab({
 }) {
   const [expanded, setExpanded] = useState(false);
   const role = ROLES[agent.role];
+  // An agent's effective provider is its own override (set at spawn
+  // time) or the project's default. The Model + Effort pickers below
+  // must filter by the agent's provider, not the project's — a codex
+  // agent on a claude project must show codex models.
+  const effectiveProvider = agent.provider ?? provider;
   return (
     <>
       <div className="field">
@@ -613,7 +622,7 @@ function ConfigTab({
           <ModelPicker
             value={agent.model}
             compact
-            provider={provider}
+            provider={effectiveProvider}
             onChange={(m) => {
               if (m && m !== agent.model) void window.api.setAgentModel(agent.id, m);
             }}
@@ -625,7 +634,7 @@ function ConfigTab({
           )}
         </span>
       </div>
-      {provider === 'claude' && (
+      {effectiveProvider === 'claude' && (
         <div className="field">
         <span className="lbl">Reasoning effort</span>
         <span className="v">
@@ -644,6 +653,20 @@ function ConfigTab({
         </span>
       </div>
       )}
+      <div className="field">
+        <span className="lbl">Provider</span>
+        <span className="v">
+          <code>{agent.provider ?? provider}</code>
+          {agent.provider && agent.provider !== provider && (
+            <span
+              className="meta"
+              style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}
+            >
+              (project default is {provider})
+            </span>
+          )}
+        </span>
+      </div>
       <div className="field">
         <span className="lbl">Workspace</span>
         <span className="v">

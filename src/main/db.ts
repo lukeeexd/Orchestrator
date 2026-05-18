@@ -197,6 +197,110 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE projects ADD COLUMN provider TEXT;`);
     },
   },
+  {
+    version: 13,
+    up: (db) => {
+      // Per-agent provider override. NULL → fall through to the
+      // project's provider at runtime, matching the original
+      // project-only behaviour for agents that ran before this column
+      // existed.
+      db.exec(`ALTER TABLE agents ADD COLUMN provider TEXT;`);
+    },
+  },
+  {
+    version: 14,
+    up: (db) => {
+      // Project-level Director provider override. NULL → Director uses
+      // the project's main `provider` column, matching the original
+      // single-provider-per-project behaviour. Letting the Director run
+      // on a different CLI than the agents (e.g. claude Director
+      // orchestrating codex coders) is the whole point of this column.
+      db.exec(`ALTER TABLE projects ADD COLUMN director_provider TEXT;`);
+    },
+  },
+  {
+    version: 15,
+    up: (db) => {
+      // Project-level MCP server config — JSON string in the shape
+      // claude --mcp-config expects (typically {"mcpServers": {...}}).
+      // NULL → no MCP servers; the spawn skips --mcp-config entirely.
+      // Codex spawns ignore this column (codex doesn't support
+      // --mcp-config). The string is also mirrored to a file in
+      // app userData so the CLI can read a real path — passing huge
+      // JSON via argv would risk Windows' command-line length cap.
+      db.exec(`ALTER TABLE projects ADD COLUMN mcp_config TEXT;`);
+    },
+  },
+  {
+    version: 16,
+    up: (db) => {
+      // Skill marketplace: a set of GitHub repos that publish
+      // Claude-Code-compatible plugin bundles, plus per-project
+      // subscriptions to specific bundles. The local cache lives in
+      // userData/skill-marketplaces/<sourceId>/ — see
+      // src/main/marketplace.ts — and on each claude spawn we append
+      // --plugin-dir <cache>/<bundle.source> for every subscribed
+      // bundle for the project.
+      //
+      // skill_sources: one row per GitHub-hosted marketplace.
+      //   last_sync_sha tracks the last cloned/pulled commit.
+      // project_subscribed_bundles: many-to-many between projects and
+      //   marketplace bundles. installed_version is the version the
+      //   user last acknowledged — when a sync pulls in a newer
+      //   marketplace.json version, the diff drives the "update
+      //   available" toast + badge.
+      db.exec(`
+        CREATE TABLE skill_sources (
+          id TEXT PRIMARY KEY,
+          repo TEXT NOT NULL,
+          default_branch TEXT NOT NULL DEFAULT 'main',
+          enabled INTEGER NOT NULL DEFAULT 1,
+          added_at INTEGER NOT NULL,
+          last_sync_at INTEGER,
+          last_sync_sha TEXT
+        );
+
+        CREATE TABLE project_subscribed_bundles (
+          project_id TEXT NOT NULL,
+          source_id TEXT NOT NULL,
+          bundle_id TEXT NOT NULL,
+          subscribed_at INTEGER NOT NULL,
+          installed_version TEXT,
+          PRIMARY KEY (project_id, source_id, bundle_id)
+        );
+
+        CREATE INDEX idx_subscribed_bundles_project
+          ON project_subscribed_bundles (project_id);
+      `);
+    },
+  },
+  {
+    version: 17,
+    up: (db) => {
+      // Per-role bundle enablement. roles is a JSON-encoded array of
+      // role keys (AgentRole values plus 'director'). NULL means "all
+      // roles" — preserves the v16 behaviour for subscriptions that
+      // existed before this column was added.
+      db.exec(
+        `ALTER TABLE project_subscribed_bundles ADD COLUMN roles TEXT;`,
+      );
+    },
+  },
+  {
+    version: 18,
+    up: (db) => {
+      // Skill-level granularity within a bundle. selected_skills is a
+      // JSON-encoded array of skill ids (the subdir names inside the
+      // bundle that contain SKILL.md). NULL means "all skills" —
+      // preserves the v17 behaviour where subscribing loaded the
+      // entire bundle. When set, the runner builds a synthetic plugin
+      // dir containing only the listed skill subfolders and passes
+      // THAT to --plugin-dir.
+      db.exec(
+        `ALTER TABLE project_subscribed_bundles ADD COLUMN selected_skills TEXT;`,
+      );
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

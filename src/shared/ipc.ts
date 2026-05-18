@@ -26,6 +26,8 @@ export const IpcChannels = {
   AttachmentPick: 'attachment:pick',
   AttachmentSavePaste: 'attachment:savePaste',
   AttachmentDispose: 'attachment:dispose',
+  AttachmentDescribePaths: 'attachment:describePaths',
+  AttachmentReadThumb: 'attachment:readThumb',
   DirectorList: 'director:list',
   DirectorSend: 'director:send',
   DirectorAcceptPlan: 'director:acceptPlan',
@@ -39,6 +41,26 @@ export const IpcChannels = {
   ProjectSetWorkspace: 'project:setWorkspace',
   ProjectSetDirectorModel: 'project:setDirectorModel',
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
+  ProjectSetDirectorProvider: 'project:setDirectorProvider',
+  ProjectSetMcpConfig: 'project:setMcpConfig',
+  MarketplaceListSources: 'marketplace:listSources',
+  MarketplaceListBundles: 'marketplace:listBundles',
+  MarketplaceListSubscriptions: 'marketplace:listSubscriptions',
+  MarketplaceSubscribe: 'marketplace:subscribe',
+  MarketplaceUnsubscribe: 'marketplace:unsubscribe',
+  MarketplaceRefresh: 'marketplace:refresh',
+  MarketplaceAckUpdate: 'marketplace:ackUpdate',
+  MarketplaceSetRoles: 'marketplace:setRoles',
+  MarketplaceMoveScope: 'marketplace:moveScope',
+  MarketplaceAddSource: 'marketplace:addSource',
+  MarketplaceRemoveSource: 'marketplace:removeSource',
+  MarketplaceSetSourceEnabled: 'marketplace:setSourceEnabled',
+  MarketplaceListBundleSkills: 'marketplace:listBundleSkills',
+  MarketplaceSetSkills: 'marketplace:setSkills',
+  MarketplaceGetChangelog: 'marketplace:getChangelog',
+  MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
+  MarketplaceEventSourcePatch: 'marketplace:event:sourcePatch',
+  MarketplaceEventSubscriptionsChanged: 'marketplace:event:subscriptionsChanged',
   ProjectSetRoleTools: 'project:setRoleTools',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
@@ -92,6 +114,16 @@ export interface Settings {
   defaultBudgetTokens: number;
   /** Per-agent wall-clock cap in seconds. 0 = unlimited. */
   defaultBudgetSeconds: number;
+  /**
+   * When true, creating a new project copies every current
+   * marketplace global-scope subscription into the new project as a
+   * project-scoped sub. Useful when you want each project to start
+   * with the global baseline AND be able to customize roles / skills
+   * per project without dragging the rest of the projects along.
+   * Defaults to false — preserves the simple "global = applies
+   * everywhere" model for users who don't want the duplication.
+   */
+  copyGlobalSubsToNewProjects: boolean;
 }
 
 export interface SpawnAgentResponse {
@@ -114,6 +146,95 @@ export interface PastedImageInfo {
   ok: boolean;
   reason?: string;
   kind?: 'text' | 'image' | 'unsupported';
+}
+
+/**
+ * Sentinel project id used to scope a subscription "globally" — i.e.
+ * loaded into every project's claude spawns. Stored in project_id of
+ * project_subscribed_bundles so we don't need a separate table.
+ *
+ * Real project ids are UUIDs, so this literal can't collide.
+ */
+export const MARKETPLACE_GLOBAL_SCOPE_ID = '__global__';
+
+/**
+ * The pre-seeded default marketplace source. Treated specially in the
+ * UI — can't be removed via the Remove button (removing it would just
+ * cause the next launch's seed to re-add it; cleaner to just disable
+ * it if a user really doesn't want it).
+ */
+export const MARKETPLACE_DEFAULT_SOURCE_ID = 'alirezarezvani/claude-skills';
+
+/** Renderer-shaped view of one skill_sources row. */
+export interface MarketplaceSourceView {
+  id: string;
+  repo: string;
+  defaultBranch: string;
+  enabled: boolean;
+  addedAt: number;
+  lastSyncAt: number | null;
+  lastSyncSha: string | null;
+  /** Set when a sync is in flight (UI shows a spinner). */
+  syncing?: boolean;
+  /** Set when the last sync attempt failed. Cleared on the next success. */
+  syncError?: string;
+}
+
+/** Renderer-shaped view of one marketplace.json bundle entry. */
+export interface MarketplaceBundleView {
+  id: string;
+  /** Relative path from the repo root, mirrors marketplace.json::plugins[].source. */
+  source: string;
+  description: string;
+  version: string;
+  category?: string;
+  keywords?: string[];
+}
+
+/** Renderer-shaped view of a project's subscribed bundle. */
+export interface MarketplaceSubscriptionView {
+  /** Either a real project UUID or MARKETPLACE_GLOBAL_SCOPE_ID. */
+  projectId: string;
+  sourceId: string;
+  bundleId: string;
+  subscribedAt: number;
+  /** Version the user last acknowledged. Compare to current bundle.version for "update available". */
+  installedVersion: string | null;
+  /**
+   * Per-role enablement. `null` = all roles load the bundle (default
+   * at install). Otherwise: only the listed AgentRole keys plus
+   * 'director' (if present). An empty array subscribes the bundle
+   * without making it available to any role — the UI surfaces that
+   * as a "no agents" hint.
+   */
+  roles: string[] | null;
+  /**
+   * Per-skill enablement within the bundle. `null` = all skills (the
+   * whole bundle loads, default at install). Otherwise a list of
+   * skill ids — the runner materializes a synthetic plugin dir with
+   * only these skills. Empty array = no skills (degenerate; the
+   * runner skips --plugin-dir for this subscription entirely).
+   */
+  selectedSkills: string[] | null;
+  /** Derived from projectId — 'global' for the sentinel, 'project' otherwise. */
+  scope: 'global' | 'project';
+}
+
+/** One skill within a bundle, surfaced for the skill-picker UI. */
+export interface MarketplaceBundleSkillView {
+  /** Subdir name inside the bundle. */
+  id: string;
+  /** Human label from SKILL.md frontmatter `name:`. */
+  name?: string;
+  /** One-liner from SKILL.md frontmatter `description:`. */
+  description?: string;
+}
+
+/** One version section parsed from a source's CHANGELOG.md. */
+export interface MarketplaceChangelogEntry {
+  version: string;
+  date?: string;
+  body: string;
 }
 
 export interface AgentEventAgentPayload {
@@ -217,6 +338,29 @@ export interface OrchestratorApi {
    * which ones we own.
    */
   disposeAttachment: (path: string) => Promise<{ ok: boolean }>;
+  /**
+   * Run describeAttachments on a list of paths and return the chip-shaped
+   * results. Used by the drag-drop handler for non-image files — the
+   * renderer resolves dropped File objects to disk paths via
+   * `getDroppedFilePath` and then validates them through this channel.
+   */
+  describeAttachmentPaths: (paths: string[]) => Promise<PastedImageInfo[]>;
+  /**
+   * Resolve a File object (typically from a drag-drop or file input) to
+   * its absolute disk path. Runs in the preload context via Electron's
+   * webUtils.getPathForFile — the only way to get the path with
+   * contextIsolation on, since File.path was removed for security.
+   * Returns an empty string if the File doesn't correspond to a real
+   * on-disk file (e.g. an in-memory blob).
+   */
+  getDroppedFilePath: (file: File) => string;
+  /**
+   * Read an image attachment off disk and return it as a `data:` URL the
+   * renderer can use directly as `<img src>`. Returns an empty string for
+   * non-image extensions, missing files, oversized files, or read
+   * errors — the caller falls back to the generic attach icon.
+   */
+  readAttachmentThumb: (path: string) => Promise<string>;
   listDirectorMessages: (projectId: string) => Promise<DirectorMessage[]>;
   sendToDirector: (
     projectId: string,
@@ -248,6 +392,163 @@ export interface OrchestratorApi {
     id: string,
     effort: import('./types').EffortLevel,
   ) => Promise<{ ok: true }>;
+  /**
+   * Set the Director's provider override for a project, or clear it
+   * by passing null. The main side also resets the Director's stored
+   * session id — the new CLI can't resume a session created by the
+   * old one, so the next turn starts fresh. Chat history stays put.
+   */
+  setProjectDirectorProvider: (
+    id: string,
+    provider: import('./types').Provider | null,
+  ) => Promise<{ ok: true }>;
+  /**
+   * Save a project's MCP server config — JSON string in the
+   * `claude --mcp-config` shape (typically `{"mcpServers": {...}}`).
+   * Pass null or empty to clear. The main side validates that the
+   * payload parses as JSON; an invalid string returns
+   * `{ ok: false, error }` instead of corrupting the project record.
+   * Claude spawns pick up the new config on their next run; codex
+   * spawns ignore MCP entirely (codex exec has no equivalent flag).
+   */
+  setProjectMcpConfig: (
+    id: string,
+    config: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  // ───────────────────────── Skill marketplace ─────────────────────────
+  /** Configured marketplace sources (the alirezarezvani repo etc.). */
+  listMarketplaceSources: () => Promise<MarketplaceSourceView[]>;
+  /** Bundles available from a synced source. Empty until the source has been synced at least once. */
+  listMarketplaceBundles: (
+    sourceId: string,
+  ) => Promise<MarketplaceBundleView[]>;
+  /** A project's installed-bundle subscriptions (which (source, bundle) pairs to load on spawn). */
+  listMarketplaceSubscriptions: (
+    projectId: string,
+  ) => Promise<MarketplaceSubscriptionView[]>;
+  /**
+   * Install a bundle. `projectId` is either the active project id (for
+   * a project-scoped subscription) or MARKETPLACE_GLOBAL_SCOPE_ID for
+   * a global one. Sets installed_version to the current marketplace
+   * version. The renderer's default install path uses the global
+   * scope — most bundles are useful project-agnostically.
+   */
+  subscribeMarketplaceBundle: (
+    projectId: string,
+    sourceId: string,
+    bundleId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Move an existing subscription between global and a specific
+   * project (or vice versa). Preserves installed_version + roles, so
+   * the user doesn't have to re-pick the per-role chip config after a
+   * move. Returns `{ ok: false }` if no subscription is at `from`.
+   */
+  moveMarketplaceSubscription: (
+    sourceId: string,
+    bundleId: string,
+    fromProjectId: string,
+    toProjectId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /** Uninstall. */
+  unsubscribeMarketplaceBundle: (
+    projectId: string,
+    sourceId: string,
+    bundleId: string,
+  ) => Promise<{ ok: true }>;
+  /** Force a sync now. Returns the new SHA + whether anything changed. */
+  refreshMarketplaceSource: (
+    sourceId: string,
+  ) => Promise<{ ok: boolean; sha?: string; changed?: boolean; error?: string }>;
+  /** Acknowledge a bundle update, snapping installed_version forward to current. Clears the update badge for that subscription. */
+  acknowledgeMarketplaceUpdate: (
+    projectId: string,
+    sourceId: string,
+    bundleId: string,
+  ) => Promise<{ ok: true }>;
+  /**
+   * Set per-role enablement for a subscribed bundle. Pass `null` for
+   * "all roles" (default at install) or an array of role keys. Empty
+   * array = subscribed but disabled for every role.
+   */
+  setMarketplaceBundleRoles: (
+    projectId: string,
+    sourceId: string,
+    bundleId: string,
+    roles: string[] | null,
+  ) => Promise<{ ok: true }>;
+  /**
+   * Add a new marketplace source by GitHub repo. `repo` is "owner/repo"
+   * (https://github.com/ prefix stripped on the main side). Runs the
+   * first sync inline so a bad repo errors immediately rather than
+   * leaving a half-baked source row — the handler rolls back the row
+   * on sync failure.
+   */
+  addMarketplaceSource: (
+    repo: string,
+    branch?: string,
+  ) => Promise<{ ok: boolean; sourceId?: string; error?: string }>;
+  /**
+   * Remove a marketplace source. Cascades: every project's subscription
+   * to bundles in that source is uninstalled, the on-disk cache dir is
+   * removed, the source row deleted. Refuses to remove the default
+   * source — disable it instead if you don't want it.
+   */
+  removeMarketplaceSource: (
+    sourceId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Toggle a source's enabled flag. Disabled sources keep their
+   * subscriptions and cache on disk but stop contributing
+   * `--plugin-dir` args to any claude spawn until re-enabled.
+   * Cheaper than remove + re-add when you just want to temporarily
+   * silence a source.
+   */
+  setMarketplaceSourceEnabled: (
+    sourceId: string,
+    enabled: boolean,
+  ) => Promise<{ ok: true }>;
+  /**
+   * Enumerate the skills inside a bundle — walks the bundle dir on
+   * disk and finds every subdirectory with a SKILL.md, parsing the
+   * frontmatter's name + description for the picker UI.
+   */
+  listMarketplaceBundleSkills: (
+    sourceId: string,
+    bundleId: string,
+  ) => Promise<MarketplaceBundleSkillView[]>;
+  /**
+   * Set the per-skill subset for a subscription. Pass `null` for "all
+   * skills" (default). An array of skill ids narrows to just those.
+   * An empty array makes the subscription a no-op until reset.
+   */
+  setMarketplaceBundleSkills: (
+    projectId: string,
+    sourceId: string,
+    bundleId: string,
+    skills: string[] | null,
+  ) => Promise<{ ok: true }>;
+  /**
+   * Return CHANGELOG.md entries from a source between two versions.
+   * Used by the "What's new" link on a bundle card with a pending
+   * update. Empty array when the source has no CHANGELOG, the
+   * versions don't appear, or no entries fall in range.
+   */
+  getMarketplaceChangelog: (
+    sourceId: string,
+    fromVersion: string | null,
+    toVersion: string,
+  ) => Promise<MarketplaceChangelogEntry[]>;
+  /** Subscribe to source-row patches (sync state, badges, error). */
+  onMarketplaceSourcePatch: (
+    cb: (p: { sourceId: string; patch: Partial<MarketplaceSourceView> }) => void,
+  ) => () => void;
+  /** Fires when a source is added or removed — broader-grained event than the per-row patch. */
+  onMarketplaceSourcesChanged: (cb: () => void) => () => void;
+  /** Fires when subscribe / unsubscribe / ackUpdate touches a project's subscription list, so any open hooks for that project can re-fetch. */
+  onMarketplaceSubscriptionsChanged: (
+    cb: (p: { projectId: string }) => void,
+  ) => () => void;
   setProjectRoleTools: (
     id: string,
     roleTools: Partial<Record<import('./types').AgentRole, string[]>> | null,

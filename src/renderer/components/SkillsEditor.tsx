@@ -200,7 +200,7 @@ export function SkillsEditor({ project }: Props) {
         placeholder={
           active === 'director'
             ? "Project-specific guidance for the Director — codebase conventions, team norms, things you'd otherwise have to restate every turn. Appended to the Director's system prompt at every turn."
-            : `Write a skill prompt for ${labelFor(active)}. Appended to the role's system prompt at spawn time. Empty = no skill (overrides any in-app default to nothing).`
+            : `Write a prompt extension for ${labelFor(active)}. Appended to the role's system prompt at spawn time. Empty = no extension (overrides any in-app default to nothing). Distinct from Marketplace skills, which are Claude Code plugins loaded via --plugin-dir.`
         }
         spellCheck={false}
       />

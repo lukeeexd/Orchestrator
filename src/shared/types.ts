@@ -59,6 +59,23 @@ export interface Project {
   /** Per-project override for the Director's reasoning effort. Falls back to settings.defaultEffort. */
   directorEffort?: EffortLevel;
   /**
+   * Per-project override for the Director's provider. Lets the Director
+   * run on a different CLI than the agents — e.g. claude Director
+   * orchestrating mostly-codex specialists. Undefined → Director uses
+   * the project's main `provider` field, same as before this existed.
+   */
+  directorProvider?: Provider;
+  /**
+   * Project-level MCP server config, stored verbatim as the JSON the
+   * `claude --mcp-config` flag accepts (typically `{"mcpServers": {...}}`).
+   * Empty / undefined → no extra MCP servers, the spawn skips
+   * `--mcp-config` entirely. Codex spawns ignore this — codex exec has
+   * no equivalent flag. Mirrored to disk under userData/mcp-configs/
+   * so the CLI can read it from a file path instead of taking the
+   * whole JSON over argv.
+   */
+  mcpConfig?: string;
+  /**
    * Per-role tool allow-list overrides. Keys are AgentRole values; values are
    * the tools that role is permitted in this project. Roles not present in
    * the map fall back to the role's default tool set from `shared/roles.ts`.
@@ -93,6 +110,13 @@ export interface Agent {
   elapsed: string;
   model: string;
   effort: EffortLevel;
+  /**
+   * Per-agent provider override. When undefined the agent uses its
+   * project's provider — same behaviour as before this field existed.
+   * Set at spawn time and never changes after; switching mid-run
+   * doesn't make sense (the CLI session is bound to one provider).
+   */
+  provider?: Provider;
   /**
    * Per-model spend breakdown — captured from each CLI result event's
    * modelUsage field and merged cumulatively across the agent's run +
@@ -141,6 +165,14 @@ export interface PlanRow {
   role: AgentRole;
   name: string;
   task: string;
+  /**
+   * Optional per-row provider override. When set, the auto-spawned
+   * agent runs against this CLI instead of the project's default.
+   * Lets the Director compose mixed-provider plans — e.g. claude for
+   * orchestration-heavy or vision-driven rows, codex for cheap fast
+   * specialists. Undefined → use the project's provider.
+   */
+  provider?: Provider;
 }
 
 export type DirectorMode = 'auto' | 'manual';
@@ -181,6 +213,12 @@ export interface SpawnAgentRequest {
   model?: string;
   /** Override the reasoning effort. Falls back to settings.defaultEffort. */
   effort?: EffortLevel;
+  /**
+   * Override the CLI backend for this single agent. Falls back to the
+   * project's provider when undefined. Lets a claude-default project
+   * spawn a codex specialist, or vice versa.
+   */
+  provider?: Provider;
   spawnedBy?: AgentSpawnedBy;
   budget?: Partial<AgentBudget>;
   attachments?: string[];

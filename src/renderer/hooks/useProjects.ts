@@ -19,6 +19,11 @@ interface UseProjectsResult {
   setWorkspace: (id: string, workspace: string) => Promise<void>;
   setDirectorModel: (id: string, model: string) => Promise<void>;
   setDirectorEffort: (id: string, effort: EffortLevel) => Promise<void>;
+  setDirectorProvider: (id: string, provider: Provider | null) => Promise<void>;
+  setMcpConfig: (
+    id: string,
+    config: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>;
   setRoleTools: (
     id: string,
     roleTools: Partial<Record<AgentRole, string[]>> | null,
@@ -97,6 +102,23 @@ export function useProjects(): UseProjectsResult {
     [reload],
   );
 
+  const setDirectorProvider = useCallback(
+    async (id: string, provider: Provider | null) => {
+      await window.api.setProjectDirectorProvider(id, provider);
+      await reload();
+    },
+    [reload],
+  );
+
+  const setMcpConfig = useCallback(
+    async (id: string, config: string | null) => {
+      const res = await window.api.setProjectMcpConfig(id, config);
+      if (res.ok) await reload();
+      return res;
+    },
+    [reload],
+  );
+
   const setRoleTools = useCallback(
     async (
       id: string,
@@ -125,6 +147,8 @@ export function useProjects(): UseProjectsResult {
     setWorkspace,
     setDirectorModel,
     setDirectorEffort,
+    setDirectorProvider,
+    setMcpConfig,
     setRoleTools,
     remove,
     reload,
