@@ -42,6 +42,7 @@ export function MarketplaceScreen({
   const mp = useMarketplace(projectId);
   const [addOpen, setAddOpen] = useState(false);
   const [recommendedOpen, setRecommendedOpen] = useState(false);
+  const [viewTab, setViewTab] = useState<'browse' | 'agents'>('browse');
 
   // "Already applied" = every recommended bundle is subscribed at the
   // global scope with the same per-role skill map. Any deviation (a
@@ -136,6 +137,43 @@ export function MarketplaceScreen({
         >
           subscriptions for <code>{projectName ?? 'current project'}</code>
         </span>
+        <div
+          role="tablist"
+          style={{
+            marginLeft: 16,
+            display: 'flex',
+            gap: 0,
+            borderBottom: '1px solid transparent',
+          }}
+        >
+          {([
+            ['browse', 'Browse bundles'],
+            ['agents', 'Agent skills'],
+          ] as const).map(([key, label]) => {
+            const active = viewTab === key;
+            return (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setViewTab(key)}
+                className="tb-btn"
+                style={{
+                  height: 22,
+                  borderRadius: 0,
+                  borderBottom: active
+                    ? '2px solid var(--accent)'
+                    : '2px solid transparent',
+                  background: 'transparent',
+                  color: active ? 'var(--text)' : 'var(--muted)',
+                  fontWeight: active ? 600 : 400,
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
         <span className="spacer" />
         <button
           className="tb-btn"
@@ -186,7 +224,15 @@ export function MarketplaceScreen({
             your shell.
           </div>
         )}
-        {mp.sources.length === 0 ? (
+        {viewTab === 'agents' ? (
+          <AgentSkillsView
+            subscriptions={mp.subscriptions}
+            sources={mp.sources}
+            bundlesBySource={mp.bundlesBySource}
+            listBundleSkills={mp.listBundleSkills}
+            setSkills={mp.setSkills}
+          />
+        ) : mp.sources.length === 0 ? (
           <div className="inline-empty" style={{ padding: 24 }}>
             No marketplace sources configured. The default
             <code> alirezarezvani/claude-skills </code>
@@ -405,6 +451,331 @@ function RecommendedSetupModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────── Agent skills view ───────────────────────────
+
+const AGENT_ROLES: ReadonlyArray<{ id: string; label: string; hint: string }> = [
+  { id: 'director', label: 'Director', hint: 'Plans + supervises agents' },
+  { id: 'pm', label: 'PM', hint: 'Decomposes tasks; read-only' },
+  { id: 'researcher', label: 'Researcher', hint: 'Reads, web-fetches, summarises' },
+  { id: 'coder', label: 'Coder', hint: 'Writes + edits code, runs tests' },
+  { id: 'qa', label: 'QA', hint: 'Writes tests, finds regressions' },
+  { id: 'devops', label: 'DevOps', hint: 'Builds, deploys, CI' },
+  { id: 'security', label: 'Security', hint: 'Audits, threat-models' },
+];
+
+/**
+ * Compute the effective skill list for `role` from a subscription's
+ * current selectedSkills column. Mirrors marketplace.ts skillsForRole
+ * exactly — kept in sync because the renderer can't import main code.
+ * Returns null for "all skills in the bundle"; an empty array for
+ * "none"; or the explicit list.
+ */
+function effectiveSkillsForRole(
+  sub: MarketplaceSubscriptionView,
+  role: string,
+): string[] | null {
+  if (sub.selectedSkills === null) return null;
+  if (Array.isArray(sub.selectedSkills)) return sub.selectedSkills;
+  return sub.selectedSkills[role] ?? [];
+}
+
+/**
+ * Build the next selectedSkills value for a subscription after the user
+ * toggles a single (role, skillId) cell. Always returns the per-role
+ * map form — once the user opens the agent-centric editor and changes
+ * anything, the subscription gets pinned to per-role mode so future
+ * edits don't accidentally fan out to other roles.
+ */
+function toggleSkillForRole(
+  sub: MarketplaceSubscriptionView,
+  role: string,
+  skillId: string,
+  allSkillIds: string[],
+): Record<string, string[]> {
+  // 1. Normalize current state into a per-role map.
+  const map: Record<string, string[]> = {};
+  for (const r of AGENT_ROLES.map((x) => x.id)) {
+    const effective = effectiveSkillsForRole(sub, r);
+    if (effective === null) {
+      // "All skills" — materialize as the full bundle list so the
+      // user's first toggle removes one skill, not all of them.
+      map[r] = [...allSkillIds];
+    } else {
+      map[r] = [...effective];
+    }
+  }
+  // 2. Toggle skillId for the target role.
+  const idx = map[role].indexOf(skillId);
+  if (idx >= 0) {
+    map[role].splice(idx, 1);
+  } else {
+    map[role].push(skillId);
+  }
+  return map;
+}
+
+function AgentSkillsView({
+  subscriptions,
+  sources,
+  bundlesBySource,
+  listBundleSkills,
+  setSkills,
+}: {
+  subscriptions: MarketplaceSubscriptionView[];
+  sources: MarketplaceSourceView[];
+  bundlesBySource: Record<string, MarketplaceBundleView[]>;
+  listBundleSkills: (
+    sourceId: string,
+    bundleId: string,
+  ) => Promise<MarketplaceBundleSkillView[]>;
+  setSkills: (
+    sourceId: string,
+    bundleId: string,
+    scope: 'global' | 'project',
+    skills: MarketplaceSelectedSkills,
+  ) => Promise<void>;
+}) {
+  const enabledSourceIds = useMemo(
+    () => new Set(sources.filter((s) => s.enabled).map((s) => s.id)),
+    [sources],
+  );
+  const visibleSubs = useMemo(
+    () => subscriptions.filter((s) => enabledSourceIds.has(s.sourceId)),
+    [subscriptions, enabledSourceIds],
+  );
+
+  // Lazy bundle-skill cache. Keyed as `${sourceId}\x00${bundleId}` so
+  // a single sub can look up its full skill catalogue once and reuse
+  // it across all seven role columns.
+  const [skillsCache, setSkillsCache] = useState<
+    Record<string, MarketplaceBundleSkillView[]>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const next = { ...skillsCache };
+      let added = false;
+      for (const sub of visibleSubs) {
+        const key = `${sub.sourceId}\x00${sub.bundleId}`;
+        if (next[key]) continue;
+        const list = await listBundleSkills(sub.sourceId, sub.bundleId);
+        if (cancelled) return;
+        next[key] = list;
+        added = true;
+      }
+      if (!cancelled && added) setSkillsCache(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // skillsCache deliberately excluded — adding it would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleSubs, listBundleSkills]);
+
+  if (visibleSubs.length === 0) {
+    return (
+      <div className="inline-empty" style={{ padding: 24 }}>
+        No bundle subscriptions yet. Switch to <strong>Browse bundles</strong>
+        {' '}and install one (or hit <strong>Recommended setup</strong> for a
+        one-click default).
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p
+        style={{
+          margin: '0 0 12px 0',
+          color: 'var(--muted)',
+          fontSize: 12,
+        }}
+      >
+        Configure which skills each agent role loads from your subscribed
+        bundles. Toggling any cell switches that subscription to per-role
+        mode — future edits stay scoped to the role you&apos;re editing.
+      </p>
+      {AGENT_ROLES.map((role) => {
+        const subsForRole = visibleSubs.filter(
+          (sub) => sub.roles === null || sub.roles.includes(role.id),
+        );
+        return (
+          <RoleSkillCard
+            key={role.id}
+            roleId={role.id}
+            roleLabel={role.label}
+            roleHint={role.hint}
+            subs={subsForRole}
+            bundlesBySource={bundlesBySource}
+            skillsCache={skillsCache}
+            onToggle={async (sub, skillId, allSkillIds) => {
+              const next = toggleSkillForRole(
+                sub,
+                role.id,
+                skillId,
+                allSkillIds,
+              );
+              await setSkills(sub.sourceId, sub.bundleId, sub.scope, next);
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function RoleSkillCard({
+  roleId,
+  roleLabel,
+  roleHint,
+  subs,
+  bundlesBySource,
+  skillsCache,
+  onToggle,
+}: {
+  roleId: string;
+  roleLabel: string;
+  roleHint: string;
+  subs: MarketplaceSubscriptionView[];
+  bundlesBySource: Record<string, MarketplaceBundleView[]>;
+  skillsCache: Record<string, MarketplaceBundleSkillView[]>;
+  onToggle: (
+    sub: MarketplaceSubscriptionView,
+    skillId: string,
+    allSkillIds: string[],
+  ) => void;
+}) {
+  return (
+    <section
+      className="settings-section"
+      style={{ marginBottom: 12, padding: 12 }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        <strong style={{ fontSize: 13 }}>{roleLabel}</strong>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{roleHint}</span>
+      </div>
+      {subs.length === 0 ? (
+        <div style={{ fontSize: 11, color: 'var(--muted-2)' }}>
+          No bundles bound to this role. (Bundles default to all-roles; if
+          this role is empty, check the bundle&apos;s role chips in
+          Browse bundles.)
+        </div>
+      ) : (
+        subs.map((sub) => {
+          const cacheKey = `${sub.sourceId}\x00${sub.bundleId}`;
+          const allSkills = skillsCache[cacheKey];
+          const bundle = (bundlesBySource[sub.sourceId] ?? []).find(
+            (b) => b.id === sub.bundleId,
+          );
+          const effective = effectiveSkillsForRole(sub, roleId);
+          // null → checked = all; empty array → checked = none;
+          // list → checked = list.
+          const isAll = effective === null;
+          const checkedSet = new Set<string>(effective ?? []);
+          return (
+            <div
+              key={cacheKey}
+              style={{
+                marginTop: 6,
+                padding: '8px 10px',
+                background: 'var(--sub)',
+                borderRadius: 4,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginBottom: 6,
+                  fontSize: 11,
+                }}
+              >
+                <code>{sub.bundleId}</code>
+                <span style={{ color: 'var(--muted-2)' }}>·</span>
+                <span style={{ color: 'var(--muted)' }}>
+                  {sub.scope === 'global' ? 'global' : 'project-scoped'}
+                </span>
+                {bundle?.version && (
+                  <>
+                    <span style={{ color: 'var(--muted-2)' }}>·</span>
+                    <span style={{ color: 'var(--muted)' }}>
+                      v{bundle.version}
+                    </span>
+                  </>
+                )}
+              </div>
+              {allSkills === undefined ? (
+                <div style={{ fontSize: 11, color: 'var(--muted-2)' }}>
+                  Loading skills…
+                </div>
+              ) : allSkills.length === 0 ? (
+                <div style={{ fontSize: 11, color: 'var(--muted-2)' }}>
+                  This bundle has no skills.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(auto-fill, minmax(200px, 1fr))',
+                    gap: 4,
+                  }}
+                >
+                  {allSkills.map((s) => {
+                    const checked = isAll || checkedSet.has(s.id);
+                    const allSkillIds = allSkills.map((x) => x.id);
+                    return (
+                      <label
+                        key={s.id}
+                        title={s.description ?? s.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontSize: 11,
+                          color: checked ? 'var(--text)' : 'var(--muted-2)',
+                          cursor: 'pointer',
+                          padding: '2px 4px',
+                          borderRadius: 3,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => onToggle(sub, s.id, allSkillIds)}
+                          style={{ margin: 0 }}
+                        />
+                        <span
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {s.name ?? s.id}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </section>
   );
 }
 
