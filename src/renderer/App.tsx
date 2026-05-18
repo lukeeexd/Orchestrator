@@ -552,6 +552,8 @@ export function App() {
           <MarketplaceScreen
             projectId={activeProjectId}
             projectName={activeProject?.name ?? null}
+            projectProvider={activeProject?.provider ?? null}
+            directorProvider={activeProject ? directorProvider : null}
           />
         ) : active === 'cost' ? (
           <SpendScreen />

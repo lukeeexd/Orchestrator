@@ -5,12 +5,17 @@ import type {
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
 import { MARKETPLACE_DEFAULT_SOURCE_ID } from '../../shared/ipc';
+import type { Provider } from '../../shared/types';
 import { Icon } from './Icon';
 import { useMarketplace } from '../hooks/useMarketplace';
 
 interface Props {
   projectId: string | null;
   projectName: string | null;
+  /** Active project's agent provider — drives the codex caveat banner. */
+  projectProvider: Provider | null;
+  /** Active project's effective Director provider — also codex caveat. */
+  directorProvider: Provider | null;
 }
 
 function timeAgo(ms: number | null): string {
@@ -22,9 +27,24 @@ function timeAgo(ms: number | null): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
-export function MarketplaceScreen({ projectId, projectName }: Props) {
+export function MarketplaceScreen({
+  projectId,
+  projectName,
+  projectProvider,
+  directorProvider,
+}: Props) {
   const mp = useMarketplace(projectId);
   const [addOpen, setAddOpen] = useState(false);
+  // Banner condition: the active project has no claude side at all
+  // (agents AND Director are codex). In that case, every subscription
+  // the user makes here is dormant for *this* project — it'd only
+  // apply to claude agents in other projects. Calling that out
+  // up-front avoids the "I installed it, why isn't it working?"
+  // confusion. Mixed-provider projects (claude Director + codex agents
+  // or vice versa) still get something from the marketplace, so we
+  // skip the banner there.
+  const allCodex =
+    projectProvider === 'codex' && directorProvider === 'codex';
 
   if (!projectId) {
     return (
@@ -70,6 +90,22 @@ export function MarketplaceScreen({ projectId, projectName }: Props) {
         </button>
       </div>
       <div className="settings-body">
+        {allCodex && (
+          <div
+            className="inline-empty"
+            style={{ padding: 14, marginBottom: 12 }}
+          >
+            <strong>Codex-only project.</strong> Codex's CLI doesn't
+            accept a per-spawn <code>--plugin-dir</code>, so the
+            bundles you install here won't be loaded for this project's
+            agents or Director. Subscriptions are still useful if you
+            have other projects on claude — they'll pick up
+            global-scope installs there. To wire community skills into
+            codex itself, run{' '}
+            <code>codex plugin marketplace add &lt;repo&gt;</code> from
+            your shell.
+          </div>
+        )}
         {mp.sources.length === 0 ? (
           <div className="inline-empty" style={{ padding: 24 }}>
             No marketplace sources configured. The default
