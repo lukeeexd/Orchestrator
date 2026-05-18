@@ -57,6 +57,7 @@ export const IpcChannels = {
   MarketplaceSetSourceEnabled: 'marketplace:setSourceEnabled',
   MarketplaceListBundleSkills: 'marketplace:listBundleSkills',
   MarketplaceSetSkills: 'marketplace:setSkills',
+  MarketplaceGetChangelog: 'marketplace:getChangelog',
   MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
   MarketplaceEventSourcePatch: 'marketplace:event:sourcePatch',
   MarketplaceEventSubscriptionsChanged: 'marketplace:event:subscriptionsChanged',
@@ -227,6 +228,13 @@ export interface MarketplaceBundleSkillView {
   name?: string;
   /** One-liner from SKILL.md frontmatter `description:`. */
   description?: string;
+}
+
+/** One version section parsed from a source's CHANGELOG.md. */
+export interface MarketplaceChangelogEntry {
+  version: string;
+  date?: string;
+  body: string;
 }
 
 export interface AgentEventAgentPayload {
@@ -520,6 +528,17 @@ export interface OrchestratorApi {
     bundleId: string,
     skills: string[] | null,
   ) => Promise<{ ok: true }>;
+  /**
+   * Return CHANGELOG.md entries from a source between two versions.
+   * Used by the "What's new" link on a bundle card with a pending
+   * update. Empty array when the source has no CHANGELOG, the
+   * versions don't appear, or no entries fall in range.
+   */
+  getMarketplaceChangelog: (
+    sourceId: string,
+    fromVersion: string | null,
+    toVersion: string,
+  ) => Promise<MarketplaceChangelogEntry[]>;
   /** Subscribe to source-row patches (sync state, badges, error). */
   onMarketplaceSourcePatch: (
     cb: (p: { sourceId: string; patch: Partial<MarketplaceSourceView> }) => void,

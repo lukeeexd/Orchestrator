@@ -434,6 +434,116 @@ export function findBundle(
   return loadBundles(sourceId).find((b) => b.id === bundleId) ?? null;
 }
 
+// ───────────────────────────── Changelog ───────────────────────────
+
+/**
+ * Best-effort semver compare. Returns -1 / 0 / 1. Tolerant of leading
+ * `v`, missing patch component, pre-release suffixes (compared
+ * lexically). Not a full semver — good enough for changelog ordering.
+ */
+function compareVersions(a: string, b: string): number {
+  const parse = (v: string) =>
+    v.replace(/^v/, '').split(/[.-]/).map((p) => {
+      const n = Number(p);
+      return Number.isFinite(n) ? n : p;
+    });
+  const pa = parse(a);
+  const pb = parse(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const ai = pa[i] ?? 0;
+    const bi = pb[i] ?? 0;
+    if (typeof ai === 'number' && typeof bi === 'number') {
+      if (ai !== bi) return ai < bi ? -1 : 1;
+    } else {
+      const as = String(ai);
+      const bs = String(bi);
+      if (as !== bs) return as < bs ? -1 : 1;
+    }
+  }
+  return 0;
+}
+
+export interface ChangelogEntry {
+  /** Version this entry documents (e.g. "2.2.3"). */
+  version: string;
+  /** Optional ISO date from the heading (e.g. "2024-01-15"). */
+  date?: string;
+  /** Raw markdown body of the section, with the heading line stripped. */
+  body: string;
+}
+
+/**
+ * Parse a CHANGELOG.md (Keep-a-Changelog style) into version entries.
+ * Splits on `## ` H2 headings, extracts a version-looking token from
+ * each heading. Anything that doesn't look like a version is dropped.
+ * Tolerant of `## [1.2.3]`, `## v1.2.3`, `## 1.2.3 - 2024-01-15`, etc.
+ */
+function parseChangelog(raw: string): ChangelogEntry[] {
+  const out: ChangelogEntry[] = [];
+  // ^## (not ###) at start of line.
+  const lines = raw.split(/\r?\n/);
+  let current: { heading: string; bodyLines: string[] } | null = null;
+  const push = () => {
+    if (!current) return;
+    const m = current.heading.match(/v?(\d+\.\d+(?:\.\d+)?(?:-[A-Za-z0-9.]+)?)/);
+    if (!m) {
+      current = null;
+      return;
+    }
+    const version = m[1];
+    const dateM = current.heading.match(/(\d{4}-\d{2}-\d{2})/);
+    out.push({
+      version,
+      date: dateM?.[1],
+      body: current.bodyLines.join('\n').trim(),
+    });
+    current = null;
+  };
+  for (const line of lines) {
+    if (/^## (?!#)/.test(line)) {
+      push();
+      current = { heading: line.replace(/^## /, ''), bodyLines: [] };
+    } else if (current) {
+      current.bodyLines.push(line);
+    }
+  }
+  push();
+  return out;
+}
+
+/**
+ * Read a source's CHANGELOG.md (root of the cache dir) and return
+ * entries strictly newer than `fromVersion`, up to and including
+ * `toVersion`. Returns an empty array if the file doesn't exist, the
+ * file doesn't parse, or no entries fall in range.
+ *
+ * Bundle-level: this scans the source-wide CHANGELOG.md. The
+ * alirezarezvani repo (and similar) keep one top-level changelog
+ * documenting all bundles at the source level. Per-bundle changelogs
+ * (under `<bundle>/CHANGELOG.md`) are not searched here — could be a
+ * follow-up if a source uses them.
+ */
+export function getSourceChangelog(
+  sourceId: string,
+  fromVersion: string | null,
+  toVersion: string,
+): ChangelogEntry[] {
+  const p = path.join(sourceDir(sourceId), 'CHANGELOG.md');
+  let raw: string;
+  try {
+    raw = fs.readFileSync(p, 'utf8');
+  } catch {
+    return [];
+  }
+  const entries = parseChangelog(raw);
+  return entries.filter((e) => {
+    if (compareVersions(e.version, toVersion) > 0) return false;
+    if (fromVersion && compareVersions(e.version, fromVersion) <= 0) return false;
+    return true;
+  });
+}
+
 // ───────────────────────────── Persistence ─────────────────────────────
 
 function asStr(v: unknown, fallback = ''): string {

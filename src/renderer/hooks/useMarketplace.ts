@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   MarketplaceBundleSkillView,
   MarketplaceBundleView,
+  MarketplaceChangelogEntry,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
@@ -72,6 +73,12 @@ interface UseMarketplaceResult {
     scope: 'global' | 'project',
     skills: string[] | null,
   ) => Promise<void>;
+  /** Fetch changelog entries between two versions for a source. */
+  getChangelog: (
+    sourceId: string,
+    fromVersion: string | null,
+    toVersion: string,
+  ) => Promise<MarketplaceChangelogEntry[]>;
   /** Re-fetch sources + bundles + subscriptions from main. */
   reload: () => Promise<void>;
 }
@@ -278,6 +285,16 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     [],
   );
 
+  const getChangelog = useCallback(
+    async (
+      sourceId: string,
+      fromVersion: string | null,
+      toVersion: string,
+    ) =>
+      window.api.getMarketplaceChangelog(sourceId, fromVersion, toVersion),
+    [],
+  );
+
   const setSkills = useCallback(
     async (
       sourceId: string,
@@ -388,6 +405,7 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     setSourceEnabled,
     listBundleSkills,
     setSkills,
+    getChangelog,
     reload,
   };
 }

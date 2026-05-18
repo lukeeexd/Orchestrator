@@ -270,6 +270,13 @@ const api: OrchestratorApi = {
       bundleId,
       skills,
     ) as Promise<{ ok: true }>,
+  getMarketplaceChangelog: (sourceId, fromVersion, toVersion) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceGetChangelog,
+      sourceId,
+      fromVersion,
+      toVersion,
+    ) as Promise<import('../shared/ipc').MarketplaceChangelogEntry[]>,
   onMarketplaceSourcePatch: (cb) =>
     subscribe<{
       sourceId: string;

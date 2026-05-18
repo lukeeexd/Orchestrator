@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type {
   MarketplaceBundleSkillView,
   MarketplaceBundleView,
+  MarketplaceChangelogEntry,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
@@ -149,6 +150,9 @@ export function MarketplaceScreen({
               }
               onToggleEnabled={() =>
                 void mp.setSourceEnabled(source.id, !source.enabled)
+              }
+              onGetChangelog={(fromV, toV) =>
+                mp.getChangelog(source.id, fromV, toV)
               }
             />
           ))
@@ -298,6 +302,7 @@ function SourceSection({
   onListSkills,
   onSetSkills,
   onToggleEnabled,
+  onGetChangelog,
 }: {
   source: MarketplaceSourceView;
   bundles: MarketplaceBundleView[];
@@ -321,6 +326,10 @@ function SourceSection({
     skills: string[] | null,
   ) => void;
   onToggleEnabled: () => void;
+  onGetChangelog: (
+    fromVersion: string | null,
+    toVersion: string,
+  ) => Promise<MarketplaceChangelogEntry[]>;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const subByBundle = useMemo(() => {
@@ -607,6 +616,9 @@ function SourceSection({
                   onSetSkills={(scope, skills) =>
                     onSetSkills(b.id, scope, skills)
                   }
+                  onGetChangelog={(fromV, toV) =>
+                    onGetChangelog(fromV, toV)
+                  }
                 />
               );
             })}
@@ -646,6 +658,7 @@ function BundleCard({
   onMoveScope,
   onListSkills,
   onSetSkills,
+  onGetChangelog,
 }: {
   bundle: MarketplaceBundleView;
   subscription: MarketplaceSubscriptionView | undefined;
@@ -663,12 +676,17 @@ function BundleCard({
     scope: 'global' | 'project',
     skills: string[] | null,
   ) => void;
+  onGetChangelog: (
+    fromVersion: string | null,
+    toVersion: string,
+  ) => Promise<MarketplaceChangelogEntry[]>;
 }) {
   const subscribed = !!subscription;
   const scope: 'global' | 'project' = subscription?.scope ?? 'global';
   const roles = subscription?.roles ?? null;
   const selectedSkills = subscription?.selectedSkills ?? null;
   const [skillsPickerOpen, setSkillsPickerOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
 
   // A chip is "on" when roles is null (all-roles legacy default) or
   // when it includes this role. Click toggles.
@@ -912,14 +930,24 @@ function BundleCard({
         {subscribed ? (
           <>
             {hasUpdate && (
-              <button
-                className="tb-btn primary"
-                style={{ height: 22 }}
-                onClick={() => onAckUpdate(scope)}
-                title={`Acknowledge upgrade to v${bundle.version}`}
-              >
-                <Icon name="check" size={11} /> Update
-              </button>
+              <>
+                <button
+                  className="tb-btn primary"
+                  style={{ height: 22 }}
+                  onClick={() => onAckUpdate(scope)}
+                  title={`Acknowledge upgrade to v${bundle.version}`}
+                >
+                  <Icon name="check" size={11} /> Update
+                </button>
+                <button
+                  className="tb-btn"
+                  style={{ height: 22, fontSize: 11 }}
+                  onClick={() => setChangelogOpen(true)}
+                  title="See what changed between your installed version and the current one"
+                >
+                  What&apos;s new
+                </button>
+              </>
             )}
             <button
               className="tb-btn"
@@ -981,6 +1009,170 @@ function BundleCard({
           }}
         />
       )}
+      {changelogOpen && subscription && (
+        <ChangelogModal
+          bundle={bundle}
+          installedVersion={subscription.installedVersion}
+          onClose={() => setChangelogOpen(false)}
+          onLoad={() =>
+            onGetChangelog(subscription.installedVersion, bundle.version)
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+function ChangelogModal({
+  bundle,
+  installedVersion,
+  onClose,
+  onLoad,
+}: {
+  bundle: MarketplaceBundleView;
+  installedVersion: string | null;
+  onClose: () => void;
+  onLoad: () => Promise<MarketplaceChangelogEntry[]>;
+}) {
+  const [entries, setEntries] = useState<
+    MarketplaceChangelogEntry[] | null
+  >(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void onLoad()
+      .then((list) => {
+        if (!cancelled) setEntries(list);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled)
+          setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onLoad]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 640,
+          maxHeight: '80vh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>What&apos;s new · {bundle.id}</b>
+          </span>
+          <span
+            className="meta"
+            style={{ marginLeft: 8, fontSize: 11, color: 'var(--muted)' }}
+          >
+            {installedVersion ?? 'unknown'} → v{bundle.version}
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onClose} title="Close">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div
+          className="modal-body"
+          style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}
+        >
+          {error && (
+            <div className="form-error">
+              Failed to load changelog: {error}
+            </div>
+          )}
+          {entries === null && !error && (
+            <div className="inline-empty" style={{ padding: 18 }}>
+              Reading CHANGELOG.md…
+            </div>
+          )}
+          {entries !== null && entries.length === 0 && (
+            <div className="inline-empty" style={{ padding: 18 }}>
+              No CHANGELOG entries between{' '}
+              {installedVersion ? `v${installedVersion}` : 'install'}{' '}
+              and v{bundle.version}. The source may not maintain a
+              CHANGELOG.md, or the versions aren&apos;t in the same
+              format.
+            </div>
+          )}
+          {entries !== null && entries.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+              }}
+            >
+              {entries.map((entry, i) => (
+                <div
+                  key={`${entry.version}-${i}`}
+                  style={{
+                    padding: 10,
+                    background: 'var(--sub)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 6,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      gap: 8,
+                      marginBottom: 6,
+                    }}
+                  >
+                    <strong style={{ fontSize: 12 }}>
+                      v{entry.version}
+                    </strong>
+                    {entry.date && (
+                      <span
+                        className="meta"
+                        style={{ fontSize: 11, color: 'var(--muted)' }}
+                      >
+                        {entry.date}
+                      </span>
+                    )}
+                  </div>
+                  <pre
+                    style={{
+                      margin: 0,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--text)',
+                    }}
+                  >
+                    {entry.body}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+            padding: 12,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button className="tb-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

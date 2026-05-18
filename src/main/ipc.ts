@@ -932,6 +932,17 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IpcChannels.MarketplaceGetChangelog,
+    (
+      _event,
+      sourceId: string,
+      fromVersion: string | null,
+      toVersion: string,
+    ): marketplace.ChangelogEntry[] =>
+      marketplace.getSourceChangelog(sourceId, fromVersion, toVersion),
+  );
+
+  ipcMain.handle(
     IpcChannels.MarketplaceListBundleSkills,
     (
       _event,
