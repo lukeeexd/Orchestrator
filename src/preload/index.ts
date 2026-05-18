@@ -226,6 +226,19 @@ const api: OrchestratorApi = {
       bundleId,
       roles,
     ) as Promise<{ ok: true }>,
+  moveMarketplaceSubscription: (
+    sourceId,
+    bundleId,
+    fromProjectId,
+    toProjectId,
+  ) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceMoveScope,
+      sourceId,
+      bundleId,
+      fromProjectId,
+      toProjectId,
+    ) as Promise<{ ok: boolean; error?: string }>,
   onMarketplaceSourcePatch: (cb) =>
     subscribe<{
       sourceId: string;

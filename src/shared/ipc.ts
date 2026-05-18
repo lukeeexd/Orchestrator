@@ -51,6 +51,7 @@ export const IpcChannels = {
   MarketplaceRefresh: 'marketplace:refresh',
   MarketplaceAckUpdate: 'marketplace:ackUpdate',
   MarketplaceSetRoles: 'marketplace:setRoles',
+  MarketplaceMoveScope: 'marketplace:moveScope',
   MarketplaceEventSourcePatch: 'marketplace:event:sourcePatch',
   MarketplaceEventSubscriptionsChanged: 'marketplace:event:subscriptionsChanged',
   ProjectSetRoleTools: 'project:setRoleTools',
@@ -130,6 +131,15 @@ export interface PastedImageInfo {
   kind?: 'text' | 'image' | 'unsupported';
 }
 
+/**
+ * Sentinel project id used to scope a subscription "globally" — i.e.
+ * loaded into every project's claude spawns. Stored in project_id of
+ * project_subscribed_bundles so we don't need a separate table.
+ *
+ * Real project ids are UUIDs, so this literal can't collide.
+ */
+export const MARKETPLACE_GLOBAL_SCOPE_ID = '__global__';
+
 /** Renderer-shaped view of one skill_sources row. */
 export interface MarketplaceSourceView {
   id: string;
@@ -158,6 +168,7 @@ export interface MarketplaceBundleView {
 
 /** Renderer-shaped view of a project's subscribed bundle. */
 export interface MarketplaceSubscriptionView {
+  /** Either a real project UUID or MARKETPLACE_GLOBAL_SCOPE_ID. */
   projectId: string;
   sourceId: string;
   bundleId: string;
@@ -172,6 +183,8 @@ export interface MarketplaceSubscriptionView {
    * as a "no agents" hint.
    */
   roles: string[] | null;
+  /** Derived from projectId — 'global' for the sentinel, 'project' otherwise. */
+  scope: 'global' | 'project';
 }
 
 export interface AgentEventAgentPayload {
@@ -363,11 +376,29 @@ export interface OrchestratorApi {
   listMarketplaceSubscriptions: (
     projectId: string,
   ) => Promise<MarketplaceSubscriptionView[]>;
-  /** Install a bundle for a project. Sets installed_version to the current marketplace version. */
+  /**
+   * Install a bundle. `projectId` is either the active project id (for
+   * a project-scoped subscription) or MARKETPLACE_GLOBAL_SCOPE_ID for
+   * a global one. Sets installed_version to the current marketplace
+   * version. The renderer's default install path uses the global
+   * scope — most bundles are useful project-agnostically.
+   */
   subscribeMarketplaceBundle: (
     projectId: string,
     sourceId: string,
     bundleId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Move an existing subscription between global and a specific
+   * project (or vice versa). Preserves installed_version + roles, so
+   * the user doesn't have to re-pick the per-role chip config after a
+   * move. Returns `{ ok: false }` if no subscription is at `from`.
+   */
+  moveMarketplaceSubscription: (
+    sourceId: string,
+    bundleId: string,
+    fromProjectId: string,
+    toProjectId: string,
   ) => Promise<{ ok: boolean; error?: string }>;
   /** Uninstall. */
   unsubscribeMarketplaceBundle: (

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import { getDb, scheduleSave } from './db';
+import { MARKETPLACE_GLOBAL_SCOPE_ID } from '../shared/ipc';
 
 /**
  * One row from a marketplace's `.claude-plugin/marketplace.json::plugins`.
@@ -489,10 +490,22 @@ export function pluginDirsForProject(
   projectId: string,
   role: string,
 ): string[] {
-  const subs = listSubscriptions(projectId);
+  // Union global-scoped subs with the project's own subs. Globals come
+  // first so a project-scoped sub of the same bundle (rare; the UI
+  // prevents it via the move-only Move flow, but defensively) doesn't
+  // shadow a global one — the dedupe below keeps whichever appeared
+  // first.
+  const subs = [
+    ...listSubscriptions(MARKETPLACE_GLOBAL_SCOPE_ID),
+    ...listSubscriptions(projectId),
+  ];
   if (subs.length === 0) return [];
+  const seen = new Set<string>();
   const out: string[] = [];
   for (const s of subs) {
+    const key = `${s.sourceId}\x00${s.bundleId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     if (s.roles !== null && !s.roles.includes(role)) continue;
     const bundle = findBundle(s.sourceId, s.bundleId);
     if (!bundle) continue;
@@ -500,4 +513,66 @@ export function pluginDirsForProject(
     if (fs.existsSync(dir)) out.push(dir);
   }
   return out;
+}
+
+/**
+ * Move a subscription between scopes (project ↔ global). Preserves
+ * installed_version + roles so the user doesn't have to redo the per-
+ * role chip config after a move. Returns true if anything moved; false
+ * if no subscription existed at `from` (already at `to`, or never
+ * installed).
+ */
+export function moveSubscription(
+  sourceId: string,
+  bundleId: string,
+  fromProjectId: string,
+  toProjectId: string,
+): boolean {
+  if (fromProjectId === toProjectId) return false;
+  const db = getDb();
+  // Read the source row first so we can re-insert the same state at the
+  // destination. UPDATE project_id = ? would also work, but doing a
+  // delete + insert pair keeps the failure mode simpler if the dest
+  // already has a row (PK conflict on UPDATE is silent in sql.js).
+  const sel = db.prepare(
+    `SELECT subscribed_at, installed_version, roles
+     FROM project_subscribed_bundles
+     WHERE project_id = ? AND source_id = ? AND bundle_id = ?`,
+  );
+  sel.bind([fromProjectId, sourceId, bundleId]);
+  let subscribedAt: number | null = null;
+  let installedVersion: string | null = null;
+  let roles: string | null = null;
+  if (sel.step()) {
+    const row = sel.get();
+    subscribedAt = asIntOrNull(row[0]);
+    installedVersion = asStrOrNull(row[1]);
+    roles = asStrOrNull(row[2]);
+  }
+  sel.free();
+  if (subscribedAt === null) return false;
+
+  const del = db.prepare(
+    `DELETE FROM project_subscribed_bundles
+     WHERE project_id = ? AND source_id = ? AND bundle_id = ?`,
+  );
+  del.run([fromProjectId, sourceId, bundleId]);
+  del.free();
+
+  const ins = db.prepare(
+    `INSERT OR REPLACE INTO project_subscribed_bundles
+       (project_id, source_id, bundle_id, subscribed_at, installed_version, roles)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  ins.run([
+    toProjectId,
+    sourceId,
+    bundleId,
+    subscribedAt,
+    installedVersion,
+    roles,
+  ]);
+  ins.free();
+  scheduleSave();
+  return true;
 }

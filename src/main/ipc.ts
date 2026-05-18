@@ -45,6 +45,7 @@ import type {
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../shared/ipc';
+import { MARKETPLACE_GLOBAL_SCOPE_ID } from '../shared/ipc';
 import {
   createProject,
   deleteProject,
@@ -707,6 +708,10 @@ export function registerIpcHandlers(): void {
         subscribedAt: s.subscribedAt,
         installedVersion: s.installedVersion,
         roles: s.roles,
+        scope:
+          s.projectId === MARKETPLACE_GLOBAL_SCOPE_ID
+            ? ('global' as const)
+            : ('project' as const),
       })),
   );
 
@@ -816,6 +821,39 @@ export function registerIpcHandlers(): void {
           projectId,
         });
       }
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceMoveScope,
+    (
+      _event,
+      sourceId: string,
+      bundleId: string,
+      fromProjectId: string,
+      toProjectId: string,
+    ): { ok: boolean; error?: string } => {
+      const moved = marketplace.moveSubscription(
+        sourceId,
+        bundleId,
+        fromProjectId,
+        toProjectId,
+      );
+      if (!moved) {
+        return {
+          ok: false,
+          error: 'no subscription to move at the source scope',
+        };
+      }
+      // Notify both scopes so the renderer's two parallel calls
+      // (project + global) both refresh.
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId: fromProjectId,
+      });
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId: toProjectId,
+      });
       return { ok: true };
     },
   );

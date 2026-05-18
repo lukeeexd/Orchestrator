@@ -77,13 +77,20 @@ export function MarketplaceScreen({ projectId, projectName }: Props) {
                 (s) => s.sourceId === source.id,
               )}
               onRefresh={() => void mp.refreshSource(source.id)}
-              onSubscribe={(bundleId) => void mp.subscribe(source.id, bundleId)}
-              onUnsubscribe={(bundleId) =>
-                void mp.unsubscribe(source.id, bundleId)
+              onSubscribe={(bundleId, scope) =>
+                void mp.subscribe(source.id, bundleId, scope)
               }
-              onAckUpdate={(bundleId) => void mp.ackUpdate(source.id, bundleId)}
-              onSetRoles={(bundleId, roles) =>
-                void mp.setRoles(source.id, bundleId, roles)
+              onUnsubscribe={(bundleId, scope) =>
+                void mp.unsubscribe(source.id, bundleId, scope)
+              }
+              onAckUpdate={(bundleId, scope) =>
+                void mp.ackUpdate(source.id, bundleId, scope)
+              }
+              onSetRoles={(bundleId, scope, roles) =>
+                void mp.setRoles(source.id, bundleId, scope, roles)
+              }
+              onMoveScope={(bundleId, to) =>
+                void mp.moveScope(source.id, bundleId, to)
               }
             />
           ))
@@ -102,15 +109,21 @@ function SourceSection({
   onUnsubscribe,
   onAckUpdate,
   onSetRoles,
+  onMoveScope,
 }: {
   source: MarketplaceSourceView;
   bundles: MarketplaceBundleView[];
   subscriptions: MarketplaceSubscriptionView[];
   onRefresh: () => void;
-  onSubscribe: (bundleId: string) => void;
-  onUnsubscribe: (bundleId: string) => void;
-  onAckUpdate: (bundleId: string) => void;
-  onSetRoles: (bundleId: string, roles: string[] | null) => void;
+  onSubscribe: (bundleId: string, scope: 'global' | 'project') => void;
+  onUnsubscribe: (bundleId: string, scope: 'global' | 'project') => void;
+  onAckUpdate: (bundleId: string, scope: 'global' | 'project') => void;
+  onSetRoles: (
+    bundleId: string,
+    scope: 'global' | 'project',
+    roles: string[] | null,
+  ) => void;
+  onMoveScope: (bundleId: string, to: 'global' | 'project') => void;
 }) {
   const subByBundle = useMemo(() => {
     const m = new Map<string, MarketplaceSubscriptionView>();
@@ -239,14 +252,15 @@ function SourceSection({
                 <BundleCard
                   key={b.id}
                   bundle={b}
-                  subscribed={!!sub}
+                  subscription={sub}
                   hasUpdate={!!hasUpdate}
-                  installedVersion={sub?.installedVersion ?? null}
-                  roles={sub?.roles ?? null}
-                  onSubscribe={() => onSubscribe(b.id)}
-                  onUnsubscribe={() => onUnsubscribe(b.id)}
-                  onAckUpdate={() => onAckUpdate(b.id)}
-                  onSetRoles={(roles) => onSetRoles(b.id, roles)}
+                  onSubscribe={(scope) => onSubscribe(b.id, scope)}
+                  onUnsubscribe={(scope) => onUnsubscribe(b.id, scope)}
+                  onAckUpdate={(scope) => onAckUpdate(b.id, scope)}
+                  onSetRoles={(scope, roles) =>
+                    onSetRoles(b.id, scope, roles)
+                  }
+                  onMoveScope={(to) => onMoveScope(b.id, to)}
                 />
               );
             })}
@@ -277,25 +291,30 @@ const ALL_ROLES: { key: string; tint: string }[] = [
 
 function BundleCard({
   bundle,
-  subscribed,
+  subscription,
   hasUpdate,
-  installedVersion,
-  roles,
   onSubscribe,
   onUnsubscribe,
   onAckUpdate,
   onSetRoles,
+  onMoveScope,
 }: {
   bundle: MarketplaceBundleView;
-  subscribed: boolean;
+  subscription: MarketplaceSubscriptionView | undefined;
   hasUpdate: boolean;
-  installedVersion: string | null;
-  roles: string[] | null;
-  onSubscribe: () => void;
-  onUnsubscribe: () => void;
-  onAckUpdate: () => void;
-  onSetRoles: (roles: string[] | null) => void;
+  onSubscribe: (scope: 'global' | 'project') => void;
+  onUnsubscribe: (scope: 'global' | 'project') => void;
+  onAckUpdate: (scope: 'global' | 'project') => void;
+  onSetRoles: (
+    scope: 'global' | 'project',
+    roles: string[] | null,
+  ) => void;
+  onMoveScope: (to: 'global' | 'project') => void;
 }) {
+  const subscribed = !!subscription;
+  const scope: 'global' | 'project' = subscription?.scope ?? 'global';
+  const roles = subscription?.roles ?? null;
+
   // A chip is "on" when roles is null (all-roles legacy default) or
   // when it includes this role. Click toggles.
   const isRoleOn = (key: string) => roles === null || roles.includes(key);
@@ -306,22 +325,22 @@ function BundleCard({
       // First per-role edit: start from "all roles", remove the
       // clicked one. The next click can re-add.
       const next = ALL_ROLES.map((r) => r.key).filter((k) => k !== key);
-      onSetRoles(next);
+      onSetRoles(scope, next);
       return;
     }
     if (currentlyOn) {
-      onSetRoles(roles.filter((k) => k !== key));
+      onSetRoles(scope, roles.filter((k) => k !== key));
     } else {
       // Add and keep ALL_ROLES ordering so the wire shape stays
       // deterministic.
       const next = ALL_ROLES.map((r) => r.key).filter(
         (k) => roles.includes(k) || k === key,
       );
-      onSetRoles(next);
+      onSetRoles(scope, next);
     }
   };
 
-  const resetRoles = () => onSetRoles(null);
+  const resetRoles = () => onSetRoles(scope, null);
   const isAllRolesOn = roles === null;
   const isNoRolesOn = roles !== null && roles.length === 0;
   return (
@@ -346,6 +365,24 @@ function BundleCard({
         >
           v{bundle.version}
         </span>
+        {subscribed && (
+          <span
+            className="badge"
+            style={{
+              background: 'var(--sub-2)',
+              color:
+                scope === 'global' ? 'var(--accent)' : 'var(--waiting)',
+              fontSize: 9,
+            }}
+            title={
+              scope === 'global'
+                ? 'Installed globally — loaded in every project'
+                : 'Installed for this project only'
+            }
+          >
+            {scope}
+          </span>
+        )}
         {hasUpdate && (
           <span
             className="badge"
@@ -354,7 +391,7 @@ function BundleCard({
               color: 'var(--waiting)',
               fontSize: 9,
             }}
-            title={`Installed v${installedVersion}, current v${bundle.version}`}
+            title={`Installed v${subscription?.installedVersion}, current v${bundle.version}`}
           >
             update available
           </span>
@@ -481,7 +518,7 @@ function BundleCard({
               <button
                 className="tb-btn primary"
                 style={{ height: 22 }}
-                onClick={onAckUpdate}
+                onClick={() => onAckUpdate(scope)}
                 title={`Acknowledge upgrade to v${bundle.version}`}
               >
                 <Icon name="check" size={11} /> Update
@@ -490,21 +527,49 @@ function BundleCard({
             <button
               className="tb-btn"
               style={{ height: 22 }}
-              onClick={onUnsubscribe}
-              title="Uninstall — agents in this project will no longer load this bundle"
+              onClick={() => onUnsubscribe(scope)}
+              title={
+                scope === 'global'
+                  ? 'Uninstall globally — no project will load this bundle anymore'
+                  : 'Uninstall from this project — global subscriptions in other projects are unaffected'
+              }
             >
               <Icon name="x" size={11} /> Remove
             </button>
+            <button
+              className="tb-btn"
+              style={{ height: 22, fontSize: 11 }}
+              onClick={() =>
+                onMoveScope(scope === 'global' ? 'project' : 'global')
+              }
+              title={
+                scope === 'global'
+                  ? 'Scope this bundle to the active project only — other projects will no longer load it'
+                  : 'Make this bundle global — every project will load it'
+              }
+            >
+              {scope === 'global' ? 'Make project-only' : 'Make global'}
+            </button>
           </>
         ) : (
-          <button
-            className="tb-btn primary"
-            style={{ height: 22 }}
-            onClick={onSubscribe}
-            title="Install for this project — every claude spawn loads the bundle via --plugin-dir"
-          >
-            <Icon name="check" size={11} /> Install
-          </button>
+          <>
+            <button
+              className="tb-btn primary"
+              style={{ height: 22 }}
+              onClick={() => onSubscribe('global')}
+              title="Install globally — every project's claude spawns load this bundle. Most bundles work fine across projects."
+            >
+              <Icon name="check" size={11} /> Install
+            </button>
+            <button
+              className="tb-btn"
+              style={{ height: 22, fontSize: 11 }}
+              onClick={() => onSubscribe('project')}
+              title="Install only for the active project — other projects won't see this bundle."
+            >
+              for project
+            </button>
+          </>
         )}
       </div>
     </div>

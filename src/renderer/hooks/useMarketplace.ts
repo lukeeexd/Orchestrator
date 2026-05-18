@@ -4,23 +4,50 @@ import type {
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
+import { MARKETPLACE_GLOBAL_SCOPE_ID } from '../../shared/ipc';
 
 interface UseMarketplaceResult {
   sources: MarketplaceSourceView[];
   /** Bundles loaded per source. Empty until the source has been synced and the renderer has fetched the manifest. */
   bundlesBySource: Record<string, MarketplaceBundleView[]>;
+  /** Union of global subs + active-project subs, deduped by (sourceId, bundleId) — global wins on conflict. */
   subscriptions: MarketplaceSubscriptionView[];
   /** Subscriptions whose current bundle version is ahead of installed_version → "update available". */
   pendingUpdates: MarketplaceSubscriptionView[];
   refreshSource: (sourceId: string) => Promise<{ ok: boolean; error?: string }>;
-  subscribe: (sourceId: string, bundleId: string) => Promise<{ ok: boolean; error?: string }>;
-  unsubscribe: (sourceId: string, bundleId: string) => Promise<void>;
-  ackUpdate: (sourceId: string, bundleId: string) => Promise<void>;
+  /**
+   * Install a bundle. `scope` defaults to 'global' — most bundles
+   * make sense across projects and the user would rather install once
+   * than re-pick per project. 'project' scopes it to the current
+   * active project.
+   */
+  subscribe: (
+    sourceId: string,
+    bundleId: string,
+    scope?: 'global' | 'project',
+  ) => Promise<{ ok: boolean; error?: string }>;
+  unsubscribe: (
+    sourceId: string,
+    bundleId: string,
+    scope: 'global' | 'project',
+  ) => Promise<void>;
+  ackUpdate: (
+    sourceId: string,
+    bundleId: string,
+    scope: 'global' | 'project',
+  ) => Promise<void>;
   setRoles: (
     sourceId: string,
     bundleId: string,
+    scope: 'global' | 'project',
     roles: string[] | null,
   ) => Promise<void>;
+  /** Flip a subscription's scope (global ↔ project). Preserves installed_version + roles. */
+  moveScope: (
+    sourceId: string,
+    bundleId: string,
+    to: 'global' | 'project',
+  ) => Promise<{ ok: boolean; error?: string }>;
   /** Re-fetch sources + bundles + subscriptions from main. */
   reload: () => Promise<void>;
 }
@@ -40,6 +67,30 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     MarketplaceSubscriptionView[]
   >([]);
 
+  const reloadSubs = useCallback(async (): Promise<
+    MarketplaceSubscriptionView[]
+  > => {
+    // Always pull globals + the active project's subs. Globals come
+    // first so on (sourceId, bundleId) collision we treat the global
+    // entry as canonical — in practice the move flow prevents both
+    // existing at once, but defensively the union dedupes.
+    const globals = await window.api.listMarketplaceSubscriptions(
+      MARKETPLACE_GLOBAL_SCOPE_ID,
+    );
+    const projectSubs = projectId
+      ? await window.api.listMarketplaceSubscriptions(projectId)
+      : [];
+    const seen = new Set<string>();
+    const out: MarketplaceSubscriptionView[] = [];
+    for (const s of [...globals, ...projectSubs]) {
+      const key = `${s.sourceId}\x00${s.bundleId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(s);
+    }
+    return out;
+  }, [projectId]);
+
   const reload = useCallback(async () => {
     const src = await window.api.listMarketplaceSources();
     setSources(src);
@@ -50,14 +101,8 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
       }),
     );
     setBundlesBySource(bundlesMap);
-    if (projectId) {
-      setSubscriptions(
-        await window.api.listMarketplaceSubscriptions(projectId),
-      );
-    } else {
-      setSubscriptions([]);
-    }
-  }, [projectId]);
+    setSubscriptions(await reloadSubs());
+  }, [reloadSubs]);
 
   useEffect(() => {
     void reload();
@@ -84,19 +129,19 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
 
   // Subscription-change broadcast: keeps multiple hook instances (e.g.
   // App for the rail badge + MarketplaceScreen for the grid) in sync
-  // after one of them mutates via subscribe / unsubscribe / ack.
+  // after one of them mutates via subscribe / unsubscribe / ack /
+  // move. We listen for matches against the active project AND the
+  // global sentinel — both can change the effective union the hook
+  // exposes.
   useEffect(() => {
-    if (!projectId) return;
     const off = window.api.onMarketplaceSubscriptionsChanged(
       ({ projectId: pid }) => {
-        if (pid !== projectId) return;
-        void window.api
-          .listMarketplaceSubscriptions(projectId)
-          .then(setSubscriptions);
+        if (pid !== projectId && pid !== MARKETPLACE_GLOBAL_SCOPE_ID) return;
+        void reloadSubs().then(setSubscriptions);
       },
     );
     return off;
-  }, [projectId]);
+  }, [projectId, reloadSubs]);
 
   const refreshSource = useCallback(
     async (sourceId: string) =>
@@ -104,59 +149,82 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     [],
   );
 
+  const resolveScopeProjectId = useCallback(
+    (scope: 'global' | 'project'): string | null => {
+      if (scope === 'global') return MARKETPLACE_GLOBAL_SCOPE_ID;
+      return projectId;
+    },
+    [projectId],
+  );
+
   const subscribe = useCallback(
-    async (sourceId: string, bundleId: string) => {
-      if (!projectId) return { ok: false, error: 'no active project' };
+    async (
+      sourceId: string,
+      bundleId: string,
+      scope: 'global' | 'project' = 'global',
+    ) => {
+      const scopeId = resolveScopeProjectId(scope);
+      if (!scopeId) return { ok: false, error: 'no active project' };
       const res = await window.api.subscribeMarketplaceBundle(
-        projectId,
+        scopeId,
         sourceId,
         bundleId,
       );
       if (res.ok) {
-        setSubscriptions(
-          await window.api.listMarketplaceSubscriptions(projectId),
-        );
+        setSubscriptions(await reloadSubs());
       }
       return res;
     },
-    [projectId],
+    [resolveScopeProjectId, reloadSubs],
   );
 
   const unsubscribe = useCallback(
-    async (sourceId: string, bundleId: string) => {
-      if (!projectId) return;
+    async (
+      sourceId: string,
+      bundleId: string,
+      scope: 'global' | 'project',
+    ) => {
+      const scopeId = resolveScopeProjectId(scope);
+      if (!scopeId) return;
       await window.api.unsubscribeMarketplaceBundle(
-        projectId,
+        scopeId,
         sourceId,
         bundleId,
       );
-      setSubscriptions(
-        await window.api.listMarketplaceSubscriptions(projectId),
-      );
+      setSubscriptions(await reloadSubs());
     },
-    [projectId],
+    [resolveScopeProjectId, reloadSubs],
   );
 
   const ackUpdate = useCallback(
-    async (sourceId: string, bundleId: string) => {
-      if (!projectId) return;
+    async (
+      sourceId: string,
+      bundleId: string,
+      scope: 'global' | 'project',
+    ) => {
+      const scopeId = resolveScopeProjectId(scope);
+      if (!scopeId) return;
       await window.api.acknowledgeMarketplaceUpdate(
-        projectId,
+        scopeId,
         sourceId,
         bundleId,
       );
-      setSubscriptions(
-        await window.api.listMarketplaceSubscriptions(projectId),
-      );
+      setSubscriptions(await reloadSubs());
     },
-    [projectId],
+    [resolveScopeProjectId, reloadSubs],
   );
 
   const setRoles = useCallback(
-    async (sourceId: string, bundleId: string, roles: string[] | null) => {
-      if (!projectId) return;
+    async (
+      sourceId: string,
+      bundleId: string,
+      scope: 'global' | 'project',
+      roles: string[] | null,
+    ) => {
+      const scopeId = resolveScopeProjectId(scope);
+      if (!scopeId) return;
       await window.api.setMarketplaceBundleRoles(
-        projectId,
+        scopeId,
         sourceId,
         bundleId,
         roles,
@@ -164,11 +232,33 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
       // The subscriptions-changed broadcast will refresh us — but call
       // explicitly too so the UI updates instantly without waiting for
       // the event round-trip.
-      setSubscriptions(
-        await window.api.listMarketplaceSubscriptions(projectId),
-      );
+      setSubscriptions(await reloadSubs());
     },
-    [projectId],
+    [resolveScopeProjectId, reloadSubs],
+  );
+
+  const moveScope = useCallback(
+    async (
+      sourceId: string,
+      bundleId: string,
+      to: 'global' | 'project',
+    ): Promise<{ ok: boolean; error?: string }> => {
+      if (!projectId)
+        return { ok: false, error: 'no active project' };
+      const from = to === 'global' ? projectId : MARKETPLACE_GLOBAL_SCOPE_ID;
+      const dest = to === 'global' ? MARKETPLACE_GLOBAL_SCOPE_ID : projectId;
+      const res = await window.api.moveMarketplaceSubscription(
+        sourceId,
+        bundleId,
+        from,
+        dest,
+      );
+      if (res.ok) {
+        setSubscriptions(await reloadSubs());
+      }
+      return res;
+    },
+    [projectId, reloadSubs],
   );
 
   const pendingUpdates = useMemo(() => {
@@ -191,6 +281,7 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     unsubscribe,
     ackUpdate,
     setRoles,
+    moveScope,
     reload,
   };
 }
