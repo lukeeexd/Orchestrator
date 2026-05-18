@@ -3,6 +3,7 @@ import type {
   MarketplaceBundleSkillView,
   MarketplaceBundleView,
   MarketplaceChangelogEntry,
+  MarketplaceSelectedSkills,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
@@ -43,9 +44,11 @@ export function MarketplaceScreen({
   const [recommendedOpen, setRecommendedOpen] = useState(false);
 
   // "Already applied" = every recommended bundle is subscribed at the
-  // global scope with exactly the curated skill list (any superset, or
-  // a different role config, still counts as not-applied so the user
-  // can re-baseline). Used to dim the button rather than hide it.
+  // global scope with the same per-role skill map. Any deviation (a
+  // role's list is empty when we wanted skills, has extras, or the
+  // wrong items) flips it back to not-applied so the user can re-
+  // baseline. selectedSkills === null is also a superset and counts
+  // as applied — they get everything plus more.
   const recommendedApplied = useMemo(() => {
     const rec = MARKETPLACE_RECOMMENDED_DEFAULTS;
     for (const wanted of rec.bundles) {
@@ -53,17 +56,15 @@ export function MarketplaceScreen({
         (s) => s.sourceId === rec.sourceId && s.bundleId === wanted.bundleId,
       );
       if (!sub) return false;
-      // setSkills can leave selectedSkills as null (= all skills) or
-      // narrowed; treat exact-match-or-null-with-superset as applied.
-      const installedSkills = sub.selectedSkills;
-      if (installedSkills === null) {
-        // null = "all skills in bundle" — that's a superset, fine.
-        continue;
+      const have = sub.selectedSkills;
+      if (have === null) continue; // superset; counts as applied
+      if (Array.isArray(have)) return false; // flat form ≠ per-role spec
+      for (const [role, wantList] of Object.entries(wanted.skillsByRole)) {
+        const haveList = have[role] ?? [];
+        if (haveList.length !== wantList.length) return false;
+        const haveSet = new Set(haveList);
+        for (const id of wantList) if (!haveSet.has(id)) return false;
       }
-      const want = new Set(wanted.skills);
-      const have = new Set(installedSkills);
-      if (want.size !== have.size) return false;
-      for (const id of want) if (!have.has(id)) return false;
     }
     return true;
   }, [mp.subscriptions]);
@@ -78,7 +79,7 @@ export function MarketplaceScreen({
         rec.sourceId,
         wanted.bundleId,
         'global',
-        wanted.skills,
+        wanted.skillsByRole,
       );
       if (wanted.roles !== null) {
         await mp.setRoles(
@@ -287,12 +288,11 @@ function RecommendedSetupModal({
         </div>
         <div className="modal-body">
           <p style={{ marginTop: 0, color: 'var(--muted)', fontSize: 12 }}>
-            One-click install of a curated skill set sized for the seven
-            agent roles. Subscribes globally so the skills apply to
-            every project. All skills are exposed to every role —
-            Claude&apos;s description matcher picks the right one per
-            task. Re-running replaces any existing selection for these
-            bundles.
+            One-click install of a per-role skill stack. Subscribes
+            globally so the picks apply to every project. Each agent
+            role gets its own curated list — Claude&apos;s description
+            matcher routes inside that role&apos;s set. Re-running
+            replaces any existing selection for these bundles.
           </p>
           {bundles.map((b) => (
             <div key={b.bundleId} style={{ marginTop: 10 }}>
@@ -300,44 +300,67 @@ function RecommendedSetupModal({
                 style={{
                   fontSize: 12,
                   fontWeight: 600,
-                  marginBottom: 4,
+                  marginBottom: 6,
                   color: 'var(--text)',
                 }}
               >
                 <code>{b.bundleId}</code>
-                <span
-                  style={{
-                    marginLeft: 8,
-                    fontSize: 10,
-                    fontWeight: 400,
-                    color: 'var(--muted)',
-                  }}
-                >
-                  {b.roles === null
-                    ? 'all roles'
-                    : `roles: ${b.roles.join(', ')}`}
-                </span>
               </div>
               <div
                 style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 4,
+                  display: 'grid',
+                  gridTemplateColumns: '70px 1fr',
+                  rowGap: 4,
+                  columnGap: 8,
+                  fontSize: 10,
                 }}
               >
-                {b.skills.map((s) => (
-                  <code
-                    key={s}
-                    style={{
-                      fontSize: 10,
-                      padding: '2px 6px',
-                      background: 'var(--sub-2)',
-                      borderRadius: 3,
-                      color: 'var(--text-2)',
-                    }}
+                {Object.entries(b.skillsByRole).map(([role, list]) => (
+                  <div
+                    key={role}
+                    style={{ display: 'contents' }}
                   >
-                    {s}
-                  </code>
+                    <code
+                      style={{
+                        color: 'var(--muted)',
+                        background: 'transparent',
+                        padding: 0,
+                        textAlign: 'right',
+                      }}
+                    >
+                      {role}
+                    </code>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 4,
+                      }}
+                    >
+                      {list.length === 0 ? (
+                        <span
+                          style={{ color: 'var(--muted-2)', fontSize: 10 }}
+                        >
+                          (none)
+                        </span>
+                      ) : (
+                        list.map((s) => (
+                          <code
+                            key={s}
+                            style={{
+                              fontSize: 10,
+                              padding: '2px 6px',
+                              background: 'var(--sub-2)',
+                              borderRadius: 3,
+                              color: 'var(--text-2)',
+                            }}
+                          >
+                            {s}
+                          </code>
+                        ))
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -536,7 +559,7 @@ function SourceSection({
   onSetSkills: (
     bundleId: string,
     scope: 'global' | 'project',
-    skills: string[] | null,
+    skills: MarketplaceSelectedSkills,
   ) => void;
   onToggleEnabled: () => void;
   onGetChangelog: (
@@ -887,7 +910,7 @@ function BundleCard({
   onListSkills: () => Promise<MarketplaceBundleSkillView[]>;
   onSetSkills: (
     scope: 'global' | 'project',
-    skills: string[] | null,
+    skills: MarketplaceSelectedSkills,
   ) => void;
   onGetChangelog: (
     fromVersion: string | null,
@@ -898,6 +921,50 @@ function BundleCard({
   const scope: 'global' | 'project' = subscription?.scope ?? 'global';
   const roles = subscription?.roles ?? null;
   const selectedSkills = subscription?.selectedSkills ?? null;
+  // Derived view for the small "N selected" chip on the bundle card.
+  // Three cases:
+  //  - null:        "all" (whole bundle loads)
+  //  - flat array:  "N selected" (or "none" if empty)
+  //  - per-role:    "per-role" (the legacy Pick modal can't edit this
+  //                 shape — direct the user to the Agent skills view
+  //                 by disabling Pick when this case is in play)
+  const skillsSummary: {
+    label: string;
+    title: string;
+    perRole: boolean;
+  } = (() => {
+    if (selectedSkills === null) {
+      return {
+        label: 'all',
+        title: 'All skills in this bundle are loaded',
+        perRole: false,
+      };
+    }
+    if (Array.isArray(selectedSkills)) {
+      if (selectedSkills.length === 0) {
+        return {
+          label: 'none selected',
+          title: 'No skills from this bundle are loaded',
+          perRole: false,
+        };
+      }
+      return {
+        label: `${selectedSkills.length} selected`,
+        title: `${selectedSkills.length} of the bundle's skills are loaded for every enabled role`,
+        perRole: false,
+      };
+    }
+    // Per-role map
+    const roleCount = Object.keys(selectedSkills).filter(
+      (r) => (selectedSkills[r] ?? []).length > 0,
+    ).length;
+    return {
+      label: `per-role · ${roleCount} role${roleCount === 1 ? '' : 's'}`,
+      title:
+        'Per-role skill picks active. Use the Agent skills view (top of Marketplace) to edit.',
+      perRole: true,
+    };
+  })();
   const [skillsPickerOpen, setSkillsPickerOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
 
@@ -1115,24 +1182,26 @@ function BundleCard({
             </span>
             <span
               style={{ fontSize: 11, color: 'var(--muted)' }}
-              title={
-                selectedSkills === null
-                  ? 'All skills in this bundle are loaded'
-                  : `${selectedSkills.length} of the bundle's skills are loaded`
-              }
+              title={skillsSummary.title}
             >
-              {selectedSkills === null
-                ? 'all'
-                : selectedSkills.length === 0
-                  ? 'none selected'
-                  : `${selectedSkills.length} selected`}
+              {skillsSummary.label}
             </span>
             <span className="spacer" />
             <button
               className="tb-btn"
-              style={{ height: 18, fontSize: 10, padding: '0 6px' }}
+              style={{
+                height: 18,
+                fontSize: 10,
+                padding: '0 6px',
+                opacity: skillsSummary.perRole ? 0.45 : 1,
+              }}
               onClick={() => setSkillsPickerOpen(true)}
-              title="Pick which skills inside this bundle to load"
+              disabled={skillsSummary.perRole}
+              title={
+                skillsSummary.perRole
+                  ? 'This subscription uses per-role picks — edit via the Agent skills view.'
+                  : 'Pick which skills inside this bundle to load'
+              }
             >
               pick
             </button>
@@ -1213,7 +1282,15 @@ function BundleCard({
       {skillsPickerOpen && (
         <SkillPickerModal
           bundle={bundle}
-          selected={selectedSkills}
+          // Modal is only opened when skillsSummary.perRole is false, so
+          // selectedSkills is guaranteed to be null or string[] here.
+          // Coerce the per-role map case to null for type-safety so the
+          // build doesn't yell — that branch can't actually execute.
+          selected={
+            Array.isArray(selectedSkills) || selectedSkills === null
+              ? selectedSkills
+              : null
+          }
           onClose={() => setSkillsPickerOpen(false)}
           onLoad={onListSkills}
           onSave={(next) => {

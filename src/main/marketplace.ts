@@ -682,6 +682,25 @@ export function recordSourceSync(
   scheduleSave();
 }
 
+/**
+ * Skill-level enablement for a subscription. Three shapes:
+ *
+ * - `null` — load every skill in the bundle for every enabled role.
+ *   Default at subscribe time; cheapest path at the runner.
+ * - `string[]` (flat) — load these specific skills for every enabled
+ *   role. Pre-v19 form; preserved so existing rows / the legacy "Pick"
+ *   modal still work without migration.
+ * - `Record<role, string[]>` (per-role) — each enabled role gets its
+ *   own skill list. Lets a single bundle subscription wire different
+ *   skills to coder vs qa vs director, etc. Missing role keys mean
+ *   "no skills from this bundle for that role" — explicit empty array
+ *   has the same effect.
+ */
+export type SelectedSkills =
+  | null
+  | string[]
+  | Record<string, string[]>;
+
 export interface ProjectSubscriptionRow {
   projectId: string;
   sourceId: string;
@@ -695,14 +714,7 @@ export interface ProjectSubscriptionRow {
    * --plugin-dir.
    */
   roles: string[] | null;
-  /**
-   * Skill-level enablement within the bundle. `null` (the default
-   * at subscribe time) means "all skills in the bundle". Otherwise
-   * a list of skill ids (subdir names containing SKILL.md). When
-   * set, the runner builds a synthetic plugin dir containing only
-   * the listed skills and passes that to --plugin-dir.
-   */
-  selectedSkills: string[] | null;
+  selectedSkills: SelectedSkills;
 }
 
 /**
@@ -734,9 +746,69 @@ function parseRoles(raw: unknown): string[] | null {
   }
 }
 
-/** Same shape as parseRoles — selected_skills is a JSON-encoded string[] or null. */
-function parseSelectedSkills(raw: unknown): string[] | null {
-  return parseRoles(raw);
+/**
+ * Parse the JSON-encoded selected_skills column. Accepts the legacy
+ * `string[]` form (skills apply to every enabled role) and the per-role
+ * `Record<role, string[]>` form (each role gets its own list). Returns
+ * `null` on malformed / empty input so the runner falls back to
+ * "all skills".
+ */
+function parseSelectedSkills(raw: unknown): SelectedSkills {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (Array.isArray(parsed)) {
+    const out: string[] = [];
+    for (const item of parsed) {
+      if (typeof item === 'string' && item.length > 0) out.push(item);
+    }
+    return out;
+  }
+  if (parsed && typeof parsed === 'object') {
+    const map: Record<string, string[]> = {};
+    for (const [role, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!Array.isArray(value)) continue;
+      const list: string[] = [];
+      for (const item of value) {
+        if (typeof item === 'string' && item.length > 0) list.push(item);
+      }
+      map[role] = list;
+    }
+    return map;
+  }
+  return null;
+}
+
+/**
+ * Resolve a subscription's effective skill list for a specific role.
+ *
+ * - `null` means "every skill in the bundle" (caller skips the subset
+ *   step and passes the bundle dir directly to --plugin-dir).
+ * - `[]` means "no skills from this bundle for this role" (caller skips
+ *   the --plugin-dir entirely).
+ * - A non-empty array means "materialize a subset with exactly these
+ *   skills" — caller copies them into a synthetic plugin dir.
+ *
+ * Backwards-compat: a legacy `string[]` selectedSkills column applies
+ * its list to every role uniformly, matching pre-v19 behaviour.
+ */
+function skillsForRole(
+  sub: ProjectSubscriptionRow,
+  role: string,
+): string[] | null {
+  if (sub.selectedSkills === null) return null;
+  if (Array.isArray(sub.selectedSkills)) {
+    // Legacy flat form: same skills for every enabled role.
+    return sub.selectedSkills;
+  }
+  // Per-role map: a missing key is equivalent to an explicit empty
+  // array. Both mean "this role doesn't load anything from this
+  // bundle".
+  return sub.selectedSkills[role] ?? [];
 }
 
 export function listSubscriptions(
@@ -807,19 +879,26 @@ export function unsubscribeBundle(
 
 /**
  * Set which skills inside a bundle the subscription should load.
- * Pass `null` for "all skills in the bundle" (default at subscribe
- * time, same as pre-v18 behaviour). An empty array means "none" —
- * the bundle is subscribed but no skills make it through to claude,
- * useful only as a transient state while the user picks via the UI.
+ *
+ * Three forms accepted, mirroring the column shape:
+ * - `null` — load every skill for every role (cheapest path).
+ * - `string[]` — load these specific skills for every enabled role
+ *   (legacy flat form; kept for the Pick modal and older callers).
+ * - `Record<role, string[]>` — per-role skill picks. Roles missing
+ *   from the map get no skills from this bundle.
+ *
+ * An empty array (`[]`) in either form means "no skills" — useful as
+ * a transient state while the user picks; the runner skips passing
+ * --plugin-dir for that role entirely.
  */
 export function setSubscriptionSkills(
   projectId: string,
   sourceId: string,
   bundleId: string,
-  skills: string[] | null,
+  skills: SelectedSkills,
 ): void {
   const db = getDb();
-  const value = skills ? JSON.stringify(skills) : null;
+  const value = skills === null ? null : JSON.stringify(skills);
   const stmt = db.prepare(
     `UPDATE project_subscribed_bundles
      SET selected_skills = ?
@@ -923,6 +1002,7 @@ function parseSkillFrontmatter(raw: string): {
  */
 function materializeSubset(
   scope: string,
+  role: string,
   sourceId: string,
   bundleId: string,
   skills: string[],
@@ -937,9 +1017,12 @@ function materializeSubset(
     'skill-marketplaces',
     '.subsets',
   );
+  // Role goes in the dir name so per-role subset selections don't
+  // clobber each other — coder + qa each get a separate plugin dir
+  // with their own SKILL.md set.
   const subsetDir = path.join(
     subsetRoot,
-    `${sanitizeId(scope)}--${sanitizeId(sourceId)}--${sanitizeId(bundleId)}`,
+    `${sanitizeId(scope)}--${sanitizeId(role)}--${sanitizeId(sourceId)}--${sanitizeId(bundleId)}`,
   );
   if (fs.existsSync(subsetDir)) {
     fs.rmSync(subsetDir, { recursive: true, force: true });
@@ -1027,21 +1110,21 @@ export function availableSkillsByRole(
   // bundle — listBundleSkills walks the dir + parses frontmatter and
   // we don't want to repeat that work per role per bundle.
   const bundleCache = new Map<string, BundleSkillInfo[]>();
-  const skillsFor = (sub: ProjectSubscriptionRow): BundleSkillInfo[] => {
+  const skillsFor = (
+    sub: ProjectSubscriptionRow,
+    role: string,
+  ): BundleSkillInfo[] => {
     const key = `${sub.sourceId}\x00${sub.bundleId}`;
     let all = bundleCache.get(key);
     if (!all) {
       all = listBundleSkills(sub.sourceId, sub.bundleId);
       bundleCache.set(key, all);
     }
-    if (sub.selectedSkills && sub.selectedSkills.length > 0) {
-      const wanted = new Set(sub.selectedSkills);
-      return all.filter((s) => wanted.has(s.id));
-    }
-    if (sub.selectedSkills && sub.selectedSkills.length === 0) {
-      return [];
-    }
-    return all;
+    const selected = skillsForRole(sub, role);
+    if (selected === null) return all;
+    if (selected.length === 0) return [];
+    const wanted = new Set(selected);
+    return all.filter((s) => wanted.has(s.id));
   };
 
   const out: Record<string, BundleSkillInfo[]> = {};
@@ -1050,7 +1133,7 @@ export function availableSkillsByRole(
     for (const sub of deduped) {
       if (!enabledSourceIds.has(sub.sourceId)) continue;
       if (sub.roles !== null && !sub.roles.includes(role)) continue;
-      skills.push(...skillsFor(sub));
+      skills.push(...skillsFor(sub, role));
     }
     // Dedupe by skill id in case multiple bundles ship the same name
     // (rare but defensive). Keep first occurrence.
@@ -1067,35 +1150,42 @@ export function availableSkillsByRole(
 }
 
 /**
- * Resolve a subscription to its on-disk --plugin-dir argument.
- * Subscriptions with no selectedSkills return the bundle's original
- * cache path (cheapest); subscriptions with a selection materialize a
- * synthetic subset dir. Used by the runner so each spawn site doesn't
- * need to know about the subset machinery.
+ * Resolve a subscription to its on-disk --plugin-dir argument for a
+ * specific role. Per-role resolution because the same subscription may
+ * surface different skills to coder vs qa vs director (when the
+ * subscription uses the per-role map form of selectedSkills).
+ *
+ * Returns:
+ * - the bundle's full cache path when this role takes all skills
+ *   (cheapest — no materialization).
+ * - a synthetic subset dir when this role takes a curated list.
+ * - null when the bundle/role contributes no skills (skip the
+ *   --plugin-dir entirely).
  */
 function pluginDirForSubscription(
   sub: ProjectSubscriptionRow,
+  role: string,
 ): string | null {
   const bundle = findBundle(sub.sourceId, sub.bundleId);
   if (!bundle) return null;
-  if (!sub.selectedSkills || sub.selectedSkills.length === 0) {
-    // null = all skills (load the whole bundle). Empty array would
-    // mean "no skills" which renders the subscription a no-op; skip
-    // entirely so we don't pass a --plugin-dir for an empty subset.
-    if (sub.selectedSkills && sub.selectedSkills.length === 0) return null;
+  const selected = skillsForRole(sub, role);
+  if (selected === null) {
+    // All skills — pass the bundle dir straight through.
     const dir = bundlePluginDir(sub.sourceId, bundle);
     return fs.existsSync(dir) ? dir : null;
   }
+  if (selected.length === 0) return null;
   try {
     return materializeSubset(
       sub.projectId,
+      role,
       sub.sourceId,
       sub.bundleId,
-      sub.selectedSkills,
+      selected,
     );
   } catch (e) {
     console.error(
-      `[marketplace] materializeSubset failed for ${sub.sourceId}/${sub.bundleId}:`,
+      `[marketplace] materializeSubset failed for ${sub.sourceId}/${sub.bundleId} role=${role}:`,
       e instanceof Error ? e.message : e,
     );
     return null;
@@ -1195,8 +1285,9 @@ export function pluginDirsForProject(
     if (s.roles !== null && !s.roles.includes(role)) continue;
     // pluginDirForSubscription handles the all-skills vs subset
     // routing — returns either the original bundle dir or a
-    // freshly-materialized synthetic subset dir.
-    const dir = pluginDirForSubscription(s);
+    // freshly-materialized synthetic subset dir for this specific
+    // role.
+    const dir = pluginDirForSubscription(s, role);
     if (dir) out.push(dir);
   }
   return out;

@@ -3,6 +3,7 @@ import type {
   MarketplaceBundleSkillView,
   MarketplaceBundleView,
   MarketplaceChangelogEntry,
+  MarketplaceSelectedSkills,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
@@ -66,12 +67,17 @@ interface UseMarketplaceResult {
     sourceId: string,
     bundleId: string,
   ) => Promise<MarketplaceBundleSkillView[]>;
-  /** Set per-skill subset on a subscription. Pass null for all-skills. */
+  /**
+   * Set the per-skill picks on a subscription. Pass `null` for "all
+   * skills in the bundle", a flat `string[]` for "these skills for
+   * every enabled role" (legacy Pick modal form), or a
+   * `Record<role, string[]>` for per-role granularity.
+   */
   setSkills: (
     sourceId: string,
     bundleId: string,
     scope: 'global' | 'project',
-    skills: string[] | null,
+    skills: MarketplaceSelectedSkills,
   ) => Promise<void>;
   /** Fetch changelog entries between two versions for a source. */
   getChangelog: (
@@ -300,7 +306,7 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
       sourceId: string,
       bundleId: string,
       scope: 'global' | 'project',
-      skills: string[] | null,
+      skills: MarketplaceSelectedSkills,
     ) => {
       const scopeId = resolveScopeProjectId(scope);
       if (!scopeId) return;
