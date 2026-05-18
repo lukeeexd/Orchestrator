@@ -266,12 +266,6 @@ export function MarketplaceScreen({
               onMoveScope={(bundleId, to) =>
                 void mp.moveScope(source.id, bundleId, to)
               }
-              onListSkills={(bundleId) =>
-                mp.listBundleSkills(source.id, bundleId)
-              }
-              onSetSkills={(bundleId, scope, skills) =>
-                void mp.setSkills(source.id, bundleId, scope, skills)
-              }
               onToggleEnabled={() =>
                 void mp.setSourceEnabled(source.id, !source.enabled)
               }
@@ -906,8 +900,6 @@ function SourceSection({
   onAckUpdate,
   onSetRoles,
   onMoveScope,
-  onListSkills,
-  onSetSkills,
   onToggleEnabled,
   onGetChangelog,
 }: {
@@ -926,12 +918,6 @@ function SourceSection({
     roles: string[] | null,
   ) => void;
   onMoveScope: (bundleId: string, to: 'global' | 'project') => void;
-  onListSkills: (bundleId: string) => Promise<MarketplaceBundleSkillView[]>;
-  onSetSkills: (
-    bundleId: string,
-    scope: 'global' | 'project',
-    skills: MarketplaceSelectedSkills,
-  ) => void;
   onToggleEnabled: () => void;
   onGetChangelog: (
     fromVersion: string | null,
@@ -1219,10 +1205,6 @@ function SourceSection({
                     onSetRoles(b.id, scope, roles)
                   }
                   onMoveScope={(to) => onMoveScope(b.id, to)}
-                  onListSkills={() => onListSkills(b.id)}
-                  onSetSkills={(scope, skills) =>
-                    onSetSkills(b.id, scope, skills)
-                  }
                   onGetChangelog={(fromV, toV) =>
                     onGetChangelog(fromV, toV)
                   }
@@ -1263,8 +1245,6 @@ function BundleCard({
   onAckUpdate,
   onSetRoles,
   onMoveScope,
-  onListSkills,
-  onSetSkills,
   onGetChangelog,
 }: {
   bundle: MarketplaceBundleView;
@@ -1278,11 +1258,6 @@ function BundleCard({
     roles: string[] | null,
   ) => void;
   onMoveScope: (to: 'global' | 'project') => void;
-  onListSkills: () => Promise<MarketplaceBundleSkillView[]>;
-  onSetSkills: (
-    scope: 'global' | 'project',
-    skills: MarketplaceSelectedSkills,
-  ) => void;
   onGetChangelog: (
     fromVersion: string | null,
     toVersion: string,
@@ -1336,7 +1311,6 @@ function BundleCard({
       perRole: true,
     };
   })();
-  const [skillsPickerOpen, setSkillsPickerOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
 
   // A chip is "on" when roles is null (all-roles legacy default) or
@@ -1558,24 +1532,12 @@ function BundleCard({
               {skillsSummary.label}
             </span>
             <span className="spacer" />
-            <button
-              className="tb-btn"
-              style={{
-                height: 18,
-                fontSize: 10,
-                padding: '0 6px',
-                opacity: skillsSummary.perRole ? 0.45 : 1,
-              }}
-              onClick={() => setSkillsPickerOpen(true)}
-              disabled={skillsSummary.perRole}
-              title={
-                skillsSummary.perRole
-                  ? 'This subscription uses per-role picks — edit via the Agent skills view.'
-                  : 'Pick which skills inside this bundle to load'
-              }
+            <span
+              style={{ fontSize: 10, color: 'var(--muted-2)' }}
+              title="Edit which skills load for each role in the Agent skills tab."
             >
-              pick
-            </button>
+              edit in Agent skills
+            </span>
           </div>
         </div>
       )}
@@ -1650,26 +1612,6 @@ function BundleCard({
           </>
         )}
       </div>
-      {skillsPickerOpen && (
-        <SkillPickerModal
-          bundle={bundle}
-          // Modal is only opened when skillsSummary.perRole is false, so
-          // selectedSkills is guaranteed to be null or string[] here.
-          // Coerce the per-role map case to null for type-safety so the
-          // build doesn't yell — that branch can't actually execute.
-          selected={
-            Array.isArray(selectedSkills) || selectedSkills === null
-              ? selectedSkills
-              : null
-          }
-          onClose={() => setSkillsPickerOpen(false)}
-          onLoad={onListSkills}
-          onSave={(next) => {
-            onSetSkills(scope, next);
-            setSkillsPickerOpen(false);
-          }}
-        />
-      )}
       {changelogOpen && subscription && (
         <ChangelogModal
           bundle={bundle}
@@ -1838,257 +1780,3 @@ function ChangelogModal({
   );
 }
 
-function SkillPickerModal({
-  bundle,
-  selected,
-  onClose,
-  onLoad,
-  onSave,
-}: {
-  bundle: MarketplaceBundleView;
-  selected: string[] | null;
-  onClose: () => void;
-  onLoad: () => Promise<MarketplaceBundleSkillView[]>;
-  onSave: (skills: string[] | null) => void;
-}) {
-  const [skills, setSkills] = useState<MarketplaceBundleSkillView[] | null>(
-    null,
-  );
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState('');
-
-  // Load skills once on mount; initialize the picked-set from the
-  // existing selection. null selection → start with everything picked
-  // (since current behaviour = "all skills loaded").
-  useEffect(() => {
-    let cancelled = false;
-    void onLoad()
-      .then((list) => {
-        if (cancelled) return;
-        setSkills(list);
-        if (selected === null) {
-          setPicked(new Set(list.map((s) => s.id)));
-        } else {
-          setPicked(new Set(selected));
-        }
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [onLoad, selected]);
-
-  const filteredSkills = useMemo(() => {
-    if (!skills) return [];
-    const q = filter.trim().toLowerCase();
-    if (!q) return skills;
-    return skills.filter(
-      (s) =>
-        s.id.toLowerCase().includes(q) ||
-        (s.name ?? '').toLowerCase().includes(q) ||
-        (s.description ?? '').toLowerCase().includes(q),
-    );
-  }, [skills, filter]);
-
-  const toggle = (id: string) => {
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const selectAll = () => {
-    if (!skills) return;
-    setPicked(new Set(skills.map((s) => s.id)));
-  };
-  const clearAll = () => setPicked(new Set());
-
-  const save = () => {
-    if (!skills) return;
-    // If the user picked all skills, store `null` (= "all skills,
-    // current behaviour") rather than the explicit full list. That
-    // way the wire shape stays compact and we don't have to update
-    // the stored selection every time the bundle gains a new skill
-    // upstream.
-    const allSelected =
-      picked.size === skills.length &&
-      skills.every((s) => picked.has(s.id));
-    onSave(allSelected ? null : Array.from(picked).sort());
-  };
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 640, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}
-      >
-        <div className="modal-head">
-          <span className="title">
-            <b>Pick skills · {bundle.id}</b>
-          </span>
-          <span className="spacer" />
-          <button className="icon-btn" onClick={onClose} title="Cancel">
-            <Icon name="x" size={11} />
-          </button>
-        </div>
-        <div
-          className="modal-body"
-          style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}
-        >
-          {skills === null && !loadError && (
-            <div className="inline-empty" style={{ padding: 18 }}>
-              Loading skills…
-            </div>
-          )}
-          {loadError && (
-            <div className="form-error">Failed to load skills: {loadError}</div>
-          )}
-          {skills !== null && skills.length === 0 && (
-            <div className="inline-empty" style={{ padding: 18 }}>
-              No skills found in this bundle on disk. Has it been
-              synced yet?
-            </div>
-          )}
-          {skills !== null && skills.length > 0 && (
-            <>
-              <div style={{ marginBottom: 8 }}>
-                <input
-                  className="text-input"
-                  placeholder={`Search ${skills.length} skills…`}
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  style={{ height: 26 }}
-                />
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
-                }}
-              >
-                {filteredSkills.map((s) => {
-                  const on = picked.has(s.id);
-                  return (
-                    <label
-                      key={s.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: 8,
-                        padding: '6px 8px',
-                        borderRadius: 4,
-                        cursor: 'pointer',
-                        background: on
-                          ? 'rgba(74,222,128,0.06)'
-                          : 'transparent',
-                        border: '1px solid var(--border)',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() => toggle(s.id)}
-                        style={{ marginTop: 2 }}
-                      />
-                      <div
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 2,
-                        }}
-                      >
-                        <div style={{ fontSize: 12 }}>
-                          <code style={{ background: 'transparent', padding: 0 }}>
-                            {s.id}
-                          </code>
-                          {s.name && s.name !== s.id && (
-                            <span
-                              style={{
-                                marginLeft: 6,
-                                color: 'var(--muted)',
-                                fontSize: 11,
-                              }}
-                            >
-                              · {s.name}
-                            </span>
-                          )}
-                        </div>
-                        {s.description && (
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: 'var(--muted)',
-                              lineHeight: 1.4,
-                            }}
-                          >
-                            {s.description}
-                          </div>
-                        )}
-                      </div>
-                    </label>
-                  );
-                })}
-                {filteredSkills.length === 0 && (
-                  <div
-                    className="inline-empty"
-                    style={{ padding: 12, marginTop: 4 }}
-                  >
-                    No skills match the filter.
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            gap: 8,
-            alignItems: 'center',
-            padding: 12,
-            borderTop: '1px solid var(--border)',
-          }}
-        >
-          <button
-            className="tb-btn"
-            style={{ height: 22, fontSize: 11 }}
-            onClick={selectAll}
-            disabled={!skills || skills.length === 0}
-          >
-            Select all
-          </button>
-          <button
-            className="tb-btn"
-            style={{ height: 22, fontSize: 11 }}
-            onClick={clearAll}
-            disabled={!skills || skills.length === 0}
-          >
-            Clear
-          </button>
-          <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>
-            {skills
-              ? `${picked.size} of ${skills.length} selected`
-              : ''}
-          </span>
-          <span className="spacer" />
-          <button className="tb-btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="tb-btn primary" onClick={save} disabled={!skills}>
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
