@@ -54,6 +54,8 @@ export const IpcChannels = {
   MarketplaceMoveScope: 'marketplace:moveScope',
   MarketplaceAddSource: 'marketplace:addSource',
   MarketplaceRemoveSource: 'marketplace:removeSource',
+  MarketplaceListBundleSkills: 'marketplace:listBundleSkills',
+  MarketplaceSetSkills: 'marketplace:setSkills',
   MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
   MarketplaceEventSourcePatch: 'marketplace:event:sourcePatch',
   MarketplaceEventSubscriptionsChanged: 'marketplace:event:subscriptionsChanged',
@@ -194,8 +196,26 @@ export interface MarketplaceSubscriptionView {
    * as a "no agents" hint.
    */
   roles: string[] | null;
+  /**
+   * Per-skill enablement within the bundle. `null` = all skills (the
+   * whole bundle loads, default at install). Otherwise a list of
+   * skill ids — the runner materializes a synthetic plugin dir with
+   * only these skills. Empty array = no skills (degenerate; the
+   * runner skips --plugin-dir for this subscription entirely).
+   */
+  selectedSkills: string[] | null;
   /** Derived from projectId — 'global' for the sentinel, 'project' otherwise. */
   scope: 'global' | 'project';
+}
+
+/** One skill within a bundle, surfaced for the skill-picker UI. */
+export interface MarketplaceBundleSkillView {
+  /** Subdir name inside the bundle. */
+  id: string;
+  /** Human label from SKILL.md frontmatter `name:`. */
+  name?: string;
+  /** One-liner from SKILL.md frontmatter `description:`. */
+  description?: string;
 }
 
 export interface AgentEventAgentPayload {
@@ -458,6 +478,26 @@ export interface OrchestratorApi {
   removeMarketplaceSource: (
     sourceId: string,
   ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Enumerate the skills inside a bundle — walks the bundle dir on
+   * disk and finds every subdirectory with a SKILL.md, parsing the
+   * frontmatter's name + description for the picker UI.
+   */
+  listMarketplaceBundleSkills: (
+    sourceId: string,
+    bundleId: string,
+  ) => Promise<MarketplaceBundleSkillView[]>;
+  /**
+   * Set the per-skill subset for a subscription. Pass `null` for "all
+   * skills" (default). An array of skill ids narrows to just those.
+   * An empty array makes the subscription a no-op until reset.
+   */
+  setMarketplaceBundleSkills: (
+    projectId: string,
+    sourceId: string,
+    bundleId: string,
+    skills: string[] | null,
+  ) => Promise<{ ok: true }>;
   /** Subscribe to source-row patches (sync state, badges, error). */
   onMarketplaceSourcePatch: (
     cb: (p: { sourceId: string; patch: Partial<MarketplaceSourceView> }) => void,

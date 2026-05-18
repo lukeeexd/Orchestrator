@@ -710,6 +710,7 @@ export function registerIpcHandlers(): void {
         subscribedAt: s.subscribedAt,
         installedVersion: s.installedVersion,
         roles: s.roles,
+        selectedSkills: s.selectedSkills,
         scope:
           s.projectId === MARKETPLACE_GLOBAL_SCOPE_ID
             ? ('global' as const)
@@ -887,6 +888,41 @@ export function registerIpcHandlers(): void {
         broadcast(IpcChannels.MarketplaceEventSourcesChanged, undefined);
         return { ok: false, error: msg };
       }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceListBundleSkills,
+    (
+      _event,
+      sourceId: string,
+      bundleId: string,
+    ): marketplace.BundleSkillInfo[] =>
+      marketplace.listBundleSkills(sourceId, bundleId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceSetSkills,
+    (
+      _event,
+      projectId: string,
+      sourceId: string,
+      bundleId: string,
+      skills: string[] | null,
+    ): { ok: true } => {
+      const sanitized = skills
+        ? skills.filter((s): s is string => typeof s === 'string')
+        : null;
+      marketplace.setSubscriptionSkills(
+        projectId,
+        sourceId,
+        bundleId,
+        sanitized,
+      );
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId,
+      });
+      return { ok: true };
     },
   );
 

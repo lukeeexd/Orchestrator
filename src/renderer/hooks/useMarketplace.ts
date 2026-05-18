@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
+  MarketplaceBundleSkillView,
   MarketplaceBundleView,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
@@ -57,6 +58,18 @@ interface UseMarketplaceResult {
   removeSource: (
     sourceId: string,
   ) => Promise<{ ok: boolean; error?: string }>;
+  /** Enumerate the skills inside a bundle. One-shot loader; not cached. */
+  listBundleSkills: (
+    sourceId: string,
+    bundleId: string,
+  ) => Promise<MarketplaceBundleSkillView[]>;
+  /** Set per-skill subset on a subscription. Pass null for all-skills. */
+  setSkills: (
+    sourceId: string,
+    bundleId: string,
+    scope: 'global' | 'project',
+    skills: string[] | null,
+  ) => Promise<void>;
   /** Re-fetch sources + bundles + subscriptions from main. */
   reload: () => Promise<void>;
 }
@@ -256,6 +269,32 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     [resolveScopeProjectId, reloadSubs],
   );
 
+  const listBundleSkills = useCallback(
+    async (sourceId: string, bundleId: string) =>
+      window.api.listMarketplaceBundleSkills(sourceId, bundleId),
+    [],
+  );
+
+  const setSkills = useCallback(
+    async (
+      sourceId: string,
+      bundleId: string,
+      scope: 'global' | 'project',
+      skills: string[] | null,
+    ) => {
+      const scopeId = resolveScopeProjectId(scope);
+      if (!scopeId) return;
+      await window.api.setMarketplaceBundleSkills(
+        scopeId,
+        sourceId,
+        bundleId,
+        skills,
+      );
+      setSubscriptions(await reloadSubs());
+    },
+    [resolveScopeProjectId, reloadSubs],
+  );
+
   const addSource = useCallback(
     async (repo: string, branch?: string) => {
       const res = await window.api.addMarketplaceSource(repo, branch);
@@ -328,6 +367,8 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     moveScope,
     addSource,
     removeSource,
+    listBundleSkills,
+    setSkills,
     reload,
   };
 }

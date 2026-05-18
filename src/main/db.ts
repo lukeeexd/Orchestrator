@@ -286,6 +286,21 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 18,
+    up: (db) => {
+      // Skill-level granularity within a bundle. selected_skills is a
+      // JSON-encoded array of skill ids (the subdir names inside the
+      // bundle that contain SKILL.md). NULL means "all skills" —
+      // preserves the v17 behaviour where subscribing loaded the
+      // entire bundle. When set, the runner builds a synthetic plugin
+      // dir containing only the listed skill subfolders and passes
+      // THAT to --plugin-dir.
+      db.exec(
+        `ALTER TABLE project_subscribed_bundles ADD COLUMN selected_skills TEXT;`,
+      );
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

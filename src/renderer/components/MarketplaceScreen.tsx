@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
+  MarketplaceBundleSkillView,
   MarketplaceBundleView,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
@@ -139,6 +140,12 @@ export function MarketplaceScreen({
               }
               onMoveScope={(bundleId, to) =>
                 void mp.moveScope(source.id, bundleId, to)
+              }
+              onListSkills={(bundleId) =>
+                mp.listBundleSkills(source.id, bundleId)
+              }
+              onSetSkills={(bundleId, scope, skills) =>
+                void mp.setSkills(source.id, bundleId, scope, skills)
               }
             />
           ))
@@ -285,6 +292,8 @@ function SourceSection({
   onAckUpdate,
   onSetRoles,
   onMoveScope,
+  onListSkills,
+  onSetSkills,
 }: {
   source: MarketplaceSourceView;
   bundles: MarketplaceBundleView[];
@@ -301,6 +310,12 @@ function SourceSection({
     roles: string[] | null,
   ) => void;
   onMoveScope: (bundleId: string, to: 'global' | 'project') => void;
+  onListSkills: (bundleId: string) => Promise<MarketplaceBundleSkillView[]>;
+  onSetSkills: (
+    bundleId: string,
+    scope: 'global' | 'project',
+    skills: string[] | null,
+  ) => void;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const subByBundle = useMemo(() => {
@@ -548,6 +563,10 @@ function SourceSection({
                     onSetRoles(b.id, scope, roles)
                   }
                   onMoveScope={(to) => onMoveScope(b.id, to)}
+                  onListSkills={() => onListSkills(b.id)}
+                  onSetSkills={(scope, skills) =>
+                    onSetSkills(b.id, scope, skills)
+                  }
                 />
               );
             })}
@@ -585,6 +604,8 @@ function BundleCard({
   onAckUpdate,
   onSetRoles,
   onMoveScope,
+  onListSkills,
+  onSetSkills,
 }: {
   bundle: MarketplaceBundleView;
   subscription: MarketplaceSubscriptionView | undefined;
@@ -597,10 +618,17 @@ function BundleCard({
     roles: string[] | null,
   ) => void;
   onMoveScope: (to: 'global' | 'project') => void;
+  onListSkills: () => Promise<MarketplaceBundleSkillView[]>;
+  onSetSkills: (
+    scope: 'global' | 'project',
+    skills: string[] | null,
+  ) => void;
 }) {
   const subscribed = !!subscription;
   const scope: 'global' | 'project' = subscription?.scope ?? 'global';
   const roles = subscription?.roles ?? null;
+  const selectedSkills = subscription?.selectedSkills ?? null;
+  const [skillsPickerOpen, setSkillsPickerOpen] = useState(false);
 
   // A chip is "on" when roles is null (all-roles legacy default) or
   // when it includes this role. Click toggles.
@@ -796,6 +824,48 @@ function BundleCard({
               loads it.
             </span>
           )}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              marginTop: 4,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 10,
+                color: 'var(--muted-2)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+              }}
+            >
+              skills
+            </span>
+            <span
+              style={{ fontSize: 11, color: 'var(--muted)' }}
+              title={
+                selectedSkills === null
+                  ? 'All skills in this bundle are loaded'
+                  : `${selectedSkills.length} of the bundle's skills are loaded`
+              }
+            >
+              {selectedSkills === null
+                ? 'all'
+                : selectedSkills.length === 0
+                  ? 'none selected'
+                  : `${selectedSkills.length} selected`}
+            </span>
+            <span className="spacer" />
+            <button
+              className="tb-btn"
+              style={{ height: 18, fontSize: 10, padding: '0 6px' }}
+              onClick={() => setSkillsPickerOpen(true)}
+              title="Pick which skills inside this bundle to load"
+            >
+              pick
+            </button>
+          </div>
         </div>
       )}
       <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
@@ -858,6 +928,273 @@ function BundleCard({
             </button>
           </>
         )}
+      </div>
+      {skillsPickerOpen && (
+        <SkillPickerModal
+          bundle={bundle}
+          selected={selectedSkills}
+          onClose={() => setSkillsPickerOpen(false)}
+          onLoad={onListSkills}
+          onSave={(next) => {
+            onSetSkills(scope, next);
+            setSkillsPickerOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SkillPickerModal({
+  bundle,
+  selected,
+  onClose,
+  onLoad,
+  onSave,
+}: {
+  bundle: MarketplaceBundleView;
+  selected: string[] | null;
+  onClose: () => void;
+  onLoad: () => Promise<MarketplaceBundleSkillView[]>;
+  onSave: (skills: string[] | null) => void;
+}) {
+  const [skills, setSkills] = useState<MarketplaceBundleSkillView[] | null>(
+    null,
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState('');
+
+  // Load skills once on mount; initialize the picked-set from the
+  // existing selection. null selection → start with everything picked
+  // (since current behaviour = "all skills loaded").
+  useEffect(() => {
+    let cancelled = false;
+    void onLoad()
+      .then((list) => {
+        if (cancelled) return;
+        setSkills(list);
+        if (selected === null) {
+          setPicked(new Set(list.map((s) => s.id)));
+        } else {
+          setPicked(new Set(selected));
+        }
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setLoadError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onLoad, selected]);
+
+  const filteredSkills = useMemo(() => {
+    if (!skills) return [];
+    const q = filter.trim().toLowerCase();
+    if (!q) return skills;
+    return skills.filter(
+      (s) =>
+        s.id.toLowerCase().includes(q) ||
+        (s.name ?? '').toLowerCase().includes(q) ||
+        (s.description ?? '').toLowerCase().includes(q),
+    );
+  }, [skills, filter]);
+
+  const toggle = (id: string) => {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    if (!skills) return;
+    setPicked(new Set(skills.map((s) => s.id)));
+  };
+  const clearAll = () => setPicked(new Set());
+
+  const save = () => {
+    if (!skills) return;
+    // If the user picked all skills, store `null` (= "all skills,
+    // current behaviour") rather than the explicit full list. That
+    // way the wire shape stays compact and we don't have to update
+    // the stored selection every time the bundle gains a new skill
+    // upstream.
+    const allSelected =
+      picked.size === skills.length &&
+      skills.every((s) => picked.has(s.id));
+    onSave(allSelected ? null : Array.from(picked).sort());
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 640, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>Pick skills · {bundle.id}</b>
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onClose} title="Cancel">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div
+          className="modal-body"
+          style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}
+        >
+          {skills === null && !loadError && (
+            <div className="inline-empty" style={{ padding: 18 }}>
+              Loading skills…
+            </div>
+          )}
+          {loadError && (
+            <div className="form-error">Failed to load skills: {loadError}</div>
+          )}
+          {skills !== null && skills.length === 0 && (
+            <div className="inline-empty" style={{ padding: 18 }}>
+              No skills found in this bundle on disk. Has it been
+              synced yet?
+            </div>
+          )}
+          {skills !== null && skills.length > 0 && (
+            <>
+              <div style={{ marginBottom: 8 }}>
+                <input
+                  className="text-input"
+                  placeholder={`Search ${skills.length} skills…`}
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  style={{ height: 26 }}
+                />
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                }}
+              >
+                {filteredSkills.map((s) => {
+                  const on = picked.has(s.id);
+                  return (
+                    <label
+                      key={s.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 8,
+                        padding: '6px 8px',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        background: on
+                          ? 'rgba(74,222,128,0.06)'
+                          : 'transparent',
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => toggle(s.id)}
+                        style={{ marginTop: 2 }}
+                      />
+                      <div
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 2,
+                        }}
+                      >
+                        <div style={{ fontSize: 12 }}>
+                          <code style={{ background: 'transparent', padding: 0 }}>
+                            {s.id}
+                          </code>
+                          {s.name && s.name !== s.id && (
+                            <span
+                              style={{
+                                marginLeft: 6,
+                                color: 'var(--muted)',
+                                fontSize: 11,
+                              }}
+                            >
+                              · {s.name}
+                            </span>
+                          )}
+                        </div>
+                        {s.description && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: 'var(--muted)',
+                              lineHeight: 1.4,
+                            }}
+                          >
+                            {s.description}
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+                {filteredSkills.length === 0 && (
+                  <div
+                    className="inline-empty"
+                    style={{ padding: 12, marginTop: 4 }}
+                  >
+                    No skills match the filter.
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+            padding: 12,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button
+            className="tb-btn"
+            style={{ height: 22, fontSize: 11 }}
+            onClick={selectAll}
+            disabled={!skills || skills.length === 0}
+          >
+            Select all
+          </button>
+          <button
+            className="tb-btn"
+            style={{ height: 22, fontSize: 11 }}
+            onClick={clearAll}
+            disabled={!skills || skills.length === 0}
+          >
+            Clear
+          </button>
+          <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>
+            {skills
+              ? `${picked.size} of ${skills.length} selected`
+              : ''}
+          </span>
+          <span className="spacer" />
+          <button className="tb-btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="tb-btn primary" onClick={save} disabled={!skills}>
+            Save
+          </button>
+        </div>
       </div>
     </div>
   );

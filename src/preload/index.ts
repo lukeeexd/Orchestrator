@@ -250,6 +250,20 @@ const api: OrchestratorApi = {
       IpcChannels.MarketplaceRemoveSource,
       sourceId,
     ) as Promise<{ ok: boolean; error?: string }>,
+  listMarketplaceBundleSkills: (sourceId, bundleId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceListBundleSkills,
+      sourceId,
+      bundleId,
+    ) as Promise<import('../shared/ipc').MarketplaceBundleSkillView[]>,
+  setMarketplaceBundleSkills: (projectId, sourceId, bundleId, skills) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceSetSkills,
+      projectId,
+      sourceId,
+      bundleId,
+      skills,
+    ) as Promise<{ ok: true }>,
   onMarketplaceSourcePatch: (cb) =>
     subscribe<{
       sourceId: string;

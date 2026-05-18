@@ -569,6 +569,28 @@ export interface ProjectSubscriptionRow {
    * --plugin-dir.
    */
   roles: string[] | null;
+  /**
+   * Skill-level enablement within the bundle. `null` (the default
+   * at subscribe time) means "all skills in the bundle". Otherwise
+   * a list of skill ids (subdir names containing SKILL.md). When
+   * set, the runner builds a synthetic plugin dir containing only
+   * the listed skills and passes that to --plugin-dir.
+   */
+  selectedSkills: string[] | null;
+}
+
+/**
+ * One skill inside a bundle, as enumerated from disk. Surfaced to the
+ * UI so the user can pick which skills to load when subset-installing
+ * a bundle.
+ */
+export interface BundleSkillInfo {
+  /** Subdir name inside the bundle (also used as the JSON id). */
+  id: string;
+  /** Optional human label from SKILL.md frontmatter `name:`. */
+  name?: string;
+  /** Optional one-line summary from SKILL.md frontmatter `description:`. */
+  description?: string;
 }
 
 function parseRoles(raw: unknown): string[] | null {
@@ -586,12 +608,17 @@ function parseRoles(raw: unknown): string[] | null {
   }
 }
 
+/** Same shape as parseRoles — selected_skills is a JSON-encoded string[] or null. */
+function parseSelectedSkills(raw: unknown): string[] | null {
+  return parseRoles(raw);
+}
+
 export function listSubscriptions(
   projectId: string,
 ): ProjectSubscriptionRow[] {
   const db = getDb();
   const stmt = db.prepare(
-    `SELECT project_id, source_id, bundle_id, subscribed_at, installed_version, roles
+    `SELECT project_id, source_id, bundle_id, subscribed_at, installed_version, roles, selected_skills
      FROM project_subscribed_bundles
      WHERE project_id = ?
      ORDER BY subscribed_at ASC`,
@@ -607,6 +634,7 @@ export function listSubscriptions(
       subscribedAt: asInt(row[3]),
       installedVersion: asStrOrNull(row[4]),
       roles: parseRoles(row[5]),
+      selectedSkills: parseSelectedSkills(row[6]),
     });
   }
   stmt.free();
@@ -649,6 +677,197 @@ export function unsubscribeBundle(
   stmt.run([projectId, sourceId, bundleId]);
   stmt.free();
   scheduleSave();
+}
+
+/**
+ * Set which skills inside a bundle the subscription should load.
+ * Pass `null` for "all skills in the bundle" (default at subscribe
+ * time, same as pre-v18 behaviour). An empty array means "none" —
+ * the bundle is subscribed but no skills make it through to claude,
+ * useful only as a transient state while the user picks via the UI.
+ */
+export function setSubscriptionSkills(
+  projectId: string,
+  sourceId: string,
+  bundleId: string,
+  skills: string[] | null,
+): void {
+  const db = getDb();
+  const value = skills ? JSON.stringify(skills) : null;
+  const stmt = db.prepare(
+    `UPDATE project_subscribed_bundles
+     SET selected_skills = ?
+     WHERE project_id = ? AND source_id = ? AND bundle_id = ?`,
+  );
+  stmt.run([value, projectId, sourceId, bundleId]);
+  stmt.free();
+  scheduleSave();
+}
+
+/**
+ * Walk a bundle's cache directory and enumerate every subdirectory
+ * that contains a SKILL.md file — those are the bundle's "skills" in
+ * Claude Code's plugin model. Returns alphabetical order so the UI
+ * checkbox list is stable across sessions.
+ *
+ * Reads YAML-style frontmatter (`---\nkey: value\n---`) from each
+ * SKILL.md to populate the `name` + `description` fields the picker
+ * UI shows. Missing frontmatter is fine — the skill still lists, just
+ * without a friendly label.
+ */
+export function listBundleSkills(
+  sourceId: string,
+  bundleId: string,
+): BundleSkillInfo[] {
+  const bundle = findBundle(sourceId, bundleId);
+  if (!bundle) return [];
+  const bundleDir = bundlePluginDir(sourceId, bundle);
+  if (!fs.existsSync(bundleDir)) return [];
+  const entries = fs.readdirSync(bundleDir, { withFileTypes: true });
+  const out: BundleSkillInfo[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    // Skip the plugin metadata dir + any hidden dirs.
+    if (entry.name.startsWith('.')) continue;
+    const skillFile = path.join(bundleDir, entry.name, 'SKILL.md');
+    if (!fs.existsSync(skillFile)) continue;
+    let head: { name?: string; description?: string } = {};
+    try {
+      const raw = fs.readFileSync(skillFile, 'utf8');
+      head = parseSkillFrontmatter(raw);
+    } catch {
+      // Skill still gets listed — just unlabeled.
+    }
+    out.push({ id: entry.name, ...head });
+  }
+  out.sort((a, b) => a.id.localeCompare(b.id));
+  return out;
+}
+
+/**
+ * Minimal YAML frontmatter parser: pulls `name:` and `description:`
+ * out of the leading `---` block of a SKILL.md. Not a real YAML
+ * parser — handles flat string fields only. Anything more exotic
+ * (multi-line strings, nested objects) is ignored, which is fine
+ * because the picker only needs id + name + description.
+ */
+function parseSkillFrontmatter(raw: string): {
+  name?: string;
+  description?: string;
+} {
+  if (!raw.startsWith('---')) return {};
+  const endIdx = raw.indexOf('\n---', 3);
+  if (endIdx < 0) return {};
+  const block = raw.slice(3, endIdx).trim();
+  const out: { name?: string; description?: string } = {};
+  for (const line of block.split(/\r?\n/)) {
+    const m = line.match(/^(\w+)\s*:\s*(.+?)\s*$/);
+    if (!m) continue;
+    const key = m[1].toLowerCase();
+    let value = m[2];
+    // Strip simple surrounding quotes.
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (key === 'name') out.name = value;
+    else if (key === 'description') out.description = value;
+  }
+  return out;
+}
+
+/**
+ * Build a synthetic plugin directory containing the bundle's
+ * `.claude-plugin/` plus only the chosen skill subdirs. Returns the
+ * absolute path to the synthetic dir, ready to pass as --plugin-dir.
+ *
+ * Rebuilt from scratch each time it's called (cheap — SKILL.md files
+ * are small and we only copy a handful). That's deliberate: caching
+ * adds an invalidation problem (the bundle dir can change after a
+ * sync brings in new skill content), and the throughput cost is in
+ * the millisecond range vs the seconds claude takes to spin up.
+ */
+function materializeSubset(
+  scope: string,
+  sourceId: string,
+  bundleId: string,
+  skills: string[],
+): string {
+  const bundle = findBundle(sourceId, bundleId);
+  if (!bundle) {
+    throw new Error(`bundle not found: ${sourceId}/${bundleId}`);
+  }
+  const bundleDir = bundlePluginDir(sourceId, bundle);
+  const subsetRoot = path.join(
+    app.getPath('userData'),
+    'skill-marketplaces',
+    '.subsets',
+  );
+  const subsetDir = path.join(
+    subsetRoot,
+    `${sanitizeId(scope)}--${sanitizeId(sourceId)}--${sanitizeId(bundleId)}`,
+  );
+  if (fs.existsSync(subsetDir)) {
+    fs.rmSync(subsetDir, { recursive: true, force: true });
+  }
+  fs.mkdirSync(subsetDir, { recursive: true });
+
+  // Copy .claude-plugin/ so the plugin's metadata + commands ride
+  // along. Anything inside skills/ that we didn't pick is naturally
+  // absent. Use cpSync which is recursive + cross-platform.
+  const metaSrc = path.join(bundleDir, '.claude-plugin');
+  const metaDest = path.join(subsetDir, '.claude-plugin');
+  if (fs.existsSync(metaSrc)) {
+    fs.cpSync(metaSrc, metaDest, { recursive: true });
+  }
+  // Copy each chosen skill subdir, ignoring ones that don't exist
+  // (e.g. user picked them when an older sync had the file but the
+  // upstream removed it).
+  for (const skillId of skills) {
+    const skillSrc = path.join(bundleDir, skillId);
+    if (!fs.existsSync(skillSrc)) continue;
+    const skillDest = path.join(subsetDir, skillId);
+    fs.cpSync(skillSrc, skillDest, { recursive: true });
+  }
+  return subsetDir;
+}
+
+/**
+ * Resolve a subscription to its on-disk --plugin-dir argument.
+ * Subscriptions with no selectedSkills return the bundle's original
+ * cache path (cheapest); subscriptions with a selection materialize a
+ * synthetic subset dir. Used by the runner so each spawn site doesn't
+ * need to know about the subset machinery.
+ */
+function pluginDirForSubscription(
+  sub: ProjectSubscriptionRow,
+): string | null {
+  const bundle = findBundle(sub.sourceId, sub.bundleId);
+  if (!bundle) return null;
+  if (!sub.selectedSkills || sub.selectedSkills.length === 0) {
+    // null = all skills (load the whole bundle). Empty array would
+    // mean "no skills" which renders the subscription a no-op; skip
+    // entirely so we don't pass a --plugin-dir for an empty subset.
+    if (sub.selectedSkills && sub.selectedSkills.length === 0) return null;
+    const dir = bundlePluginDir(sub.sourceId, bundle);
+    return fs.existsSync(dir) ? dir : null;
+  }
+  try {
+    return materializeSubset(
+      sub.projectId,
+      sub.sourceId,
+      sub.bundleId,
+      sub.selectedSkills,
+    );
+  } catch (e) {
+    console.error(
+      `[marketplace] materializeSubset failed for ${sub.sourceId}/${sub.bundleId}:`,
+      e instanceof Error ? e.message : e,
+    );
+    return null;
+  }
 }
 
 /**
@@ -732,10 +951,11 @@ export function pluginDirsForProject(
     if (seen.has(key)) continue;
     seen.add(key);
     if (s.roles !== null && !s.roles.includes(role)) continue;
-    const bundle = findBundle(s.sourceId, s.bundleId);
-    if (!bundle) continue;
-    const dir = bundlePluginDir(s.sourceId, bundle);
-    if (fs.existsSync(dir)) out.push(dir);
+    // pluginDirForSubscription handles the all-skills vs subset
+    // routing — returns either the original bundle dir or a
+    // freshly-materialized synthetic subset dir.
+    const dir = pluginDirForSubscription(s);
+    if (dir) out.push(dir);
   }
   return out;
 }
@@ -760,7 +980,7 @@ export function moveSubscription(
   // delete + insert pair keeps the failure mode simpler if the dest
   // already has a row (PK conflict on UPDATE is silent in sql.js).
   const sel = db.prepare(
-    `SELECT subscribed_at, installed_version, roles
+    `SELECT subscribed_at, installed_version, roles, selected_skills
      FROM project_subscribed_bundles
      WHERE project_id = ? AND source_id = ? AND bundle_id = ?`,
   );
@@ -768,11 +988,13 @@ export function moveSubscription(
   let subscribedAt: number | null = null;
   let installedVersion: string | null = null;
   let roles: string | null = null;
+  let selectedSkills: string | null = null;
   if (sel.step()) {
     const row = sel.get();
     subscribedAt = asIntOrNull(row[0]);
     installedVersion = asStrOrNull(row[1]);
     roles = asStrOrNull(row[2]);
+    selectedSkills = asStrOrNull(row[3]);
   }
   sel.free();
   if (subscribedAt === null) return false;
@@ -786,8 +1008,8 @@ export function moveSubscription(
 
   const ins = db.prepare(
     `INSERT OR REPLACE INTO project_subscribed_bundles
-       (project_id, source_id, bundle_id, subscribed_at, installed_version, roles)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+       (project_id, source_id, bundle_id, subscribed_at, installed_version, roles, selected_skills)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
   );
   ins.run([
     toProjectId,
@@ -796,6 +1018,7 @@ export function moveSubscription(
     subscribedAt,
     installedVersion,
     roles,
+    selectedSkills,
   ]);
   ins.free();
   scheduleSave();
