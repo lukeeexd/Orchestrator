@@ -165,6 +165,62 @@ export const MARKETPLACE_GLOBAL_SCOPE_ID = '__global__';
  */
 export const MARKETPLACE_DEFAULT_SOURCE_ID = 'alirezarezvani/claude-skills';
 
+/**
+ * Curated "Recommended setup" — what the Marketplace screen's one-click
+ * Apply button installs. Subscribes the default source's
+ * `engineering-team` bundle globally with a tight subset of skills that
+ * collectively cover every agent role's likely needs. All roles get
+ * access to all listed skills; Claude's description-matching auto-
+ * loader handles per-task routing (e.g. a coder task triggers
+ * `code-reviewer`, a security task triggers `senior-security`, etc.).
+ *
+ * The skill list is deliberately curated, not exhaustive. Adding more
+ * skills bloats every spawn's available-skill list — too many similar
+ * descriptions confuses the auto-loader. Tune via the per-bundle Pick
+ * modal if you need a different set.
+ */
+export interface MarketplaceRecommendedBundle {
+  bundleId: string;
+  /** null = all roles load this bundle; an array narrows to specific roles. */
+  roles: string[] | null;
+  /** Skill ids inside the bundle to load. null would mean "all"; we pick a curated subset. */
+  skills: string[];
+}
+
+export const MARKETPLACE_RECOMMENDED_DEFAULTS: {
+  sourceId: string;
+  bundles: MarketplaceRecommendedBundle[];
+} = {
+  sourceId: MARKETPLACE_DEFAULT_SOURCE_ID,
+  bundles: [
+    {
+      bundleId: 'engineering-team',
+      roles: null,
+      skills: [
+        // Cross-role review / planning
+        'code-reviewer',
+        'adversarial-reviewer',
+        'senior-architect',
+        'epic-design',
+        // Coding / testing
+        'tdd-guide',
+        'senior-prompt-engineer',
+        'senior-qa',
+        // Devops / incident
+        'senior-devops',
+        'incident-response',
+        // Security
+        'senior-security',
+        'senior-secops',
+        'cloud-security',
+        'threat-detection',
+        // Research / decisions
+        'tech-stack-evaluator',
+      ],
+    },
+  ],
+};
+
 /** Renderer-shaped view of one skill_sources row. */
 export interface MarketplaceSourceView {
   id: string;

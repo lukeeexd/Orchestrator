@@ -6,7 +6,10 @@ import type {
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
-import { MARKETPLACE_DEFAULT_SOURCE_ID } from '../../shared/ipc';
+import {
+  MARKETPLACE_DEFAULT_SOURCE_ID,
+  MARKETPLACE_RECOMMENDED_DEFAULTS,
+} from '../../shared/ipc';
 import type { Provider } from '../../shared/types';
 import { Icon } from './Icon';
 import { useMarketplace } from '../hooks/useMarketplace';
@@ -37,6 +40,57 @@ export function MarketplaceScreen({
 }: Props) {
   const mp = useMarketplace(projectId);
   const [addOpen, setAddOpen] = useState(false);
+  const [recommendedOpen, setRecommendedOpen] = useState(false);
+
+  // "Already applied" = every recommended bundle is subscribed at the
+  // global scope with exactly the curated skill list (any superset, or
+  // a different role config, still counts as not-applied so the user
+  // can re-baseline). Used to dim the button rather than hide it.
+  const recommendedApplied = useMemo(() => {
+    const rec = MARKETPLACE_RECOMMENDED_DEFAULTS;
+    for (const wanted of rec.bundles) {
+      const sub = mp.subscriptions.find(
+        (s) => s.sourceId === rec.sourceId && s.bundleId === wanted.bundleId,
+      );
+      if (!sub) return false;
+      // setSkills can leave selectedSkills as null (= all skills) or
+      // narrowed; treat exact-match-or-null-with-superset as applied.
+      const installedSkills = sub.selectedSkills;
+      if (installedSkills === null) {
+        // null = "all skills in bundle" — that's a superset, fine.
+        continue;
+      }
+      const want = new Set(wanted.skills);
+      const have = new Set(installedSkills);
+      if (want.size !== have.size) return false;
+      for (const id of want) if (!have.has(id)) return false;
+    }
+    return true;
+  }, [mp.subscriptions]);
+
+  const applyRecommended = async () => {
+    const rec = MARKETPLACE_RECOMMENDED_DEFAULTS;
+    for (const wanted of rec.bundles) {
+      // subscribe is idempotent (INSERT OR REPLACE) — also blanks
+      // roles + selectedSkills, which is fine since we set them next.
+      await mp.subscribe(rec.sourceId, wanted.bundleId, 'global');
+      await mp.setSkills(
+        rec.sourceId,
+        wanted.bundleId,
+        'global',
+        wanted.skills,
+      );
+      if (wanted.roles !== null) {
+        await mp.setRoles(
+          rec.sourceId,
+          wanted.bundleId,
+          'global',
+          wanted.roles,
+        );
+      }
+    }
+    setRecommendedOpen(false);
+  };
   // Banner condition: the active project has no claude side at all
   // (agents AND Director are codex). In that case, every subscription
   // the user makes here is dormant for *this* project — it'd only
@@ -82,6 +136,29 @@ export function MarketplaceScreen({
           subscriptions for <code>{projectName ?? 'current project'}</code>
         </span>
         <span className="spacer" />
+        <button
+          className="tb-btn"
+          style={{
+            height: 22,
+            opacity: recommendedApplied ? 0.55 : 1,
+          }}
+          onClick={() => setRecommendedOpen(true)}
+          title={
+            recommendedApplied
+              ? 'Recommended setup already applied. Click to review or re-apply.'
+              : 'One-click install: subscribes a curated skill set sized for the seven agent roles.'
+          }
+        >
+          {recommendedApplied ? (
+            <>
+              <Icon name="check" size={11} /> Recommended applied
+            </>
+          ) : (
+            <>
+              <Icon name="templates" size={11} /> Recommended setup
+            </>
+          )}
+        </button>
         <button
           className="tb-btn"
           style={{ height: 22 }}
@@ -168,6 +245,142 @@ export function MarketplaceScreen({
           }}
         />
       )}
+      {recommendedOpen && (
+        <RecommendedSetupModal
+          alreadyApplied={recommendedApplied}
+          bundles={MARKETPLACE_RECOMMENDED_DEFAULTS.bundles}
+          onCancel={() => setRecommendedOpen(false)}
+          onApply={applyRecommended}
+        />
+      )}
+    </div>
+  );
+}
+
+function RecommendedSetupModal({
+  alreadyApplied,
+  bundles,
+  onCancel,
+  onApply,
+}: {
+  alreadyApplied: boolean;
+  bundles: typeof MARKETPLACE_RECOMMENDED_DEFAULTS.bundles;
+  onCancel: () => void;
+  onApply: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 560 }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>Recommended setup</b>
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onCancel} title="Cancel">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginTop: 0, color: 'var(--muted)', fontSize: 12 }}>
+            One-click install of a curated skill set sized for the seven
+            agent roles. Subscribes globally so the skills apply to
+            every project. All skills are exposed to every role —
+            Claude&apos;s description matcher picks the right one per
+            task. Re-running replaces any existing selection for these
+            bundles.
+          </p>
+          {bundles.map((b) => (
+            <div key={b.bundleId} style={{ marginTop: 10 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  marginBottom: 4,
+                  color: 'var(--text)',
+                }}
+              >
+                <code>{b.bundleId}</code>
+                <span
+                  style={{
+                    marginLeft: 8,
+                    fontSize: 10,
+                    fontWeight: 400,
+                    color: 'var(--muted)',
+                  }}
+                >
+                  {b.roles === null
+                    ? 'all roles'
+                    : `roles: ${b.roles.join(', ')}`}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 4,
+                }}
+              >
+                {b.skills.map((s) => (
+                  <code
+                    key={s}
+                    style={{
+                      fontSize: 10,
+                      padding: '2px 6px',
+                      background: 'var(--sub-2)',
+                      borderRadius: 3,
+                      color: 'var(--text-2)',
+                    }}
+                  >
+                    {s}
+                  </code>
+                ))}
+              </div>
+            </div>
+          ))}
+          {alreadyApplied && (
+            <div
+              className="inline-empty"
+              style={{ padding: 10, marginTop: 12, fontSize: 11 }}
+            >
+              Already applied. Re-running will re-baseline the skill
+              selection (useful after upstream changes).
+            </div>
+          )}
+        </div>
+        <div
+          className="modal-foot"
+          style={{
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+            padding: 12,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button className="tb-btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            className="tb-btn primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onApply();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? 'Applying…' : alreadyApplied ? 'Re-apply' : 'Apply'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
