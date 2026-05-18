@@ -961,6 +961,95 @@ function materializeSubset(
 }
 
 /**
+ * Computes "which skills will each agent role have access to" for a
+ * given project. Used by the Director: each turn ships with a
+ * `[project skills]` block built from this, so the Director can name
+ * specific skills in plan task lines instead of guessing.
+ *
+ * Mirrors pluginDirsForProject's resolution rules:
+ * - Subscriptions at the project scope + at the global sentinel.
+ * - Project subs win on (sourceId, bundleId) collisions.
+ * - Disabled sources are skipped.
+ * - Per-role chips filter which roles see each bundle.
+ * - selectedSkills narrows to a subset when set; null = all skills.
+ *
+ * 'director' is treated as a pseudo-role alongside the AgentRole keys
+ * since Director spawns also load plugin-dirs.
+ */
+export function availableSkillsByRole(
+  projectId: string,
+): Record<string, BundleSkillInfo[]> {
+  const allRoles = [
+    'pm',
+    'researcher',
+    'coder',
+    'qa',
+    'devops',
+    'security',
+    'director',
+  ];
+  const projectSubs = listSubscriptions(projectId);
+  const globalSubs = listSubscriptions(MARKETPLACE_GLOBAL_SCOPE_ID);
+  // Project first so it wins the (source, bundle) dedupe — matches
+  // the runner's pluginDirsForProject order.
+  const seen = new Set<string>();
+  const deduped: ProjectSubscriptionRow[] = [];
+  for (const s of [...projectSubs, ...globalSubs]) {
+    const key = `${s.sourceId}\x00${s.bundleId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(s);
+  }
+  const enabledSourceIds = new Set(
+    listSources()
+      .filter((s) => s.enabled)
+      .map((s) => s.id),
+  );
+
+  // Pre-cache bundle skill lists since multiple roles may share a
+  // bundle — listBundleSkills walks the dir + parses frontmatter and
+  // we don't want to repeat that work per role per bundle.
+  const bundleCache = new Map<string, BundleSkillInfo[]>();
+  const skillsFor = (sub: ProjectSubscriptionRow): BundleSkillInfo[] => {
+    const key = `${sub.sourceId}\x00${sub.bundleId}`;
+    let all = bundleCache.get(key);
+    if (!all) {
+      all = listBundleSkills(sub.sourceId, sub.bundleId);
+      bundleCache.set(key, all);
+    }
+    if (sub.selectedSkills && sub.selectedSkills.length > 0) {
+      const wanted = new Set(sub.selectedSkills);
+      return all.filter((s) => wanted.has(s.id));
+    }
+    if (sub.selectedSkills && sub.selectedSkills.length === 0) {
+      return [];
+    }
+    return all;
+  };
+
+  const out: Record<string, BundleSkillInfo[]> = {};
+  for (const role of allRoles) {
+    const skills: BundleSkillInfo[] = [];
+    for (const sub of deduped) {
+      if (!enabledSourceIds.has(sub.sourceId)) continue;
+      if (sub.roles !== null && !sub.roles.includes(role)) continue;
+      skills.push(...skillsFor(sub));
+    }
+    // Dedupe by skill id in case multiple bundles ship the same name
+    // (rare but defensive). Keep first occurrence.
+    const dedupedSkills: BundleSkillInfo[] = [];
+    const skillSeen = new Set<string>();
+    for (const s of skills) {
+      if (skillSeen.has(s.id)) continue;
+      skillSeen.add(s.id);
+      dedupedSkills.push(s);
+    }
+    out[role] = dedupedSkills;
+  }
+  return out;
+}
+
+/**
  * Resolve a subscription to its on-disk --plugin-dir argument.
  * Subscriptions with no selectedSkills return the bundle's original
  * cache path (cheapest); subscriptions with a selection materialize a
