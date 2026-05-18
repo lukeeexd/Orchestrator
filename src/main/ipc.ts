@@ -927,6 +927,26 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IpcChannels.MarketplaceSetSourceEnabled,
+    (
+      _event,
+      sourceId: string,
+      enabled: boolean,
+    ): { ok: true } => {
+      marketplace.setSourceEnabled(sourceId, !!enabled);
+      // Source-row patch covers the per-row state in the renderer; a
+      // sourcesChanged broadcast would over-trigger a full reload.
+      // The renderer's per-row patcher already handles this kind of
+      // update.
+      broadcast(IpcChannels.MarketplaceEventSourcePatch, {
+        sourceId,
+        patch: { enabled },
+      });
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
     IpcChannels.MarketplaceRemoveSource,
     (_event, sourceId: string): { ok: boolean; error?: string } => {
       if (sourceId === MARKETPLACE_DEFAULT_SOURCE_ID) {

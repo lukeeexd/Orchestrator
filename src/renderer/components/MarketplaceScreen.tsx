@@ -147,6 +147,9 @@ export function MarketplaceScreen({
               onSetSkills={(bundleId, scope, skills) =>
                 void mp.setSkills(source.id, bundleId, scope, skills)
               }
+              onToggleEnabled={() =>
+                void mp.setSourceEnabled(source.id, !source.enabled)
+              }
             />
           ))
         )}
@@ -294,6 +297,7 @@ function SourceSection({
   onMoveScope,
   onListSkills,
   onSetSkills,
+  onToggleEnabled,
 }: {
   source: MarketplaceSourceView;
   bundles: MarketplaceBundleView[];
@@ -316,6 +320,7 @@ function SourceSection({
     scope: 'global' | 'project',
     skills: string[] | null,
   ) => void;
+  onToggleEnabled: () => void;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
   const subByBundle = useMemo(() => {
@@ -355,7 +360,17 @@ function SourceSection({
   const installedCount = subscriptions.length;
 
   return (
-    <section className="settings-section">
+    <section
+      className="settings-section"
+      style={{
+        // Disabled sources get a desaturated treatment so it's
+        // obvious at a glance that none of these are loading. Cards
+        // inside remain clickable — the user can still install /
+        // remove / pick skills, just nothing fires on spawns until
+        // they re-enable.
+        opacity: source.enabled ? 1 : 0.55,
+      }}
+    >
       <div
         style={{
           display: 'flex',
@@ -374,6 +389,19 @@ function SourceSection({
         >
           {source.repo}
         </code>
+        {!source.enabled && (
+          <span
+            className="badge"
+            style={{
+              background: 'var(--sub-2)',
+              color: 'var(--muted)',
+              fontSize: 9,
+            }}
+            title="Source is disabled — its bundles are not loaded into any claude spawn until re-enabled."
+          >
+            disabled
+          </span>
+        )}
         <span style={{ color: 'var(--muted-2)' }}>·</span>
         {source.lastSyncSha && (
           <>
@@ -403,6 +431,18 @@ function SourceSection({
           </>
         )}
         <span className="spacer" />
+        <button
+          className="tb-btn"
+          style={{ height: 22 }}
+          onClick={onToggleEnabled}
+          title={
+            source.enabled
+              ? 'Disable this source — its bundles stop loading until re-enabled. Subscriptions + cache are preserved.'
+              : 'Enable this source — its subscriptions start loading on the next spawn.'
+          }
+        >
+          {source.enabled ? 'Disable' : 'Enable'}
+        </button>
         <button
           className="tb-btn"
           style={{ height: 22 }}

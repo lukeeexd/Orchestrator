@@ -58,6 +58,8 @@ interface UseMarketplaceResult {
   removeSource: (
     sourceId: string,
   ) => Promise<{ ok: boolean; error?: string }>;
+  /** Toggle a source's enabled flag. */
+  setSourceEnabled: (sourceId: string, enabled: boolean) => Promise<void>;
   /** Enumerate the skills inside a bundle. One-shot loader; not cached. */
   listBundleSkills: (
     sourceId: string,
@@ -309,6 +311,15 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     [reload],
   );
 
+  const setSourceEnabled = useCallback(
+    async (sourceId: string, enabled: boolean) => {
+      await window.api.setMarketplaceSourceEnabled(sourceId, enabled);
+      // No reload — the source-patch broadcast updates `sources` in
+      // place. Subscriptions / bundles don't change.
+    },
+    [],
+  );
+
   const removeSource = useCallback(
     async (sourceId: string) => {
       const res = await window.api.removeMarketplaceSource(sourceId);
@@ -345,14 +356,20 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
   );
 
   const pendingUpdates = useMemo(() => {
+    // Disabled sources don't contribute to the rail badge or toast —
+    // "disabled" means "stop nagging me about this source".
+    const enabledSourceIds = new Set(
+      sources.filter((s) => s.enabled).map((s) => s.id),
+    );
     return subscriptions.filter((sub) => {
+      if (!enabledSourceIds.has(sub.sourceId)) return false;
       const bundles = bundlesBySource[sub.sourceId];
       if (!bundles) return false;
       const current = bundles.find((b) => b.id === sub.bundleId);
       if (!current) return false;
       return sub.installedVersion !== null && current.version !== sub.installedVersion;
     });
-  }, [subscriptions, bundlesBySource]);
+  }, [subscriptions, bundlesBySource, sources]);
 
   return {
     sources,
@@ -367,6 +384,7 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     moveScope,
     addSource,
     removeSource,
+    setSourceEnabled,
     listBundleSkills,
     setSkills,
     reload,

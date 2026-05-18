@@ -542,6 +542,22 @@ export function removeSource(id: string): boolean {
   return true;
 }
 
+/**
+ * Toggle a source's enabled flag. Disabled sources still exist (cache
+ * dir, subscriptions, DB row all stay); they're just ignored by
+ * spawn-time --plugin-dir resolution and skipped by the startup sync
+ * loop. Re-enabling is instant — no re-clone needed.
+ */
+export function setSourceEnabled(id: string, enabled: boolean): void {
+  const db = getDb();
+  const stmt = db.prepare(
+    `UPDATE skill_sources SET enabled = ? WHERE id = ?`,
+  );
+  stmt.run([enabled ? 1 : 0, id]);
+  stmt.free();
+  scheduleSave();
+}
+
 export function recordSourceSync(
   id: string,
   sha: string,
@@ -944,9 +960,18 @@ export function pluginDirsForProject(
     ...listSubscriptions(projectId),
   ];
   if (subs.length === 0) return [];
+  // Pre-compute the enabled-source set so we don't re-query per
+  // iteration. Disabled sources keep their subscriptions in the DB
+  // but don't contribute to any spawn's --plugin-dir.
+  const enabledSourceIds = new Set(
+    listSources()
+      .filter((s) => s.enabled)
+      .map((s) => s.id),
+  );
   const seen = new Set<string>();
   const out: string[] = [];
   for (const s of subs) {
+    if (!enabledSourceIds.has(s.sourceId)) continue;
     const key = `${s.sourceId}\x00${s.bundleId}`;
     if (seen.has(key)) continue;
     seen.add(key);

@@ -54,6 +54,7 @@ export const IpcChannels = {
   MarketplaceMoveScope: 'marketplace:moveScope',
   MarketplaceAddSource: 'marketplace:addSource',
   MarketplaceRemoveSource: 'marketplace:removeSource',
+  MarketplaceSetSourceEnabled: 'marketplace:setSourceEnabled',
   MarketplaceListBundleSkills: 'marketplace:listBundleSkills',
   MarketplaceSetSkills: 'marketplace:setSkills',
   MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
@@ -478,6 +479,17 @@ export interface OrchestratorApi {
   removeMarketplaceSource: (
     sourceId: string,
   ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Toggle a source's enabled flag. Disabled sources keep their
+   * subscriptions and cache on disk but stop contributing
+   * `--plugin-dir` args to any claude spawn until re-enabled.
+   * Cheaper than remove + re-add when you just want to temporarily
+   * silence a source.
+   */
+  setMarketplaceSourceEnabled: (
+    sourceId: string,
+    enabled: boolean,
+  ) => Promise<{ ok: true }>;
   /**
    * Enumerate the skills inside a bundle — walks the bundle dir on
    * disk and finds every subdirectory with a SKILL.md, parsing the
