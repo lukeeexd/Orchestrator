@@ -110,6 +110,38 @@ export function App() {
     remove: removeProject,
   } = useProjects();
   const marketplace = useMarketplace(activeProjectId);
+
+  // Transient toast surfacing newly-arrived marketplace bundle updates.
+  // The persistent rail badge already shows the count; this is the
+  // "hey, something just landed" flash so the user notices without
+  // having to glance at the rail.
+  const [marketplaceToast, setMarketplaceToast] = useState<{
+    count: number;
+  } | null>(null);
+  // Tracks the last pendingUpdates count we've observed so we only
+  // toast on *increases*. null = haven't seen the first reload yet
+  // (so we don't toast for updates that were already pending when the
+  // app launched).
+  const lastSeenPendingUpdatesRef = useRef<number | null>(null);
+  useEffect(() => {
+    const current = marketplace.pendingUpdates.length;
+    const previous = lastSeenPendingUpdatesRef.current;
+    lastSeenPendingUpdatesRef.current = current;
+    // Initial load → record the count and stay silent.
+    if (previous === null) return;
+    // Only toast when the count grew, and there's at least one update.
+    if (current > previous && current > 0) {
+      const newlyAdded = current - previous;
+      setMarketplaceToast({ count: newlyAdded });
+    }
+  }, [marketplace.pendingUpdates.length]);
+  // Auto-dismiss after 6s so the toast doesn't linger.
+  useEffect(() => {
+    if (!marketplaceToast) return;
+    const t = setTimeout(() => setMarketplaceToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [marketplaceToast]);
+
   const activeProject: Project | null =
     projects.find((p) => p.id === activeProjectId) ?? null;
   const workspace = activeProject?.workspace ?? '';
@@ -547,6 +579,22 @@ export function App() {
         )}
       </div>
       <StatusBar agentCount={agents.length} />
+
+      {marketplaceToast && (
+        <button
+          className="marketplace-toast"
+          onClick={() => {
+            setMarketplaceToast(null);
+            setActive('marketplace');
+          }}
+          title="Click to open the Marketplace"
+        >
+          {marketplaceToast.count === 1
+            ? '1 new bundle update available'
+            : `${marketplaceToast.count} new bundle updates available`}{' '}
+          · Marketplace
+        </button>
+      )}
 
       {showNewProject && (
         <NewProjectForm

@@ -1651,6 +1651,33 @@ body.resizing * { cursor: col-resize !important; }
 }
 .statusbar-update:hover { background: rgba(74, 222, 128, 0.2); }
 
+/* ───────────────────────── Marketplace update toast ───────────────── */
+.marketplace-toast {
+  position: fixed;
+  bottom: 36px; /* clear of the StatusBar */
+  right: 16px;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 14px;
+  background: rgba(251, 191, 36, 0.14);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  color: var(--waiting);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  animation: marketplace-toast-in 180ms ease-out;
+}
+.marketplace-toast:hover { background: rgba(251, 191, 36, 0.22); }
+@keyframes marketplace-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ───────────────────────── View-mode toggle (topbar) ──────────────── */
 .view-toggle {
   display: inline-flex;
