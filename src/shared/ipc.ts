@@ -113,6 +113,16 @@ export interface Settings {
   defaultBudgetTokens: number;
   /** Per-agent wall-clock cap in seconds. 0 = unlimited. */
   defaultBudgetSeconds: number;
+  /**
+   * When true, creating a new project copies every current
+   * marketplace global-scope subscription into the new project as a
+   * project-scoped sub. Useful when you want each project to start
+   * with the global baseline AND be able to customize roles / skills
+   * per project without dragging the rest of the projects along.
+   * Defaults to false — preserves the simple "global = applies
+   * everywhere" model for users who don't want the duplication.
+   */
+  copyGlobalSubsToNewProjects: boolean;
 }
 
 export interface SpawnAgentResponse {

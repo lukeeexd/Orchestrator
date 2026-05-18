@@ -94,19 +94,20 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
   const reloadSubs = useCallback(async (): Promise<
     MarketplaceSubscriptionView[]
   > => {
-    // Always pull globals + the active project's subs. Globals come
-    // first so on (sourceId, bundleId) collision we treat the global
-    // entry as canonical — in practice the move flow prevents both
-    // existing at once, but defensively the union dedupes.
-    const globals = await window.api.listMarketplaceSubscriptions(
-      MARKETPLACE_GLOBAL_SCOPE_ID,
-    );
+    // Always pull globals + the active project's subs. Project subs
+    // come FIRST so on (sourceId, bundleId) collision the project's
+    // role / skill customization wins (matches the runner's dedupe
+    // order). A bundle present at both scopes surfaces as project-
+    // scoped in the UI.
     const projectSubs = projectId
       ? await window.api.listMarketplaceSubscriptions(projectId)
       : [];
+    const globals = await window.api.listMarketplaceSubscriptions(
+      MARKETPLACE_GLOBAL_SCOPE_ID,
+    );
     const seen = new Set<string>();
     const out: MarketplaceSubscriptionView[] = [];
-    for (const s of [...globals, ...projectSubs]) {
+    for (const s of [...projectSubs, ...globals]) {
       const key = `${s.sourceId}\x00${s.bundleId}`;
       if (seen.has(key)) continue;
       seen.add(key);

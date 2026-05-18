@@ -950,14 +950,15 @@ export function pluginDirsForProject(
   projectId: string,
   role: string,
 ): string[] {
-  // Union global-scoped subs with the project's own subs. Globals come
-  // first so a project-scoped sub of the same bundle (rare; the UI
-  // prevents it via the move-only Move flow, but defensively) doesn't
-  // shadow a global one — the dedupe below keeps whichever appeared
-  // first.
+  // Union global-scoped subs with the project's own subs. Project
+  // subs come FIRST so on a (sourceId, bundleId) collision the
+  // project's roles + selectedSkills win over the global default.
+  // Matches the standard "project overrides global" mental model
+  // (CSS, config, npm scopes); also needed for the "fork to project
+  // for customization" and "copy globals to new project" flows.
   const subs = [
-    ...listSubscriptions(MARKETPLACE_GLOBAL_SCOPE_ID),
     ...listSubscriptions(projectId),
+    ...listSubscriptions(MARKETPLACE_GLOBAL_SCOPE_ID),
   ];
   if (subs.length === 0) return [];
   // Pre-compute the enabled-source set so we don't re-query per

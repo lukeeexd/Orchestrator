@@ -200,7 +200,47 @@ export function registerIpcHandlers(): void {
       name: string,
       workspace: string,
       provider?: import('../shared/types').Provider,
-    ): Project => createProject(name, workspace, provider ?? 'claude'),
+    ): Project => {
+      const project = createProject(name, workspace, provider ?? 'claude');
+      // If the user has the "copy globals to new projects" toggle on,
+      // snapshot every current global marketplace sub into the new
+      // project as a project-scoped clone (preserving its roles +
+      // selectedSkills + installedVersion). Lets the user customize
+      // per project from a global baseline.
+      if (readSettings().copyGlobalSubsToNewProjects) {
+        const globals = marketplace.listSubscriptions(
+          MARKETPLACE_GLOBAL_SCOPE_ID,
+        );
+        for (const g of globals) {
+          marketplace.subscribeBundle(
+            project.id,
+            g.sourceId,
+            g.bundleId,
+            g.installedVersion,
+          );
+          if (g.roles !== null) {
+            marketplace.setSubscriptionRoles(
+              project.id,
+              g.sourceId,
+              g.bundleId,
+              g.roles,
+            );
+          }
+          if (g.selectedSkills !== null) {
+            marketplace.setSubscriptionSkills(
+              project.id,
+              g.sourceId,
+              g.bundleId,
+              g.selectedSkills,
+            );
+          }
+        }
+        broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+          projectId: project.id,
+        });
+      }
+      return project;
+    },
   );
   ipcMain.handle(
     IpcChannels.ProjectSetActive,
