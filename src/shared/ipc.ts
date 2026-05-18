@@ -52,6 +52,9 @@ export const IpcChannels = {
   MarketplaceAckUpdate: 'marketplace:ackUpdate',
   MarketplaceSetRoles: 'marketplace:setRoles',
   MarketplaceMoveScope: 'marketplace:moveScope',
+  MarketplaceAddSource: 'marketplace:addSource',
+  MarketplaceRemoveSource: 'marketplace:removeSource',
+  MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
   MarketplaceEventSourcePatch: 'marketplace:event:sourcePatch',
   MarketplaceEventSubscriptionsChanged: 'marketplace:event:subscriptionsChanged',
   ProjectSetRoleTools: 'project:setRoleTools',
@@ -139,6 +142,14 @@ export interface PastedImageInfo {
  * Real project ids are UUIDs, so this literal can't collide.
  */
 export const MARKETPLACE_GLOBAL_SCOPE_ID = '__global__';
+
+/**
+ * The pre-seeded default marketplace source. Treated specially in the
+ * UI — can't be removed via the Remove button (removing it would just
+ * cause the next launch's seed to re-add it; cleaner to just disable
+ * it if a user really doesn't want it).
+ */
+export const MARKETPLACE_DEFAULT_SOURCE_ID = 'alirezarezvani/claude-skills';
 
 /** Renderer-shaped view of one skill_sources row. */
 export interface MarketplaceSourceView {
@@ -427,10 +438,32 @@ export interface OrchestratorApi {
     bundleId: string,
     roles: string[] | null,
   ) => Promise<{ ok: true }>;
+  /**
+   * Add a new marketplace source by GitHub repo. `repo` is "owner/repo"
+   * (https://github.com/ prefix stripped on the main side). Runs the
+   * first sync inline so a bad repo errors immediately rather than
+   * leaving a half-baked source row — the handler rolls back the row
+   * on sync failure.
+   */
+  addMarketplaceSource: (
+    repo: string,
+    branch?: string,
+  ) => Promise<{ ok: boolean; sourceId?: string; error?: string }>;
+  /**
+   * Remove a marketplace source. Cascades: every project's subscription
+   * to bundles in that source is uninstalled, the on-disk cache dir is
+   * removed, the source row deleted. Refuses to remove the default
+   * source — disable it instead if you don't want it.
+   */
+  removeMarketplaceSource: (
+    sourceId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
   /** Subscribe to source-row patches (sync state, badges, error). */
   onMarketplaceSourcePatch: (
     cb: (p: { sourceId: string; patch: Partial<MarketplaceSourceView> }) => void,
   ) => () => void;
+  /** Fires when a source is added or removed — broader-grained event than the per-row patch. */
+  onMarketplaceSourcesChanged: (cb: () => void) => () => void;
   /** Fires when subscribe / unsubscribe / ackUpdate touches a project's subscription list, so any open hooks for that project can re-fetch. */
   onMarketplaceSubscriptionsChanged: (
     cb: (p: { projectId: string }) => void,

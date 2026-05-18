@@ -46,7 +46,10 @@ import type {
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../shared/ipc';
-import { MARKETPLACE_GLOBAL_SCOPE_ID } from '../shared/ipc';
+import {
+  MARKETPLACE_DEFAULT_SOURCE_ID,
+  MARKETPLACE_GLOBAL_SCOPE_ID,
+} from '../shared/ipc';
 import {
   createProject,
   deleteProject,
@@ -820,6 +823,88 @@ export function registerIpcHandlers(): void {
           projectId,
         });
       }
+      return { ok: true };
+    },
+  );
+
+  /**
+   * Normalize a user-typed repo string into the canonical "owner/repo"
+   * form we use as a source id. Accepts pasted https URLs, trailing
+   * slashes, .git suffixes. Returns null if the result isn't a plausible
+   * GitHub slug.
+   */
+  function normalizeRepo(input: string): string | null {
+    let s = input.trim();
+    s = s.replace(/^https?:\/\/github\.com\//i, '');
+    s = s.replace(/\/+$/, '');
+    s = s.replace(/\.git$/i, '');
+    if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(s)) return null;
+    return s;
+  }
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceAddSource,
+    async (
+      _event,
+      repo: string,
+      branch?: string,
+    ): Promise<{ ok: boolean; sourceId?: string; error?: string }> => {
+      const normalized = normalizeRepo(repo);
+      if (!normalized) {
+        return {
+          ok: false,
+          error: 'Repo must be in the form "owner/repo".',
+        };
+      }
+      const defaultBranch =
+        branch && branch.trim().length > 0 ? branch.trim() : 'main';
+      const inserted = marketplace.ensureSource({
+        id: normalized,
+        repo: normalized,
+        defaultBranch,
+      });
+      if (!inserted) {
+        return {
+          ok: false,
+          error: `Source "${normalized}" is already added.`,
+        };
+      }
+      // Run the first sync inline so a bad repo / missing branch / git
+      // error surfaces in the modal rather than leaving the user with a
+      // broken-looking source row. Roll back the row on failure.
+      const row = marketplace.getSource(normalized);
+      if (!row) {
+        return { ok: false, error: 'failed to read back inserted source' };
+      }
+      try {
+        const { sha } = await marketplace.syncSource(row);
+        marketplace.recordSourceSync(normalized, sha, Date.now());
+        broadcast(IpcChannels.MarketplaceEventSourcesChanged, undefined);
+        return { ok: true, sourceId: normalized };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        marketplace.removeSource(normalized);
+        broadcast(IpcChannels.MarketplaceEventSourcesChanged, undefined);
+        return { ok: false, error: msg };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceRemoveSource,
+    (_event, sourceId: string): { ok: boolean; error?: string } => {
+      if (sourceId === MARKETPLACE_DEFAULT_SOURCE_ID) {
+        return {
+          ok: false,
+          error:
+            'The default source cannot be removed (it would be re-seeded on the next launch). Disable it instead.',
+        };
+      }
+      const removed = marketplace.removeSource(sourceId);
+      if (!removed) {
+        return { ok: false, error: 'source not found' };
+      }
+      broadcast(IpcChannels.MarketplaceEventSourcesChanged, undefined);
       return { ok: true };
     },
   );

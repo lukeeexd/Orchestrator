@@ -4,6 +4,7 @@ import type {
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
+import { MARKETPLACE_DEFAULT_SOURCE_ID } from '../../shared/ipc';
 import { Icon } from './Icon';
 import { useMarketplace } from '../hooks/useMarketplace';
 
@@ -23,6 +24,7 @@ function timeAgo(ms: number | null): string {
 
 export function MarketplaceScreen({ projectId, projectName }: Props) {
   const mp = useMarketplace(projectId);
+  const [addOpen, setAddOpen] = useState(false);
 
   if (!projectId) {
     return (
@@ -58,6 +60,14 @@ export function MarketplaceScreen({ projectId, projectName }: Props) {
           subscriptions for <code>{projectName ?? 'current project'}</code>
         </span>
         <span className="spacer" />
+        <button
+          className="tb-btn"
+          style={{ height: 22 }}
+          onClick={() => setAddOpen(true)}
+          title="Add another GitHub-hosted marketplace source"
+        >
+          <Icon name="plus" size={11} /> Add source
+        </button>
       </div>
       <div className="settings-body">
         {mp.sources.length === 0 ? (
@@ -76,7 +86,9 @@ export function MarketplaceScreen({ projectId, projectName }: Props) {
               subscriptions={mp.subscriptions.filter(
                 (s) => s.sourceId === source.id,
               )}
+              removable={source.id !== MARKETPLACE_DEFAULT_SOURCE_ID}
               onRefresh={() => void mp.refreshSource(source.id)}
+              onRemove={() => void mp.removeSource(source.id)}
               onSubscribe={(bundleId, scope) =>
                 void mp.subscribe(source.id, bundleId, scope)
               }
@@ -96,6 +108,131 @@ export function MarketplaceScreen({ projectId, projectName }: Props) {
           ))
         )}
       </div>
+      {addOpen && (
+        <AddSourceModal
+          onCancel={() => setAddOpen(false)}
+          onAdd={async (repo, branch) => {
+            const res = await mp.addSource(repo, branch);
+            if (res.ok) setAddOpen(false);
+            return res;
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddSourceModal({
+  onCancel,
+  onAdd,
+}: {
+  onCancel: () => void;
+  onAdd: (
+    repo: string,
+    branch?: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
+}) {
+  const [repo, setRepo] = useState('');
+  const [branch, setBranch] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!repo.trim()) {
+      setError('Enter a GitHub repo (owner/repo).');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const res = await onAdd(
+      repo.trim(),
+      branch.trim().length > 0 ? branch.trim() : undefined,
+    );
+    setBusy(false);
+    if (!res.ok) setError(res.error ?? 'failed to add source');
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 520 }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>Add marketplace source</b>
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onCancel} title="Cancel">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="field">
+            <span className="lbl">GitHub repo</span>
+            <input
+              className="text-input"
+              value={repo}
+              onChange={(e) => {
+                setRepo(e.target.value);
+                setError(null);
+              }}
+              placeholder="owner/repo or https://github.com/owner/repo"
+              autoFocus
+              spellCheck={false}
+            />
+            <span
+              className="meta"
+              style={{
+                fontSize: 11,
+                color: 'var(--muted)',
+                marginTop: 2,
+              }}
+            >
+              The repo must publish a{' '}
+              <code>.claude-plugin/marketplace.json</code> manifest. We
+              do a shallow git clone of the default branch on add.
+            </span>
+          </div>
+          <div className="field">
+            <span className="lbl">Branch (optional)</span>
+            <input
+              className="text-input"
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              placeholder="main"
+              spellCheck={false}
+            />
+          </div>
+          {error && (
+            <div className="form-error" style={{ marginTop: 6 }}>
+              {error}
+            </div>
+          )}
+        </div>
+        <div
+          className="modal-foot"
+          style={{
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+            padding: 12,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button className="tb-btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            className="tb-btn primary"
+            onClick={() => void submit()}
+            disabled={busy || !repo.trim()}
+          >
+            {busy ? 'Cloning…' : 'Add'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -104,7 +241,9 @@ function SourceSection({
   source,
   bundles,
   subscriptions,
+  removable,
   onRefresh,
+  onRemove,
   onSubscribe,
   onUnsubscribe,
   onAckUpdate,
@@ -114,7 +253,9 @@ function SourceSection({
   source: MarketplaceSourceView;
   bundles: MarketplaceBundleView[];
   subscriptions: MarketplaceSubscriptionView[];
+  removable: boolean;
   onRefresh: () => void;
+  onRemove: () => void;
   onSubscribe: (bundleId: string, scope: 'global' | 'project') => void;
   onUnsubscribe: (bundleId: string, scope: 'global' | 'project') => void;
   onAckUpdate: (bundleId: string, scope: 'global' | 'project') => void;
@@ -125,6 +266,7 @@ function SourceSection({
   ) => void;
   onMoveScope: (bundleId: string, to: 'global' | 'project') => void;
 }) {
+  const [confirmRemove, setConfirmRemove] = useState(false);
   const subByBundle = useMemo(() => {
     const m = new Map<string, MarketplaceSubscriptionView>();
     for (const s of subscriptions) m.set(s.bundleId, s);
@@ -219,7 +361,60 @@ function SourceSection({
         >
           {source.syncing ? 'Syncing…' : 'Refresh'}
         </button>
+        {removable && (
+          <button
+            className="tb-btn"
+            style={{ height: 22 }}
+            onClick={() => setConfirmRemove(true)}
+            disabled={source.syncing}
+            title="Remove this source — uninstalls all its bundles across every project"
+          >
+            <Icon name="x" size={11} /> Remove
+          </button>
+        )}
       </div>
+      {confirmRemove && (
+        <div
+          className="inline-empty"
+          style={{
+            padding: 14,
+            marginBottom: 10,
+            border: '1px solid var(--error)',
+          }}
+        >
+          <div style={{ marginBottom: 8 }}>
+            Remove <code>{source.repo}</code>?{' '}
+            {subscriptions.length > 0 && (
+              <>
+                This will uninstall{' '}
+                <strong>{subscriptions.length} subscribed bundle{
+                  subscriptions.length === 1 ? '' : 's'
+                }</strong>{' '}
+                across every project.
+              </>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              className="tb-btn"
+              style={{ height: 22 }}
+              onClick={() => setConfirmRemove(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="tb-btn primary"
+              style={{ height: 22 }}
+              onClick={() => {
+                setConfirmRemove(false);
+                onRemove();
+              }}
+            >
+              <Icon name="x" size={11} /> Confirm remove
+            </button>
+          </div>
+        </div>
+      )}
       {source.syncError && (
         <div className="form-error" style={{ marginBottom: 8 }}>
           Sync failed: {source.syncError}

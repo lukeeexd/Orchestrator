@@ -295,12 +295,17 @@ export function getSource(id: string): SkillSourceRow | null {
  * Insert a new source row. No-op if a row with the same id already
  * exists — the seed call at startup uses this to make the default
  * source idempotent.
+ *
+ * Returns true if a new row was inserted, false if a row with the
+ * same id already existed. Callers building an Add-Source flow use
+ * the return to distinguish "duplicate" from "first install".
  */
 export function ensureSource(row: {
   id: string;
   repo: string;
   defaultBranch?: string;
-}): void {
+}): boolean {
+  const existed = !!getSource(row.id);
   const db = getDb();
   const stmt = db.prepare(
     `INSERT OR IGNORE INTO skill_sources
@@ -315,6 +320,43 @@ export function ensureSource(row: {
   ]);
   stmt.free();
   scheduleSave();
+  return !existed;
+}
+
+/**
+ * Remove a source entirely: every project's subscription that
+ * references it, the on-disk cache directory, and the skill_sources
+ * row. Best-effort on disk (the OS can clean up tempfile residue
+ * later if a rename mid-sync left something locked).
+ *
+ * Returns true if a row was deleted; false if nothing matched.
+ */
+export function removeSource(id: string): boolean {
+  if (!getSource(id)) return false;
+  const db = getDb();
+  // 1. Drop subscriptions across every project (and global) — no FK
+  //    cascade in our schema, so do it explicitly.
+  const subs = db.prepare(
+    `DELETE FROM project_subscribed_bundles WHERE source_id = ?`,
+  );
+  subs.run([id]);
+  subs.free();
+  // 2. Drop the source row itself.
+  const src = db.prepare(`DELETE FROM skill_sources WHERE id = ?`);
+  src.run([id]);
+  src.free();
+  scheduleSave();
+  // 3. Best-effort delete of the on-disk clone. Don't throw if
+  //    something's locked — the user can clean up manually if so.
+  try {
+    fs.rmSync(sourceDir(id), { recursive: true, force: true });
+  } catch (e) {
+    console.error(
+      `[marketplace] removeSource(${id}): failed to delete cache dir`,
+      e instanceof Error ? e.message : e,
+    );
+  }
+  return true;
 }
 
 export function recordSourceSync(

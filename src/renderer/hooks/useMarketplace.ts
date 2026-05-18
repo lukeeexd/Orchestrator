@@ -48,6 +48,15 @@ interface UseMarketplaceResult {
     bundleId: string,
     to: 'global' | 'project',
   ) => Promise<{ ok: boolean; error?: string }>;
+  /** Add a new marketplace source by GitHub repo. Synchronous first sync. */
+  addSource: (
+    repo: string,
+    branch?: string,
+  ) => Promise<{ ok: boolean; sourceId?: string; error?: string }>;
+  /** Remove a marketplace source. Default source can't be removed (handler refuses). */
+  removeSource: (
+    sourceId: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
   /** Re-fetch sources + bundles + subscriptions from main. */
   reload: () => Promise<void>;
 }
@@ -143,6 +152,16 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     return off;
   }, [projectId, reloadSubs]);
 
+  // Sources-changed broadcast: fires when a source is added or
+  // removed. We re-fetch everything (sources, bundles, subs) since a
+  // removed source also cascades subscription deletes.
+  useEffect(() => {
+    const off = window.api.onMarketplaceSourcesChanged(() => {
+      void reload();
+    });
+    return off;
+  }, [reload]);
+
   const refreshSource = useCallback(
     async (sourceId: string) =>
       window.api.refreshMarketplaceSource(sourceId),
@@ -237,6 +256,31 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     [resolveScopeProjectId, reloadSubs],
   );
 
+  const addSource = useCallback(
+    async (repo: string, branch?: string) => {
+      const res = await window.api.addMarketplaceSource(repo, branch);
+      if (res.ok) {
+        // Pull fresh state right away — the sourcesChanged event will
+        // also fire but we don't want a race where the modal closes
+        // before the new source is visible.
+        await reload();
+      }
+      return res;
+    },
+    [reload],
+  );
+
+  const removeSource = useCallback(
+    async (sourceId: string) => {
+      const res = await window.api.removeMarketplaceSource(sourceId);
+      if (res.ok) {
+        await reload();
+      }
+      return res;
+    },
+    [reload],
+  );
+
   const moveScope = useCallback(
     async (
       sourceId: string,
@@ -282,6 +326,8 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     ackUpdate,
     setRoles,
     moveScope,
+    addSource,
+    removeSource,
     reload,
   };
 }

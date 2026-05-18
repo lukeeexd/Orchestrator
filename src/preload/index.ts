@@ -239,6 +239,17 @@ const api: OrchestratorApi = {
       fromProjectId,
       toProjectId,
     ) as Promise<{ ok: boolean; error?: string }>,
+  addMarketplaceSource: (repo, branch) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceAddSource,
+      repo,
+      branch,
+    ) as Promise<{ ok: boolean; sourceId?: string; error?: string }>,
+  removeMarketplaceSource: (sourceId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceRemoveSource,
+      sourceId,
+    ) as Promise<{ ok: boolean; error?: string }>,
   onMarketplaceSourcePatch: (cb) =>
     subscribe<{
       sourceId: string;
@@ -249,6 +260,8 @@ const api: OrchestratorApi = {
       IpcChannels.MarketplaceEventSubscriptionsChanged,
       cb,
     ),
+  onMarketplaceSourcesChanged: (cb) =>
+    subscribe<void>(IpcChannels.MarketplaceEventSourcesChanged, () => cb()),
   setProjectRoleTools: (id, roleTools) =>
     ipcRenderer.invoke(
       IpcChannels.ProjectSetRoleTools,
