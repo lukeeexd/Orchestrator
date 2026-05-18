@@ -1,7 +1,7 @@
 {
   "name": "orchestrator",
   "productName": "Orchestrator",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Desktop app for orchestrating Claude agents with distinct roles.",
   "main": ".vite/build/main.js",
   "private": true,
