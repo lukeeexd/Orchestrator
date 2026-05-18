@@ -218,6 +218,14 @@ const api: OrchestratorApi = {
       sourceId,
       bundleId,
     ) as Promise<{ ok: true }>,
+  setMarketplaceBundleRoles: (projectId, sourceId, bundleId, roles) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceSetRoles,
+      projectId,
+      sourceId,
+      bundleId,
+      roles,
+    ) as Promise<{ ok: true }>,
   onMarketplaceSourcePatch: (cb) =>
     subscribe<{
       sourceId: string;

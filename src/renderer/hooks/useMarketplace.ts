@@ -16,6 +16,11 @@ interface UseMarketplaceResult {
   subscribe: (sourceId: string, bundleId: string) => Promise<{ ok: boolean; error?: string }>;
   unsubscribe: (sourceId: string, bundleId: string) => Promise<void>;
   ackUpdate: (sourceId: string, bundleId: string) => Promise<void>;
+  setRoles: (
+    sourceId: string,
+    bundleId: string,
+    roles: string[] | null,
+  ) => Promise<void>;
   /** Re-fetch sources + bundles + subscriptions from main. */
   reload: () => Promise<void>;
 }
@@ -147,6 +152,25 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     [projectId],
   );
 
+  const setRoles = useCallback(
+    async (sourceId: string, bundleId: string, roles: string[] | null) => {
+      if (!projectId) return;
+      await window.api.setMarketplaceBundleRoles(
+        projectId,
+        sourceId,
+        bundleId,
+        roles,
+      );
+      // The subscriptions-changed broadcast will refresh us — but call
+      // explicitly too so the UI updates instantly without waiting for
+      // the event round-trip.
+      setSubscriptions(
+        await window.api.listMarketplaceSubscriptions(projectId),
+      );
+    },
+    [projectId],
+  );
+
   const pendingUpdates = useMemo(() => {
     return subscriptions.filter((sub) => {
       const bundles = bundlesBySource[sub.sourceId];
@@ -166,6 +190,7 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     subscribe,
     unsubscribe,
     ackUpdate,
+    setRoles,
     reload,
   };
 }

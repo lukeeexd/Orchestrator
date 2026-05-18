@@ -706,6 +706,7 @@ export function registerIpcHandlers(): void {
         bundleId: s.bundleId,
         subscribedAt: s.subscribedAt,
         installedVersion: s.installedVersion,
+        roles: s.roles,
       })),
   );
 
@@ -815,6 +816,34 @@ export function registerIpcHandlers(): void {
           projectId,
         });
       }
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceSetRoles,
+    (
+      _event,
+      projectId: string,
+      sourceId: string,
+      bundleId: string,
+      roles: string[] | null,
+    ): { ok: true } => {
+      // Defensive: ignore non-string entries in case the renderer
+      // hands us something weird; we'd rather store [] than corrupt
+      // the JSON. null passes through cleanly = "all roles".
+      const sanitized = roles
+        ? roles.filter((r): r is string => typeof r === 'string')
+        : null;
+      marketplace.setSubscriptionRoles(
+        projectId,
+        sourceId,
+        bundleId,
+        sanitized,
+      );
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId,
+      });
       return { ok: true };
     },
   );

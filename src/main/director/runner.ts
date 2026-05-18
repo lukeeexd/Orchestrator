@@ -344,7 +344,7 @@ class DirectorSession {
                 getMcpConfigPath(this.projectId),
               ),
               ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
-                pluginDirsForProject(this.projectId),
+                pluginDirsForProject(this.projectId, 'director'),
               ),
               abortController: this.controller,
               agent: 'director',

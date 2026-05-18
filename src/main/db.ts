@@ -274,6 +274,18 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 17,
+    up: (db) => {
+      // Per-role bundle enablement. roles is a JSON-encoded array of
+      // role keys (AgentRole values plus 'director'). NULL means "all
+      // roles" — preserves the v16 behaviour for subscriptions that
+      // existed before this column was added.
+      db.exec(
+        `ALTER TABLE project_subscribed_bundles ADD COLUMN roles TEXT;`,
+      );
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

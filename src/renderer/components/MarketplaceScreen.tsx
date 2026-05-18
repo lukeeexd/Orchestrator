@@ -82,6 +82,9 @@ export function MarketplaceScreen({ projectId, projectName }: Props) {
                 void mp.unsubscribe(source.id, bundleId)
               }
               onAckUpdate={(bundleId) => void mp.ackUpdate(source.id, bundleId)}
+              onSetRoles={(bundleId, roles) =>
+                void mp.setRoles(source.id, bundleId, roles)
+              }
             />
           ))
         )}
@@ -98,6 +101,7 @@ function SourceSection({
   onSubscribe,
   onUnsubscribe,
   onAckUpdate,
+  onSetRoles,
 }: {
   source: MarketplaceSourceView;
   bundles: MarketplaceBundleView[];
@@ -106,6 +110,7 @@ function SourceSection({
   onSubscribe: (bundleId: string) => void;
   onUnsubscribe: (bundleId: string) => void;
   onAckUpdate: (bundleId: string) => void;
+  onSetRoles: (bundleId: string, roles: string[] | null) => void;
 }) {
   const subByBundle = useMemo(() => {
     const m = new Map<string, MarketplaceSubscriptionView>();
@@ -237,9 +242,11 @@ function SourceSection({
                   subscribed={!!sub}
                   hasUpdate={!!hasUpdate}
                   installedVersion={sub?.installedVersion ?? null}
+                  roles={sub?.roles ?? null}
                   onSubscribe={() => onSubscribe(b.id)}
                   onUnsubscribe={() => onUnsubscribe(b.id)}
                   onAckUpdate={() => onAckUpdate(b.id)}
+                  onSetRoles={(roles) => onSetRoles(b.id, roles)}
                 />
               );
             })}
@@ -258,23 +265,65 @@ function SourceSection({
   );
 }
 
+const ALL_ROLES: { key: string; tint: string }[] = [
+  { key: 'pm', tint: '#4ade80' },
+  { key: 'researcher', tint: '#60a5fa' },
+  { key: 'coder', tint: '#c084fc' },
+  { key: 'qa', tint: '#fbbf24' },
+  { key: 'devops', tint: '#f97316' },
+  { key: 'security', tint: '#f87171' },
+  { key: 'director', tint: '#22d3ee' },
+];
+
 function BundleCard({
   bundle,
   subscribed,
   hasUpdate,
   installedVersion,
+  roles,
   onSubscribe,
   onUnsubscribe,
   onAckUpdate,
+  onSetRoles,
 }: {
   bundle: MarketplaceBundleView;
   subscribed: boolean;
   hasUpdate: boolean;
   installedVersion: string | null;
+  roles: string[] | null;
   onSubscribe: () => void;
   onUnsubscribe: () => void;
   onAckUpdate: () => void;
+  onSetRoles: (roles: string[] | null) => void;
 }) {
+  // A chip is "on" when roles is null (all-roles legacy default) or
+  // when it includes this role. Click toggles.
+  const isRoleOn = (key: string) => roles === null || roles.includes(key);
+
+  const toggleRole = (key: string) => {
+    const currentlyOn = isRoleOn(key);
+    if (roles === null) {
+      // First per-role edit: start from "all roles", remove the
+      // clicked one. The next click can re-add.
+      const next = ALL_ROLES.map((r) => r.key).filter((k) => k !== key);
+      onSetRoles(next);
+      return;
+    }
+    if (currentlyOn) {
+      onSetRoles(roles.filter((k) => k !== key));
+    } else {
+      // Add and keep ALL_ROLES ordering so the wire shape stays
+      // deterministic.
+      const next = ALL_ROLES.map((r) => r.key).filter(
+        (k) => roles.includes(k) || k === key,
+      );
+      onSetRoles(next);
+    }
+  };
+
+  const resetRoles = () => onSetRoles(null);
+  const isAllRolesOn = roles === null;
+  const isNoRolesOn = roles !== null && roles.length === 0;
   return (
     <div
       className="settings-section"
@@ -330,6 +379,101 @@ function BundleCard({
       >
         {bundle.description}
       </p>
+      {subscribed && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            marginTop: 2,
+            paddingTop: 6,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 6,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 10,
+                color: 'var(--muted-2)',
+                textTransform: 'uppercase',
+                letterSpacing: 0.5,
+              }}
+            >
+              load for
+            </span>
+            <span className="spacer" />
+            {!isAllRolesOn && (
+              <button
+                className="tb-btn"
+                style={{
+                  height: 18,
+                  fontSize: 10,
+                  padding: '0 6px',
+                }}
+                onClick={resetRoles}
+                title="Reset to all roles (legacy default)"
+              >
+                all
+              </button>
+            )}
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 3,
+            }}
+          >
+            {ALL_ROLES.map((r) => {
+              const on = isRoleOn(r.key);
+              return (
+                <button
+                  key={r.key}
+                  onClick={() => toggleRole(r.key)}
+                  title={
+                    on
+                      ? `Loaded for ${r.key} — click to disable`
+                      : `Skipped for ${r.key} — click to enable`
+                  }
+                  style={{
+                    background: on
+                      ? `${r.tint}22`
+                      : 'transparent',
+                    border: on
+                      ? `1px solid ${r.tint}66`
+                      : '1px solid var(--border)',
+                    color: on ? r.tint : 'var(--muted-2)',
+                    fontSize: 10,
+                    padding: '1px 6px',
+                    borderRadius: 3,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {r.key}
+                </button>
+              );
+            })}
+          </div>
+          {isNoRolesOn && (
+            <span
+              style={{
+                fontSize: 10,
+                color: 'var(--muted)',
+                fontStyle: 'italic',
+              }}
+            >
+              No roles selected — bundle is subscribed but no agent
+              loads it.
+            </span>
+          )}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 4, marginTop: 2 }}>
         {subscribed ? (
           <>

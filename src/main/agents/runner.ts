@@ -401,7 +401,10 @@ ${task}`;
               getMcpConfigPath(entry.agent.projectId),
             ),
             ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
-              pluginDirsForProject(entry.agent.projectId),
+              pluginDirsForProject(
+                entry.agent.projectId,
+                entry.agent.role,
+              ),
             ),
             abortController: controller,
             resume: parentSessionId,
@@ -506,7 +509,7 @@ ${req.task}`;
               getMcpConfigPath(req.projectId),
             ),
             ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
-              pluginDirsForProject(req.projectId),
+              pluginDirsForProject(req.projectId, req.role),
             ),
             abortController: controller,
             agent: 'main',
@@ -677,7 +680,10 @@ ${body}`;
               getMcpConfigPath(entry.agent.projectId),
             ),
             ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
-              pluginDirsForProject(entry.agent.projectId),
+              pluginDirsForProject(
+                entry.agent.projectId,
+                entry.agent.role,
+              ),
             ),
             abortController: controller,
             resume: entry.agent.sessionId,

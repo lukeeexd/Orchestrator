@@ -50,6 +50,7 @@ export const IpcChannels = {
   MarketplaceUnsubscribe: 'marketplace:unsubscribe',
   MarketplaceRefresh: 'marketplace:refresh',
   MarketplaceAckUpdate: 'marketplace:ackUpdate',
+  MarketplaceSetRoles: 'marketplace:setRoles',
   MarketplaceEventSourcePatch: 'marketplace:event:sourcePatch',
   MarketplaceEventSubscriptionsChanged: 'marketplace:event:subscriptionsChanged',
   ProjectSetRoleTools: 'project:setRoleTools',
@@ -163,6 +164,14 @@ export interface MarketplaceSubscriptionView {
   subscribedAt: number;
   /** Version the user last acknowledged. Compare to current bundle.version for "update available". */
   installedVersion: string | null;
+  /**
+   * Per-role enablement. `null` = all roles load the bundle (default
+   * at install). Otherwise: only the listed AgentRole keys plus
+   * 'director' (if present). An empty array subscribes the bundle
+   * without making it available to any role — the UI surfaces that
+   * as a "no agents" hint.
+   */
+  roles: string[] | null;
 }
 
 export interface AgentEventAgentPayload {
@@ -375,6 +384,17 @@ export interface OrchestratorApi {
     projectId: string,
     sourceId: string,
     bundleId: string,
+  ) => Promise<{ ok: true }>;
+  /**
+   * Set per-role enablement for a subscribed bundle. Pass `null` for
+   * "all roles" (default at install) or an array of role keys. Empty
+   * array = subscribed but disabled for every role.
+   */
+  setMarketplaceBundleRoles: (
+    projectId: string,
+    sourceId: string,
+    bundleId: string,
+    roles: string[] | null,
   ) => Promise<{ ok: true }>;
   /** Subscribe to source-row patches (sync state, badges, error). */
   onMarketplaceSourcePatch: (

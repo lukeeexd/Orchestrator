@@ -336,6 +336,28 @@ export interface ProjectSubscriptionRow {
   bundleId: string;
   subscribedAt: number;
   installedVersion: string | null;
+  /**
+   * Per-role enablement. `null` (or an empty/legacy column) means
+   * "all roles" — preserves the pre-v17 behaviour. Otherwise: only
+   * the listed roles + 'director' (if present) load the bundle's
+   * --plugin-dir.
+   */
+  roles: string[] | null;
+}
+
+function parseRoles(raw: unknown): string[] | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const out: string[] = [];
+    for (const item of parsed) {
+      if (typeof item === 'string' && item.length > 0) out.push(item);
+    }
+    return out;
+  } catch {
+    return null;
+  }
 }
 
 export function listSubscriptions(
@@ -343,7 +365,7 @@ export function listSubscriptions(
 ): ProjectSubscriptionRow[] {
   const db = getDb();
   const stmt = db.prepare(
-    `SELECT project_id, source_id, bundle_id, subscribed_at, installed_version
+    `SELECT project_id, source_id, bundle_id, subscribed_at, installed_version, roles
      FROM project_subscribed_bundles
      WHERE project_id = ?
      ORDER BY subscribed_at ASC`,
@@ -358,6 +380,7 @@ export function listSubscriptions(
       bundleId: asStr(row[2]),
       subscribedAt: asInt(row[3]),
       installedVersion: asStrOrNull(row[4]),
+      roles: parseRoles(row[5]),
     });
   }
   stmt.free();
@@ -403,6 +426,31 @@ export function unsubscribeBundle(
 }
 
 /**
+ * Set the per-role enablement for a subscription. Passing `null`
+ * (the default at subscribe time) means "all roles" — preserves the
+ * pre-v17 behaviour. Passing an empty array disables the bundle for
+ * every role, which subscribes it without using it; the UI surfaces
+ * that as a "no agents" hint.
+ */
+export function setSubscriptionRoles(
+  projectId: string,
+  sourceId: string,
+  bundleId: string,
+  roles: string[] | null,
+): void {
+  const db = getDb();
+  const value = roles ? JSON.stringify(roles) : null;
+  const stmt = db.prepare(
+    `UPDATE project_subscribed_bundles
+     SET roles = ?
+     WHERE project_id = ? AND source_id = ? AND bundle_id = ?`,
+  );
+  stmt.run([value, projectId, sourceId, bundleId]);
+  stmt.free();
+  scheduleSave();
+}
+
+/**
  * Mark a subscription as having seen up to a specific bundle version.
  * Used by the "ack update" flow — the next sync that brings in a
  * newer version will re-trigger the update notification.
@@ -426,17 +474,26 @@ export function acknowledgeBundleVersion(
 
 /**
  * Resolve a project's subscriptions to a list of `--plugin-dir`-ready
- * paths the spawn layer can pass to the claude CLI. Skips entries
- * whose source hasn't been synced yet OR whose bundle has been
- * removed upstream — the runner shouldn't abort a spawn because the
- * cache is half-baked. Returns paths only for directories that
- * actually exist on disk.
+ * paths the spawn layer can pass to the claude CLI. The `role`
+ * parameter (an AgentRole key or 'director') filters out
+ * subscriptions whose per-role enablement excludes the spawning
+ * agent — `roles: null` always matches (legacy "all roles"), `roles:
+ * []` matches nothing (subscribed-but-disabled).
+ *
+ * Also skips entries whose source hasn't been synced yet OR whose
+ * bundle has been removed upstream — the runner shouldn't abort a
+ * spawn because the cache is half-baked. Returns paths only for
+ * directories that actually exist on disk.
  */
-export function pluginDirsForProject(projectId: string): string[] {
+export function pluginDirsForProject(
+  projectId: string,
+  role: string,
+): string[] {
   const subs = listSubscriptions(projectId);
   if (subs.length === 0) return [];
   const out: string[] = [];
   for (const s of subs) {
+    if (s.roles !== null && !s.roles.includes(role)) continue;
     const bundle = findBundle(s.sourceId, s.bundleId);
     if (!bundle) continue;
     const dir = bundlePluginDir(s.sourceId, bundle);
