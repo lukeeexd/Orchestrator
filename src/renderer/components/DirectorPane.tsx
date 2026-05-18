@@ -142,6 +142,7 @@ export function DirectorPane({
       )}
 
       <Composer
+        key={projectId ?? 'no-project'}
         busy={busy}
         mode={mode}
         agents={agents}
@@ -425,6 +426,10 @@ function Composer({
 
   const remove = (path: string) => {
     setAttachments((prev) => prev.filter((a) => a.path !== path));
+    // Fire-and-forget cleanup of the ephemeral paste-temp file (if any).
+    // Main-side guards against deleting picked attachments outside our
+    // managed temp dir, so this is safe for every chip removal.
+    if (path) void window.api.disposeAttachment(path);
   };
 
   const submit = async () => {

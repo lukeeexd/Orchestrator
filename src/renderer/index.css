@@ -775,12 +775,12 @@ body.resizing * { cursor: col-resize !important; }
   background: transparent;
   border: 0;
   color: inherit;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
-  cursor: default;
-  padding: 0 0 0 2px;
+  cursor: pointer;
+  padding: 0 2px;
   margin-left: 2px;
-  opacity: 0.6;
+  opacity: 0.75;
 }
 .att-x:hover { opacity: 1; }
 

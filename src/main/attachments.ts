@@ -388,6 +388,60 @@ export function savePastedImage(
   }
   // describeAttachments re-stats the file we just wrote, which catches
   // any sneaky failure (zero-byte write, permission issue) and gives us
-  // the same shape every other call site already handles.
-  return describeAttachments([fullPath])[0];
+  // the same shape every other call site already handles. Override the
+  // basename-derived `name` with a short, user-friendly label so the
+  // chip in the UI reads as "screenshot.png" rather than a long unique
+  // filename — keeps the chip compact and the × button findable.
+  const info = describeAttachments([fullPath])[0];
+  return { ...info, name: `screenshot${ext}` };
+}
+
+/**
+ * Best-effort delete of a file inside our managed paste-temp subdir.
+ * Refuses to touch anything outside `tempDir` so a renderer that calls
+ * this for every chip removal can't accidentally delete a picked file
+ * the user actually owns. Silent on missing-file / permission failures —
+ * the OS's eventual %TEMP% reap is our fallback.
+ *
+ * Returns true if a delete attempt was made; false if the path was
+ * outside the managed dir (i.e. not ours to delete).
+ */
+export function disposePastedFile(tempDir: string, target: string): boolean {
+  if (!target) return false;
+  const parent = path.resolve(tempDir);
+  const child = path.resolve(target);
+  const isWin = process.platform === 'win32';
+  const sep = path.sep;
+  const inside = isWin
+    ? child.toLowerCase().startsWith(parent.toLowerCase() + sep)
+    : child.startsWith(parent + sep);
+  if (!inside) return false;
+  try {
+    fs.unlinkSync(child);
+  } catch {
+    /* already gone, permission denied, etc. — best-effort */
+  }
+  return true;
+}
+
+/**
+ * One-shot sweep used at app startup to drop any pasted-image files
+ * left behind from previous sessions. Files are non-sensitive once their
+ * agent run has completed, so a wholesale wipe is fine and keeps the
+ * temp dir from accumulating across long stretches of use. Errors are
+ * swallowed — startup must never fail because of cleanup hygiene.
+ */
+export function cleanupPastedImagesAtStart(tempDir: string): void {
+  try {
+    if (!fs.existsSync(tempDir)) return;
+    for (const entry of fs.readdirSync(tempDir)) {
+      try {
+        fs.unlinkSync(path.join(tempDir, entry));
+      } catch {
+        /* ignore individual failures */
+      }
+    }
+  } catch {
+    /* ignore — sweep is best-effort */
+  }
 }

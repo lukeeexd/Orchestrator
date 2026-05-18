@@ -25,6 +25,7 @@ export const IpcChannels = {
   AgentPickWorkspace: 'agent:pickWorkspace',
   AttachmentPick: 'attachment:pick',
   AttachmentSavePaste: 'attachment:savePaste',
+  AttachmentDispose: 'attachment:dispose',
   DirectorList: 'director:list',
   DirectorSend: 'director:send',
   DirectorAcceptPlan: 'director:acceptPlan',
@@ -199,6 +200,15 @@ export interface OrchestratorApi {
     base64: string,
     mediaType: string,
   ) => Promise<PastedImageInfo>;
+  /**
+   * Best-effort cleanup of an ephemeral attachment file (a path the user
+   * just removed from a chip list). The main side validates that the path
+   * is inside our managed temp subdir before deleting — picked attachments
+   * (the user's own files outside that subdir) are silently ignored, so
+   * the renderer can call this for every chip removal without tracking
+   * which ones we own.
+   */
+  disposeAttachment: (path: string) => Promise<{ ok: boolean }>;
   listDirectorMessages: (projectId: string) => Promise<DirectorMessage[]>;
   sendToDirector: (
     projectId: string,

@@ -32,7 +32,11 @@ import {
 } from './agents/runner';
 import * as director from './director/runner';
 import { deleteAgent } from './persistence';
-import { describeAttachments, savePastedImage } from './attachments';
+import {
+  describeAttachments,
+  disposePastedFile,
+  savePastedImage,
+} from './attachments';
 import {
   createProject,
   deleteProject,
@@ -387,11 +391,23 @@ export function registerIpcHandlers(): void {
     IpcChannels.AttachmentSavePaste,
     (_event, base64: string, mediaType: string) => {
       // Per-app subdir under the OS temp so we don't trip on collisions
-      // with other apps. We don't actively prune — the OS does that
-      // eventually for %TEMP%, and the data is non-sensitive once the
-      // agent run is over.
+      // with other apps. App-startup sweep handles long-term hygiene;
+      // per-chip dispose (below) handles the immediate "user clicked ×"
+      // case.
       const tempDir = path.join(app.getPath('temp'), 'orchestrator-paste');
       return savePastedImage(tempDir, base64, mediaType);
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AttachmentDispose,
+    (_event, target: string): { ok: boolean } => {
+      // disposePastedFile rejects anything outside our managed subdir,
+      // so it's safe for the renderer to call this for every chip
+      // removal — picked attachments outside the subdir are silently
+      // ignored.
+      const tempDir = path.join(app.getPath('temp'), 'orchestrator-paste');
+      return { ok: disposePastedFile(tempDir, target) };
     },
   );
 

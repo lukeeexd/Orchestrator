@@ -75,6 +75,10 @@ const api: OrchestratorApi = {
       base64,
       mediaType,
     ) as Promise<import('../shared/ipc').PastedImageInfo>,
+  disposeAttachment: (path) =>
+    ipcRenderer.invoke(IpcChannels.AttachmentDispose, path) as Promise<{
+      ok: boolean;
+    }>,
 
   listDirectorMessages: (projectId) =>
     ipcRenderer.invoke(

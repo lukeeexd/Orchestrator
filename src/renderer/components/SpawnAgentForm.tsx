@@ -89,6 +89,10 @@ export function SpawnAgentForm({
 
   const removeAttachment = (path: string) => {
     setAttachments((prev) => prev.filter((a) => a.path !== path));
+    // Fire-and-forget cleanup. Main-side gate ensures only ephemeral
+    // paste-temp files are deleted; picked attachments outside our
+    // managed dir are silently ignored.
+    if (path) void window.api.disposeAttachment(path);
   };
 
   const parseNum = (raw: string): number | undefined => {
