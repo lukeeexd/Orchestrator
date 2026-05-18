@@ -197,6 +197,16 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE projects ADD COLUMN provider TEXT;`);
     },
   },
+  {
+    version: 13,
+    up: (db) => {
+      // Per-agent provider override. NULL → fall through to the
+      // project's provider at runtime, matching the original
+      // project-only behaviour for agents that ran before this column
+      // existed.
+      db.exec(`ALTER TABLE agents ADD COLUMN provider TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

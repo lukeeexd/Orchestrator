@@ -54,6 +54,12 @@ export function SpawnAgentForm({
 }: Props) {
   const [role, setRole] = useState<AgentRole>('coder');
   const [workspace, setWorkspace] = useState(defaultWorkspace);
+  // Provider starts at the project's default; user can flip for one
+  // spawn without changing the project itself. When the provider
+  // changes mid-form we blank the model so the runner cascades to the
+  // new provider's default (the existing model id won't validate
+  // against the new provider).
+  const [agentProvider, setAgentProvider] = useState<Provider>(provider);
   const [model, setModel] = useState(defaultModel);
   const [effort, setEffort] = useState<EffortLevel>(defaultEffort);
   const [task, setTask] = useState('');
@@ -134,6 +140,7 @@ export function SpawnAgentForm({
         task,
         ...(model ? { model } : {}),
         ...(effort ? { effort } : {}),
+        ...(agentProvider !== provider ? { provider: agentProvider } : {}),
         ...(hasBudget ? { budget } : {}),
         ...(okAttachments.length > 0 ? { attachments: okAttachments } : {}),
       });
@@ -195,15 +202,42 @@ export function SpawnAgentForm({
           </div>
 
           <div className="field">
+            <span className="lbl">
+              Provider · project default is {provider}
+            </span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(['claude', 'codex'] as const).map((p) => (
+                <button
+                  key={p}
+                  className={
+                    'tb-btn' + (agentProvider === p ? ' primary' : '')
+                  }
+                  onClick={() => {
+                    if (agentProvider === p) return;
+                    setAgentProvider(p);
+                    // Switching providers invalidates the current model
+                    // pick — let the runner cascade to the new
+                    // provider's default rather than forcing the user
+                    // to re-select.
+                    setModel('');
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="field">
             <span className="lbl">Model</span>
             <ModelPicker
               value={model}
               onChange={setModel}
-              provider={provider}
+              provider={agentProvider}
             />
           </div>
 
-          {provider === 'claude' && (
+          {agentProvider === 'claude' && (
             <div className="field">
               <span className="lbl">Reasoning effort</span>
               <EffortPicker value={effort} onChange={setEffort} />

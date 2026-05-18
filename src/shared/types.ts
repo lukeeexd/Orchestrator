@@ -94,6 +94,13 @@ export interface Agent {
   model: string;
   effort: EffortLevel;
   /**
+   * Per-agent provider override. When undefined the agent uses its
+   * project's provider — same behaviour as before this field existed.
+   * Set at spawn time and never changes after; switching mid-run
+   * doesn't make sense (the CLI session is bound to one provider).
+   */
+  provider?: Provider;
+  /**
    * Per-model spend breakdown — captured from each CLI result event's
    * modelUsage field and merged cumulatively across the agent's run +
    * any subsequent redirects/forks. Lets the UI show which model
@@ -181,6 +188,12 @@ export interface SpawnAgentRequest {
   model?: string;
   /** Override the reasoning effort. Falls back to settings.defaultEffort. */
   effort?: EffortLevel;
+  /**
+   * Override the CLI backend for this single agent. Falls back to the
+   * project's provider when undefined. Lets a claude-default project
+   * spawn a codex specialist, or vice versa.
+   */
+  provider?: Provider;
   spawnedBy?: AgentSpawnedBy;
   budget?: Partial<AgentBudget>;
   attachments?: string[];
