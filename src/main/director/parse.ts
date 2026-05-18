@@ -1,4 +1,9 @@
-import type { PlanRow, AgentRole, RedirectInstruction } from '../../shared/types';
+import type {
+  PlanRow,
+  AgentRole,
+  Provider,
+  RedirectInstruction,
+} from '../../shared/types';
 
 const VALID_ROLES: AgentRole[] = [
   'pm',
@@ -8,6 +13,8 @@ const VALID_ROLES: AgentRole[] = [
   'devops',
   'security',
 ];
+
+const VALID_PROVIDERS: Provider[] = ['claude', 'codex'];
 
 interface ParseResult {
   /** Text with all orchestrator blocks stripped. */
@@ -39,11 +46,20 @@ function parsePlan(raw: string): PlanRow[] | null {
     }
     if (typeof r.name !== 'string') continue;
     if (typeof r.task !== 'string') continue;
+    // Optional provider override. Drop anything that isn't one of the
+    // known values — never let a typo'd "Anthropic" or "openai" silently
+    // pass through and confuse the runner's CLI dispatch.
+    const provider =
+      typeof r.provider === 'string' &&
+      VALID_PROVIDERS.includes(r.provider as Provider)
+        ? (r.provider as Provider)
+        : undefined;
     rows.push({
       i: r.i,
       role: r.role as AgentRole,
       name: r.name,
       task: r.task,
+      ...(provider ? { provider } : {}),
     });
   }
   return rows.length > 0 ? rows : null;

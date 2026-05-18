@@ -558,6 +558,12 @@ export function registerIpcHandlers(): void {
                 workspace: req.workspace,
                 spawnedBy: 'director',
                 ...directorOverrides,
+                // Per-row provider override (mixed-provider plans).
+                // Undefined → spawnAgent falls back to the project's
+                // default, same behaviour as before this field existed.
+                ...(req.rows[0].provider
+                  ? { provider: req.rows[0].provider }
+                  : {}),
                 ...(planAttachments ? { attachments: planAttachments } : {}),
               },
               agentSinks,
@@ -593,6 +599,7 @@ export function registerIpcHandlers(): void {
               workspace: req.workspace,
               spawnedBy: 'director',
               ...directorOverrides,
+              ...(row.provider ? { provider: row.provider } : {}),
               ...(planAttachments ? { attachments: planAttachments } : {}),
             },
             agentSinks,

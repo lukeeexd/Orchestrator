@@ -148,6 +148,14 @@ export interface PlanRow {
   role: AgentRole;
   name: string;
   task: string;
+  /**
+   * Optional per-row provider override. When set, the auto-spawned
+   * agent runs against this CLI instead of the project's default.
+   * Lets the Director compose mixed-provider plans — e.g. claude for
+   * orchestration-heavy or vision-driven rows, codex for cheap fast
+   * specialists. Undefined → use the project's provider.
+   */
+  provider?: Provider;
 }
 
 export type DirectorMode = 'auto' | 'manual';
