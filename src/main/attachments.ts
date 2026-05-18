@@ -1,5 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { app } from 'electron';
+
+/**
+ * Single source of truth for the temp directory we use to stage
+ * pasted-image attachments. The writer (savePastedImage IPC handler)
+ * and the startup sweep (cleanupPastedImagesAtStart) both go through
+ * here so a folder rename can't drift them apart.
+ */
+export function pasteTempDir(): string {
+  return path.join(app.getPath('temp'), 'orchestrator-paste');
+}
 
 /**
  * Whitelist of text-ish file extensions. Anything outside this list is

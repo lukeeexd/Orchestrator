@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { registerIpcHandlers } from './ipc';
@@ -10,12 +10,21 @@ import { ensureDefaultProject, listProjects } from './projects';
 import { probeCli } from './cli/spawn';
 import { setCliStatus } from './cli/status';
 import { setupAutoUpdater } from './updater';
-import { cleanupPastedImagesAtStart } from './attachments';
+import { cleanupPastedImagesAtStart, pasteTempDir } from './attachments';
 import * as marketplace from './marketplace';
 
 if (started) {
   app.quit();
 }
+
+/**
+ * Flipped in `before-quit` so the fire-and-forget marketplace sync can
+ * bail before it touches a closed DB. A clone takes seconds; if the
+ * user quits during one, the loop would otherwise call
+ * `recordSourceSync` → `getDb()` → `db not opened` after `closeDb()`
+ * has run.
+ */
+let appQuitting = false;
 
 const createWindow = (): void => {
   const win = new BrowserWindow({
@@ -42,67 +51,90 @@ const createWindow = (): void => {
 };
 
 app.whenReady().then(async () => {
-  await openDb();
-  // Probe each supported CLI on PATH. Stored so the renderer can show a
-  // provider-aware "CLI not found" gate before any spawn attempt. Cheap
-  // (one subprocess per provider); only runs at startup. The gate
-  // checks the active project's provider — a claude-only user with no
-  // codex installed isn't blocked unless they create a codex project,
-  // and vice versa.
-  const [claudeVersion, codexVersion] = await Promise.all([
-    probeCli('claude', process.env),
-    probeCli('codex', process.env),
-  ]);
-  setCliStatus('claude', {
-    available: claudeVersion !== null,
-    version: claudeVersion,
-  });
-  setCliStatus('codex', {
-    available: codexVersion !== null,
-    version: codexVersion,
-  });
-  // Any agent left in 'running' state from a previous run is dead now —
-  // we can't resume its session. Flip those to 'error: Interrupted'
-  // before hydrating so the renderer sees the right state.
-  markRunningAgentsAsInterrupted();
-  // Wipe any pasted-image temp files left behind by previous sessions.
-  // Their associated agent runs are long dead and the files are
-  // non-sensitive — best-effort sweep keeps the temp dir from growing
-  // without bound.
-  cleanupPastedImagesAtStart(
-    path.join(app.getPath('temp'), 'orchestrator-paste'),
-  );
-  ensureDefaultProject();
-  director.hydrateAll(listProjects().map((p) => p.id));
-  registry.hydrate();
-  registerIpcHandlers();
-  setupAutoUpdater();
-  // Seed the default skill marketplace (idempotent — INSERT OR IGNORE)
-  // and fire async syncs for any source that hasn't been refreshed in
-  // 24h. Fire-and-forget — git clone takes a moment and we don't want
-  // it blocking the UI. Errors get logged but don't surface as a
-  // user-facing failure: the user can hit Refresh manually if needed.
-  marketplace.ensureSource({
-    id: 'alirezarezvani/claude-skills',
-    repo: 'alirezarezvani/claude-skills',
-    defaultBranch: 'main',
-  });
-  void syncStaleMarketplaceSources();
-  createWindow();
+  // Anything inside `whenReady` runs in a Promise. Without a try/catch
+  // a rejection (corrupt sqlite, missing sql-wasm, bad migration)
+  // leaves the app silently running with no window, no IPC, no
+  // visible error — just an "unhandled rejection" warning in stderr
+  // that the user never sees. Surface failures via a native dialog
+  // and quit cleanly so the diagnostic isn't buried.
+  try {
+    await openDb();
+    // Probe each supported CLI on PATH. Stored so the renderer can show
+    // a provider-aware "CLI not found" gate before any spawn attempt.
+    // Cheap (one subprocess per provider); only runs at startup. The
+    // gate checks the active project's provider — a claude-only user
+    // with no codex installed isn't blocked unless they create a codex
+    // project, and vice versa.
+    const [claudeVersion, codexVersion] = await Promise.all([
+      probeCli('claude', process.env),
+      probeCli('codex', process.env),
+    ]);
+    setCliStatus('claude', {
+      available: claudeVersion !== null,
+      version: claudeVersion,
+    });
+    setCliStatus('codex', {
+      available: codexVersion !== null,
+      version: codexVersion,
+    });
+    // Any agent left in 'running' state from a previous run is dead
+    // now — we can't resume its session. Flip those to
+    // 'error: Interrupted' before hydrating so the renderer sees the
+    // right state.
+    markRunningAgentsAsInterrupted();
+    // Wipe any pasted-image temp files left behind by previous
+    // sessions. Their associated agent runs are long dead and the
+    // files are non-sensitive — best-effort sweep keeps the temp dir
+    // from growing without bound.
+    cleanupPastedImagesAtStart(pasteTempDir());
+    ensureDefaultProject();
+    director.hydrateAll(listProjects().map((p) => p.id));
+    registry.hydrate();
+    registerIpcHandlers();
+    setupAutoUpdater();
+    // Seed the default skill marketplace (idempotent — INSERT OR
+    // IGNORE) and fire async syncs for any source that hasn't been
+    // refreshed in 24h. Fire-and-forget — git clone takes a moment
+    // and we don't want it blocking the UI. Errors get logged but
+    // don't surface as a user-facing failure: the user can hit
+    // Refresh manually if needed.
+    marketplace.ensureSource({
+      id: 'alirezarezvani/claude-skills',
+      repo: 'alirezarezvani/claude-skills',
+      defaultBranch: 'main',
+    });
+    void syncStaleMarketplaceSources();
+    createWindow();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error && err.stack ? `\n\n${err.stack}` : '';
+    console.error('[startup] fatal:', err);
+    dialog.showErrorBox(
+      'Orchestrator failed to start',
+      `Startup error:\n\n${msg}${stack}`,
+    );
+    app.quit();
+  }
 });
 
 async function syncStaleMarketplaceSources(): Promise<void> {
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   const sources = marketplace.listSources();
   for (const source of sources) {
+    // A clone can take several seconds. If the user has quit (the
+    // `before-quit` handler has fired and closeDb() is done), bail
+    // before touching the DB again — recordSourceSync would otherwise
+    // throw `db not opened` into a `.catch`-less promise.
+    if (appQuitting) return;
     if (!source.enabled) continue;
     if (source.lastSyncAt && source.lastSyncAt > cutoff) continue;
     try {
       const { sha } = await marketplace.syncSource(source);
+      if (appQuitting) return;
       marketplace.recordSourceSync(source.id, sha, Date.now());
     } catch (e) {
       // Network failure, git not on PATH, etc — log and move on. The
@@ -121,5 +153,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  appQuitting = true;
   closeDb();
 });

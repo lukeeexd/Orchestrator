@@ -35,6 +35,7 @@ import { deleteAgent } from './persistence';
 import {
   describeAttachments,
   disposePastedFile,
+  pasteTempDir,
   readAttachmentAsDataUrl,
   savePastedImage,
   supportedAttachmentExtensions,
@@ -458,8 +459,7 @@ export function registerIpcHandlers(): void {
       // with other apps. App-startup sweep handles long-term hygiene;
       // per-chip dispose (below) handles the immediate "user clicked ×"
       // case.
-      const tempDir = path.join(app.getPath('temp'), 'orchestrator-paste');
-      return savePastedImage(tempDir, base64, mediaType);
+      return savePastedImage(pasteTempDir(), base64, mediaType);
     },
   );
 
@@ -492,8 +492,7 @@ export function registerIpcHandlers(): void {
       // so it's safe for the renderer to call this for every chip
       // removal — picked attachments outside the subdir are silently
       // ignored.
-      const tempDir = path.join(app.getPath('temp'), 'orchestrator-paste');
-      return { ok: disposePastedFile(tempDir, target) };
+      return { ok: disposePastedFile(pasteTempDir(), target) };
     },
   );
 
