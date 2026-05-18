@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type ClipboardEvent,
+  type DragEvent,
   type KeyboardEvent,
 } from 'react';
 import type {
@@ -24,7 +25,7 @@ import { EffortPicker } from './EffortPicker';
 import { DirectorStream } from './DirectorStream';
 import type { ViewMode } from './TopBar';
 import type { BuiltinAction } from '../../shared/builtinCommands';
-import { handleImagePaste } from '../lib/imagePaste';
+import { handleImageDrop, handleImagePaste } from '../lib/imagePaste';
 
 const ROLE_TINT: Record<Agent['role'], string> = {
   pm: '#4ade80',
@@ -690,10 +691,18 @@ function Composer({
               setAttachments((prev) => [...prev, info]),
             );
           }}
+          onDragOver={(e: DragEvent<HTMLTextAreaElement>) =>
+            e.preventDefault()
+          }
+          onDrop={(e: DragEvent<HTMLTextAreaElement>) => {
+            void handleImageDrop(e, (info) =>
+              setAttachments((prev) => [...prev, info]),
+            );
+          }}
           placeholder={
             mode === 'auto'
-              ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ to reference an agent, paste images to attach)'
-              : 'Ask the Director for advice… (/ for commands, @ to reference an agent, paste images to attach)'
+              ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ for agents, paste or drop images to attach)'
+              : 'Ask the Director for advice… (/ for commands, @ for agents, paste or drop images to attach)'
           }
           rows={3}
         />

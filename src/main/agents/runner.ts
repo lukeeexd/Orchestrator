@@ -373,6 +373,9 @@ ${task}`;
             env,
             prompt,
             ...(prep.images.length > 0 ? { images: prep.images } : {}),
+            ...(prep.documents.length > 0
+              ? { documents: prep.documents }
+              : {}),
             abortController: controller,
             resume: parentSessionId,
             forkSession: true,
@@ -463,6 +466,9 @@ ${req.task}`;
             env,
             prompt: promptWithContext,
             ...(prep.images.length > 0 ? { images: prep.images } : {}),
+            ...(prep.documents.length > 0
+              ? { documents: prep.documents }
+              : {}),
             abortController: controller,
             agent: 'main',
             agents: {
@@ -621,6 +627,9 @@ ${body}`;
             env,
             prompt,
             ...(prep.images.length > 0 ? { images: prep.images } : {}),
+            ...(prep.documents.length > 0
+              ? { documents: prep.documents }
+              : {}),
             abortController: controller,
             resume: entry.agent.sessionId,
             // Pass the agent config explicitly so the resumed turn uses

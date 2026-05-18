@@ -36,6 +36,7 @@ import {
   describeAttachments,
   disposePastedFile,
   savePastedImage,
+  supportedAttachmentExtensions,
 } from './attachments';
 import {
   createProject,
@@ -377,9 +378,20 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IpcChannels.AttachmentPick, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return { attachments: [] };
+    // Filter the dialog to types we can actually do something with —
+    // text files inline as code blocks, images flow through as vision
+    // content blocks, PDFs as document blocks. Anything else used to
+    // sneak through and chip as 'unsupported', wasting a click.
     const result = await dialog.showOpenDialog(win, {
       title: 'Attach files',
       properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'Supported attachments',
+          extensions: supportedAttachmentExtensions(),
+        },
+        { name: 'All files', extensions: ['*'] },
+      ],
     });
     if (result.canceled || result.filePaths.length === 0) {
       return { attachments: [] };

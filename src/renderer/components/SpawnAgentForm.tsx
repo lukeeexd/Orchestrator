@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ClipboardEvent } from 'react';
+import type { ClipboardEvent, DragEvent } from 'react';
 import type {
   AgentRole,
   EffortLevel,
@@ -8,7 +8,7 @@ import type {
 import { Icon } from './Icon';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
-import { handleImagePaste } from '../lib/imagePaste';
+import { handleImageDrop, handleImagePaste } from '../lib/imagePaste';
 
 const ROLES: { id: AgentRole; label: string; tint: string }[] = [
   { id: 'pm', label: 'Project Manager', tint: '#4ade80' },
@@ -217,7 +217,15 @@ export function SpawnAgentForm({
                   setAttachments((prev) => [...prev, info]),
                 );
               }}
-              placeholder="Describe what you want the agent to do… (paste images to attach)"
+              onDragOver={(e: DragEvent<HTMLTextAreaElement>) =>
+                e.preventDefault()
+              }
+              onDrop={(e: DragEvent<HTMLTextAreaElement>) => {
+                void handleImageDrop(e, (info) =>
+                  setAttachments((prev) => [...prev, info]),
+                );
+              }}
+              placeholder="Describe what you want the agent to do… (paste or drop images to attach)"
               rows={6}
             />
           </div>

@@ -73,12 +73,7 @@ What was deferred at v1.0 and has since landed. Kept here so future "next slice"
 
 Things that landed partially or are explicitly tabled. New sessions can pick from here when looking for the next slice.
 
-- **Better attachments — text-only at v0.6.0.** Current code (`src/main/attachments.ts`) whitelists text/code extensions only (md / code / config / json / yaml), 100 KiB cap per file, inlined as fenced code blocks. Deferred:
-  - **Image attachments** via Anthropic vision content blocks. The path is `claude --input-format stream-json` over stdin, sending a JSONL user message with `{type:'image',source:{type:'base64',media_type,data}}` content blocks alongside the text prompt — confirmed available on the CLI we now shell out to.
-  - **PDF attachments** via `document` content blocks (same JSONL shape, different `type`).
-  - **Larger caps for non-text** (Anthropic accepts up to 5 MiB per image; current 100 KiB cap is for inlined text).
-  - **File picker filtered to supported types** instead of "all files + show error chip" UX.
-  - **Drag-and-drop into the composer.**
+- **Attachments — current state.** Text files inline as fenced code blocks (100 KiB cap each). Images (png/jpg/jpeg/gif/webp, 5 MiB cap) and PDFs (10 MiB cap) ride alongside as Anthropic vision / document content blocks via `claude --input-format stream-json` over stdin. Pickable, pasteable, droppable. The picker dialog hides unsupported types. Codex projects drop image/document attachments with a warn — `codex exec` has no equivalent multimodal input. Still deferred: drag-drop for non-image files (text/PDF currently go through the picker), per-attachment preview thumbnails in chip rows.
 - **Memory pins.** Drawer Memory tab still renders the "not wired up yet" placeholder. Skills already cover the "carry a persistent body of guidance into every turn" use case, so memory pins are lower priority than they were at v1.0.
 - **Session-wide budget.** Per-agent budgets exist; a global "session won't exceed $X" cap (rolling across all agents in a session) doesn't.
 - **Wipe session.** `wipeDirector` only clears the Director's chat. A full nuke — agents, log lines, attachments, settings.json `oauthToken` — for handing the machine off is still deferred.

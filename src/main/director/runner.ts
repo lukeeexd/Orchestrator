@@ -331,6 +331,9 @@ class DirectorSession {
               env,
               prompt: fullPrompt,
               ...(prep.images.length > 0 ? { images: prep.images } : {}),
+              ...(prep.documents.length > 0
+                ? { documents: prep.documents }
+                : {}),
               abortController: this.controller,
               agent: 'director',
               agents: {

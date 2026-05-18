@@ -32,6 +32,16 @@ const IMAGE_MEDIA_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
+/**
+ * Document extensions → content-block media types. Sent as
+ * `{type:'document'}` blocks alongside images via the same stream-json
+ * input pipeline. PDF only for now — DOC/DOCX would need server-side
+ * conversion.
+ */
+const DOCUMENT_MEDIA_TYPES: Record<string, string> = {
+  '.pdf': 'application/pdf',
+};
+
 /** Max bytes per inlined text file; over the cap is truncated with a note. */
 const MAX_TEXT_BYTES = 100 * 1024; // 100 KiB
 
@@ -42,6 +52,13 @@ const MAX_TEXT_BYTES = 100 * 1024; // 100 KiB
  */
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Max bytes per PDF attachment. Anthropic accepts up to 32 MiB per
+ * document, but most user PDFs are well under 10 MiB and the larger
+ * cap costs serious tokens — keep it conservative.
+ */
+const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+
 /** Reverse map for pasted-image handling — clipboard MIME → file ext we recognize. */
 const MEDIA_TYPE_TO_EXT: Record<string, string> = {
   'image/png': '.png',
@@ -51,7 +68,22 @@ const MEDIA_TYPE_TO_EXT: Record<string, string> = {
   'image/webp': '.webp',
 };
 
-export type AttachmentKind = 'text' | 'image' | 'unsupported';
+export type AttachmentKind = 'text' | 'image' | 'document' | 'unsupported';
+
+/**
+ * Union of every extension we recognize at attachment time. Exported so
+ * the IPC's file-picker dialog can hide unsupported types upfront
+ * instead of letting the user pick a file that will just chip-as-bad.
+ * Returns lowercased ext without the leading dot (the format Electron's
+ * dialog filter expects).
+ */
+export function supportedAttachmentExtensions(): string[] {
+  const all = new Set<string>();
+  for (const e of TEXT_EXTS) all.add(e.slice(1));
+  for (const e of Object.keys(IMAGE_MEDIA_TYPES)) all.add(e.slice(1));
+  for (const e of Object.keys(DOCUMENT_MEDIA_TYPES)) all.add(e.slice(1));
+  return [...all].sort();
+}
 
 function langTag(p: string): string {
   const ext = path.extname(p).slice(1).toLowerCase();
@@ -96,6 +128,7 @@ export interface AttachmentInfo {
 function classifyExt(ext: string): AttachmentKind {
   if (TEXT_EXTS.has(ext)) return 'text';
   if (ext in IMAGE_MEDIA_TYPES) return 'image';
+  if (ext in DOCUMENT_MEDIA_TYPES) return 'document';
   return 'unsupported';
 }
 
@@ -128,6 +161,16 @@ export function describeAttachments(paths: string[]): AttachmentInfo[] {
           kind,
         };
       }
+      if (kind === 'document' && stat.size > MAX_DOCUMENT_BYTES) {
+        const mib = (stat.size / (1024 * 1024)).toFixed(1);
+        return {
+          path: p,
+          name,
+          ok: false,
+          reason: `PDF too large (${mib} MiB, cap 10 MiB)`,
+          kind,
+        };
+      }
       return { path: p, name, ok: true, kind };
     } catch (e) {
       return {
@@ -151,16 +194,19 @@ export function describeAttachments(paths: string[]): AttachmentInfo[] {
 export function splitAttachments(paths: string[]): {
   textPaths: string[];
   imagePaths: string[];
+  documentPaths: string[];
 } {
   const textPaths: string[] = [];
   const imagePaths: string[] = [];
+  const documentPaths: string[] = [];
   for (const p of paths) {
     const ext = path.extname(p).toLowerCase();
     const kind = classifyExt(ext);
     if (kind === 'text') textPaths.push(p);
     else if (kind === 'image') imagePaths.push(p);
+    else if (kind === 'document') documentPaths.push(p);
   }
-  return { textPaths, imagePaths };
+  return { textPaths, imagePaths, documentPaths };
 }
 
 /**
@@ -177,11 +223,13 @@ export function inlineAttachments(paths: string[]): string {
     const ext = path.extname(p).toLowerCase();
     const kind = classifyExt(ext);
     if (kind !== 'text') {
-      parts.push(
-        `\n--- ${name} (skipped: ${
-          kind === 'image' ? 'image — sent as a separate content block' : 'unsupported type'
-        }) ---`,
-      );
+      const note =
+        kind === 'image'
+          ? 'image — sent as a separate content block'
+          : kind === 'document'
+            ? 'PDF — sent as a separate document content block'
+            : 'unsupported type';
+      parts.push(`\n--- ${name} (skipped: ${note}) ---`);
       continue;
     }
     let content: string;
@@ -211,6 +259,17 @@ export function inlineAttachments(paths: string[]): string {
 }
 
 export interface ImageContentBlock {
+  name: string;
+  mediaType: string;
+  base64: string;
+}
+
+/**
+ * Same shape as ImageContentBlock — the difference is the content-block
+ * type emitted on the wire ('document' instead of 'image'). Kept as a
+ * separate interface so call sites can't accidentally cross the streams.
+ */
+export interface DocumentContentBlock {
   name: string;
   mediaType: string;
   base64: string;
@@ -259,16 +318,55 @@ export function readImagesForApi(paths: string[]): {
 }
 
 /**
+ * Mirror of readImagesForApi for PDFs. Same shape, different output —
+ * the runner caller emits these as `{type:'document'}` blocks instead
+ * of `{type:'image'}`. Failures are dropped silently into the `skipped`
+ * array; callers surface them as `warn` log lines so the user sees
+ * what didn't make it.
+ */
+export function readDocumentsForApi(paths: string[]): {
+  blocks: DocumentContentBlock[];
+  skipped: { name: string; reason: string }[];
+} {
+  const blocks: DocumentContentBlock[] = [];
+  const skipped: { name: string; reason: string }[] = [];
+  for (const p of paths) {
+    const name = path.basename(p);
+    const ext = path.extname(p).toLowerCase();
+    const mediaType = DOCUMENT_MEDIA_TYPES[ext];
+    if (!mediaType) {
+      skipped.push({ name, reason: `unsupported document type (${ext})` });
+      continue;
+    }
+    try {
+      const buf = fs.readFileSync(p);
+      if (buf.length > MAX_DOCUMENT_BYTES) {
+        const mib = (buf.length / (1024 * 1024)).toFixed(1);
+        skipped.push({ name, reason: `PDF too large (${mib} MiB, cap 10 MiB)` });
+        continue;
+      }
+      blocks.push({ name, mediaType, base64: buf.toString('base64') });
+    } catch (e) {
+      skipped.push({
+        name,
+        reason: e instanceof Error ? e.message : 'read failed',
+      });
+    }
+  }
+  return { blocks, skipped };
+}
+
+/**
  * One-shot prep used by every spawn/fork/redirect/Director site that
  * accepts user attachments. Splits the path list, inlines text, encodes
- * images for the API, and produces human-readable warn lines for any
- * file that didn't make it (oversize, unreadable, or sent to a provider
- * that doesn't support that kind). Callers emit `warnLines` as
- * `warn`-kind log entries so the user sees what was dropped.
+ * images + PDFs for the API, and produces human-readable warn lines for
+ * any file that didn't make it (oversize, unreadable, or sent to a
+ * provider that doesn't support that kind). Callers emit `warnLines`
+ * as `warn`-kind log entries so the user sees what was dropped.
  *
- * For codex, image paths are dropped with a "codex doesn't support
- * vision content blocks" note — we still inline any text attachments so
- * the user's prompt isn't silently halved.
+ * For codex, image AND document paths are dropped with a provider note
+ * — codex exec has no equivalent vision/document inputs. Text
+ * attachments still inline so the user's prompt isn't silently halved.
  */
 export function prepareAttachments(
   paths: string[] | undefined,
@@ -276,16 +374,18 @@ export function prepareAttachments(
 ): {
   textInline: string;
   images: ImageContentBlock[];
+  documents: DocumentContentBlock[];
   warnLines: string[];
 } {
   if (!paths || paths.length === 0) {
-    return { textInline: '', images: [], warnLines: [] };
+    return { textInline: '', images: [], documents: [], warnLines: [] };
   }
-  const { textPaths, imagePaths } = splitAttachments(paths);
+  const { textPaths, imagePaths, documentPaths } = splitAttachments(paths);
   const textInline = textPaths.length > 0 ? inlineAttachments(textPaths) : '';
 
   const warnLines: string[] = [];
   let images: ImageContentBlock[] = [];
+  let documents: DocumentContentBlock[] = [];
 
   if (imagePaths.length > 0) {
     if (provider === 'codex') {
@@ -303,7 +403,23 @@ export function prepareAttachments(
     }
   }
 
-  return { textInline, images, warnLines };
+  if (documentPaths.length > 0) {
+    if (provider === 'codex') {
+      warnLines.push(
+        `${documentPaths.length} PDF attachment${
+          documentPaths.length === 1 ? '' : 's'
+        } skipped — codex provider doesn't support document content blocks yet`,
+      );
+    } else {
+      const { blocks, skipped } = readDocumentsForApi(documentPaths);
+      documents = blocks;
+      for (const s of skipped) {
+        warnLines.push(`PDF ${s.name} skipped: ${s.reason}`);
+      }
+    }
+  }
+
+  return { textInline, images, documents, warnLines };
 }
 
 /**

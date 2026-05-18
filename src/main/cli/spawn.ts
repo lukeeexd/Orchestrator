@@ -1,6 +1,9 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import type { ImageContentBlock } from '../attachments';
+import type {
+  DocumentContentBlock,
+  ImageContentBlock,
+} from '../attachments';
 
 /**
  * The shape of options we pass to a single claude-CLI invocation. Mirrors
@@ -13,12 +16,14 @@ export interface ClaudeQueryOptions {
   prompt: string;
   /**
    * Optional image content blocks to send alongside the text prompt. When
-   * non-empty, this switches the CLI to `--input-format stream-json` and
-   * sends a JSONL user message with both text + image content blocks. The
-   * text-only path stays unchanged for the common case (no extra wire
-   * overhead when no images).
+   * non-empty (or `documents` is non-empty), this switches the CLI to
+   * `--input-format stream-json` and sends a JSONL user message with
+   * text + image + document content blocks. The text-only path stays
+   * unchanged for the common case (no extra wire overhead).
    */
   images?: ImageContentBlock[];
+  /** Optional PDF content blocks. Same trigger semantics as `images`. */
+  documents?: DocumentContentBlock[];
   /** Per-agent definitions, passed as `--agents <json>`. Same shape as the SDK's options.agents. */
   agents: Record<
     string,
@@ -98,26 +103,36 @@ export async function* runClaudeQuery(
   // length limit — agents inline attachments and long task descriptions
   // can blow past it.
   //
-  // When there are image attachments, switch to stream-json input and
-  // wrap the prompt in a user-message envelope with content blocks. The
-  // CLI's stream-json input format mirrors the messages.create API
-  // shape, so vision blocks ({type:'image', source:{...}}) ride along.
-  // When there are no images, stay on plain-text stdin to keep the
-  // common-case wire shape unchanged.
-  const hasImages = options.images && options.images.length > 0;
-  if (hasImages) {
+  // When there are image OR document attachments, switch to stream-json
+  // input and wrap the prompt in a user-message envelope with content
+  // blocks. The CLI's stream-json input format mirrors the
+  // messages.create API shape, so vision blocks ({type:'image'}) and
+  // document blocks ({type:'document'}) ride along. When there are
+  // none, stay on plain-text stdin to keep the common-case wire shape
+  // unchanged.
+  const hasImages = !!options.images && options.images.length > 0;
+  const hasDocuments = !!options.documents && options.documents.length > 0;
+  if (hasImages || hasDocuments) {
     const userMessage = {
       type: 'user',
       message: {
         role: 'user',
         content: [
           { type: 'text', text: options.prompt },
-          ...options.images!.map((img) => ({
+          ...(options.images ?? []).map((img) => ({
             type: 'image',
             source: {
               type: 'base64',
               media_type: img.mediaType,
               data: img.base64,
+            },
+          })),
+          ...(options.documents ?? []).map((doc) => ({
+            type: 'document',
+            source: {
+              type: 'base64',
+              media_type: doc.mediaType,
+              data: doc.base64,
             },
           })),
         ],
@@ -159,10 +174,14 @@ function buildArgs(o: ClaudeQueryOptions): string[] {
     o.agent,
   ];
 
-  // When sending images, switch the input format to stream-json so we
-  // can wrap the prompt + image blocks in a single JSONL user message.
-  // The text-only path uses the CLI's default text stdin.
-  if (o.images && o.images.length > 0) {
+  // When sending images or documents, switch the input format to
+  // stream-json so we can wrap the prompt + content blocks in a single
+  // JSONL user message. The text-only path uses the CLI's default text
+  // stdin.
+  if (
+    (o.images && o.images.length > 0) ||
+    (o.documents && o.documents.length > 0)
+  ) {
     args.push('--input-format', 'stream-json');
   }
 

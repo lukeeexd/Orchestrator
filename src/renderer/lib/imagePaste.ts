@@ -1,4 +1,4 @@
-import type { ClipboardEvent } from 'react';
+import type { ClipboardEvent, DragEvent } from 'react';
 import type { PastedImageInfo } from '../../shared/ipc';
 
 /**
@@ -20,30 +20,31 @@ function blobToBase64(blob: Blob): Promise<string> {
 }
 
 /**
- * Paste-event handler for any textarea that wants to accept pasted
- * images as attachments. When the clipboard contains image files,
- * intercept the paste, save each image to a temp file via main, and
- * invoke `onAttached` once per image with the resulting AttachmentInfo.
- * Returns true if at least one image was handled (so the caller knows
- * to skip the default text paste). Plain-text pastes return false and
- * fall through to the textarea's default behaviour untouched.
+ * Pull every image File out of a DataTransfer-shaped source (works for
+ * both ClipboardEvent.clipboardData and DragEvent.dataTransfer — they
+ * expose the same DataTransfer interface).
  */
-export async function handleImagePaste(
-  e: ClipboardEvent<HTMLTextAreaElement>,
-  onAttached: (info: PastedImageInfo) => void,
-): Promise<boolean> {
-  const items = e.clipboardData?.items;
-  if (!items) return false;
-  const blobs: { blob: Blob; mediaType: string }[] = [];
+function extractImageFiles(
+  data: DataTransfer | null,
+): { blob: Blob; mediaType: string }[] {
+  if (!data) return [];
+  const items = data.items;
+  if (!items) return [];
+  const out: { blob: Blob; mediaType: string }[] = [];
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (item.kind === 'file' && item.type.startsWith('image/')) {
       const file = item.getAsFile();
-      if (file) blobs.push({ blob: file, mediaType: item.type });
+      if (file) out.push({ blob: file, mediaType: item.type });
     }
   }
-  if (blobs.length === 0) return false;
-  e.preventDefault();
+  return out;
+}
+
+async function saveAll(
+  blobs: { blob: Blob; mediaType: string }[],
+  onAttached: (info: PastedImageInfo) => void,
+): Promise<void> {
   for (const { blob, mediaType } of blobs) {
     try {
       const base64 = await blobToBase64(blob);
@@ -58,5 +59,42 @@ export async function handleImagePaste(
       });
     }
   }
+}
+
+/**
+ * Paste-event handler for any textarea that wants to accept pasted
+ * images as attachments. When the clipboard contains image files,
+ * intercept the paste, save each image to a temp file via main, and
+ * invoke `onAttached` once per image with the resulting AttachmentInfo.
+ * Returns true if at least one image was handled (so the caller knows
+ * to skip the default text paste). Plain-text pastes return false and
+ * fall through to the textarea's default behaviour untouched.
+ */
+export async function handleImagePaste(
+  e: ClipboardEvent<HTMLTextAreaElement>,
+  onAttached: (info: PastedImageInfo) => void,
+): Promise<boolean> {
+  const blobs = extractImageFiles(e.clipboardData);
+  if (blobs.length === 0) return false;
+  e.preventDefault();
+  await saveAll(blobs, onAttached);
+  return true;
+}
+
+/**
+ * Drop-event handler for the same textareas. Mirrors handleImagePaste
+ * for image files dragged onto the field — pairs naturally with
+ * onDragOver={(e) => e.preventDefault()} so the browser allows the drop.
+ * Non-image drops fall through (handler returns false without
+ * preventDefault).
+ */
+export async function handleImageDrop(
+  e: DragEvent<HTMLTextAreaElement>,
+  onAttached: (info: PastedImageInfo) => void,
+): Promise<boolean> {
+  const blobs = extractImageFiles(e.dataTransfer);
+  if (blobs.length === 0) return false;
+  e.preventDefault();
+  await saveAll(blobs, onAttached);
   return true;
 }
