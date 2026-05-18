@@ -6,6 +6,7 @@ import type {
   Provider,
 } from '../../shared/types';
 import { Icon } from './Icon';
+import { AttachmentThumb } from './AttachmentThumb';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
 import {
@@ -244,7 +245,7 @@ export function SpawnAgentForm({
                   key={a.path}
                   title={a.reason ?? a.path}
                 >
-                  <Icon name="attach" size={10} />
+                  <AttachmentThumb path={a.path} />
                   {a.name}
                   <button
                     className="att-x"

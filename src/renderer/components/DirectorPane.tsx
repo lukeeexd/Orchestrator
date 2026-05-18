@@ -19,6 +19,7 @@ import type { SlashCommand } from '../../shared/commands';
 import { applyCommandArguments } from '../../shared/commands';
 import { BUILTIN_COMMANDS } from '../../shared/builtinCommands';
 import { Icon } from './Icon';
+import { AttachmentThumb } from './AttachmentThumb';
 import { PlanCard } from './PlanCard';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
@@ -325,7 +326,7 @@ function Message({
         <div className="msg-attachments">
           {message.attachments.map((a, i) => (
             <span className="att-chip" key={`${a.path}-${i}`} title={a.path}>
-              <Icon name="attach" size={10} /> {a.name}
+              <AttachmentThumb path={a.path} /> {a.name}
             </span>
           ))}
         </div>
@@ -655,7 +656,7 @@ function Composer({
               key={a.path}
               title={a.reason ?? a.path}
             >
-              <Icon name="attach" size={10} />
+              <AttachmentThumb path={a.path} />
               {a.name}
               <button
                 className="att-x"

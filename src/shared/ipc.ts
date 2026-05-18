@@ -27,6 +27,7 @@ export const IpcChannels = {
   AttachmentSavePaste: 'attachment:savePaste',
   AttachmentDispose: 'attachment:dispose',
   AttachmentDescribePaths: 'attachment:describePaths',
+  AttachmentReadThumb: 'attachment:readThumb',
   DirectorList: 'director:list',
   DirectorSend: 'director:send',
   DirectorAcceptPlan: 'director:acceptPlan',
@@ -234,6 +235,13 @@ export interface OrchestratorApi {
    * on-disk file (e.g. an in-memory blob).
    */
   getDroppedFilePath: (file: File) => string;
+  /**
+   * Read an image attachment off disk and return it as a `data:` URL the
+   * renderer can use directly as `<img src>`. Returns an empty string for
+   * non-image extensions, missing files, oversized files, or read
+   * errors — the caller falls back to the generic attach icon.
+   */
+  readAttachmentThumb: (path: string) => Promise<string>;
   listDirectorMessages: (projectId: string) => Promise<DirectorMessage[]>;
   sendToDirector: (
     projectId: string,

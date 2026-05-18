@@ -35,6 +35,7 @@ import { deleteAgent } from './persistence';
 import {
   describeAttachments,
   disposePastedFile,
+  readAttachmentAsDataUrl,
   savePastedImage,
   supportedAttachmentExtensions,
 } from './attachments';
@@ -408,6 +409,17 @@ export function registerIpcHandlers(): void {
       // case.
       const tempDir = path.join(app.getPath('temp'), 'orchestrator-paste');
       return savePastedImage(tempDir, base64, mediaType);
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AttachmentReadThumb,
+    (_event, target: string): string => {
+      // Gateway lives inside readAttachmentAsDataUrl — only image
+      // extensions get served, oversize / missing / non-file paths
+      // return an empty string and the renderer falls back to the
+      // generic icon.
+      return readAttachmentAsDataUrl(target);
     },
   );
 

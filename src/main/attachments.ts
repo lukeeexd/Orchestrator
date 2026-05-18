@@ -541,6 +541,31 @@ export function disposePastedFile(tempDir: string, target: string): boolean {
 }
 
 /**
+ * Read an image attachment off disk and return it as a `data:` URL the
+ * renderer can stuff straight into an `<img>` tag. Refuses anything
+ * outside the image extension whitelist so this can't be used to
+ * exfiltrate arbitrary file contents to the renderer. Returns an empty
+ * string for missing / oversize / unreadable / non-image paths — the
+ * UI treats that as "show the generic icon instead".
+ */
+export function readAttachmentAsDataUrl(absPath: string): string {
+  try {
+    if (!absPath) return '';
+    const ext = path.extname(absPath).toLowerCase();
+    const mediaType = IMAGE_MEDIA_TYPES[ext];
+    if (!mediaType) return '';
+    if (!fs.existsSync(absPath)) return '';
+    const stat = fs.statSync(absPath);
+    if (!stat.isFile()) return '';
+    if (stat.size > MAX_IMAGE_BYTES) return '';
+    const buf = fs.readFileSync(absPath);
+    return `data:${mediaType};base64,${buf.toString('base64')}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
  * One-shot sweep used at app startup to drop any pasted-image files
  * left behind from previous sessions. Files are non-sensitive once their
  * agent run has completed, so a wholesale wipe is fine and keeps the

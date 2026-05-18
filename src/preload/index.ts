@@ -93,6 +93,8 @@ const api: OrchestratorApi = {
   // Returning a string (not a Promise) makes the drop-handler glue much
   // tidier — no extra await before we even have the path.
   getDroppedFilePath: (file: File) => webUtils.getPathForFile(file),
+  readAttachmentThumb: (path) =>
+    ipcRenderer.invoke(IpcChannels.AttachmentReadThumb, path) as Promise<string>,
 
   listDirectorMessages: (projectId) =>
     ipcRenderer.invoke(
