@@ -849,13 +849,19 @@ export function listBundleSkills(
   if (!bundle) return [];
   const bundleDir = bundlePluginDir(sourceId, bundle);
   if (!fs.existsSync(bundleDir)) return [];
-  const entries = fs.readdirSync(bundleDir, { withFileTypes: true });
+  // Claude Code's canonical plugin layout puts skills under
+  // `<bundle>/skills/<name>/SKILL.md`. Some older bundles drop them
+  // at the bundle root (`<bundle>/<name>/SKILL.md`) — fall back to
+  // that if no `skills/` directory exists.
+  const skillsSubdir = path.join(bundleDir, 'skills');
+  const walkRoot = fs.existsSync(skillsSubdir) ? skillsSubdir : bundleDir;
+  const entries = fs.readdirSync(walkRoot, { withFileTypes: true });
   const out: BundleSkillInfo[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     // Skip the plugin metadata dir + any hidden dirs.
     if (entry.name.startsWith('.')) continue;
-    const skillFile = path.join(bundleDir, entry.name, 'SKILL.md');
+    const skillFile = path.join(walkRoot, entry.name, 'SKILL.md');
     if (!fs.existsSync(skillFile)) continue;
     let head: { name?: string; description?: string } = {};
     try {
@@ -948,13 +954,24 @@ function materializeSubset(
   if (fs.existsSync(metaSrc)) {
     fs.cpSync(metaSrc, metaDest, { recursive: true });
   }
+  // Mirror the source layout: skills live under `<bundle>/skills/`
+  // in the canonical Claude Code plugin spec; the legacy fallback is
+  // `<bundle>/<skill>` at the root. Match whichever the source uses
+  // so Claude's auto-loader still finds them in the subset.
+  const skillsSubdir = path.join(bundleDir, 'skills');
+  const sourceLayoutIsNested = fs.existsSync(skillsSubdir);
+  const srcRoot = sourceLayoutIsNested ? skillsSubdir : bundleDir;
+  const destRoot = sourceLayoutIsNested
+    ? path.join(subsetDir, 'skills')
+    : subsetDir;
+  if (sourceLayoutIsNested) fs.mkdirSync(destRoot, { recursive: true });
   // Copy each chosen skill subdir, ignoring ones that don't exist
   // (e.g. user picked them when an older sync had the file but the
   // upstream removed it).
   for (const skillId of skills) {
-    const skillSrc = path.join(bundleDir, skillId);
+    const skillSrc = path.join(srcRoot, skillId);
     if (!fs.existsSync(skillSrc)) continue;
-    const skillDest = path.join(subsetDir, skillId);
+    const skillDest = path.join(destRoot, skillId);
     fs.cpSync(skillSrc, skillDest, { recursive: true });
   }
   return subsetDir;
