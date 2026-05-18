@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
   type KeyboardEvent,
 } from 'react';
 import type {
@@ -23,6 +24,7 @@ import { EffortPicker } from './EffortPicker';
 import { DirectorStream } from './DirectorStream';
 import type { ViewMode } from './TopBar';
 import type { BuiltinAction } from '../../shared/builtinCommands';
+import { handleImagePaste } from '../lib/imagePaste';
 
 const ROLE_TINT: Record<Agent['role'], string> = {
   pm: '#4ade80',
@@ -678,10 +680,15 @@ function Composer({
             refreshMention(target.value, target.selectionStart ?? 0);
             refreshSlash(target.value, target.selectionStart ?? 0);
           }}
+          onPaste={(e: ClipboardEvent<HTMLTextAreaElement>) => {
+            void handleImagePaste(e, (info) =>
+              setAttachments((prev) => [...prev, info]),
+            );
+          }}
           placeholder={
             mode === 'auto'
-              ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ to reference an agent)'
-              : 'Ask the Director for advice… (/ for commands, @ to reference an agent)'
+              ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ to reference an agent, paste images to attach)'
+              : 'Ask the Director for advice… (/ for commands, @ to reference an agent, paste images to attach)'
           }
           rows={3}
         />
@@ -757,7 +764,7 @@ function Composer({
           style={{ height: 22 }}
           onClick={() => void pick()}
           disabled={busy}
-          title="Attach text files (md / code / config)"
+          title="Attach text files (md / code / config) or images (or paste images directly)"
         >
           <Icon name="attach" size={11} /> Attach
         </button>

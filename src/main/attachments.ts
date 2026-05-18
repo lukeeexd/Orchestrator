@@ -42,6 +42,15 @@ const MAX_TEXT_BYTES = 100 * 1024; // 100 KiB
  */
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
+/** Reverse map for pasted-image handling — clipboard MIME → file ext we recognize. */
+const MEDIA_TYPE_TO_EXT: Record<string, string> = {
+  'image/png': '.png',
+  'image/jpeg': '.jpeg',
+  'image/jpg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+};
+
 export type AttachmentKind = 'text' | 'image' | 'unsupported';
 
 function langTag(p: string): string {
@@ -295,4 +304,90 @@ export function prepareAttachments(
   }
 
   return { textInline, images, warnLines };
+}
+
+/**
+ * Write a base64-encoded image (typically from a clipboard paste) to a
+ * temp file under `tempDir` and return an AttachmentInfo describing it.
+ * The downstream runner reads the same temp file and re-encodes for the
+ * vision content block — slightly wasteful but keeps the pipeline
+ * uniform with file-picker attachments. Temp files live for the OS to
+ * clean up; for v0.7 we don't actively prune them.
+ *
+ * Returns an `ok: false` result (with a `reason`) for unsupported media
+ * types, invalid base64, or oversized payloads.
+ */
+export function savePastedImage(
+  tempDir: string,
+  base64: string,
+  mediaType: string,
+): AttachmentInfo {
+  const ext = MEDIA_TYPE_TO_EXT[mediaType.toLowerCase()];
+  if (!ext) {
+    return {
+      path: '',
+      name: 'pasted',
+      ok: false,
+      reason: `unsupported pasted image type: ${mediaType || '(empty)'}`,
+    };
+  }
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(base64, 'base64');
+  } catch {
+    return {
+      path: '',
+      name: `pasted${ext}`,
+      ok: false,
+      reason: 'invalid base64 payload',
+      kind: 'image',
+    };
+  }
+  if (bytes.length > MAX_IMAGE_BYTES) {
+    const mib = (bytes.length / (1024 * 1024)).toFixed(1);
+    return {
+      path: '',
+      name: `pasted${ext}`,
+      ok: false,
+      reason: `image too large (${mib} MiB, cap 5 MiB)`,
+      kind: 'image',
+    };
+  }
+  try {
+    fs.mkdirSync(tempDir, { recursive: true });
+  } catch (e) {
+    return {
+      path: '',
+      name: `pasted${ext}`,
+      ok: false,
+      reason: e instanceof Error ? e.message : 'failed to create temp dir',
+      kind: 'image',
+    };
+  }
+  // Filename: pasted-2026-05-18_14-30-57.png. Sortable, collision-free
+  // for one-paste-per-second; we add a short random suffix in case the
+  // user pastes two images in the same second.
+  const ts = new Date()
+    .toISOString()
+    .replace(/[:.]/g, '-')
+    .replace('T', '_')
+    .slice(0, 19);
+  const suffix = Math.random().toString(36).slice(2, 6);
+  const name = `pasted-${ts}-${suffix}${ext}`;
+  const fullPath = path.join(tempDir, name);
+  try {
+    fs.writeFileSync(fullPath, bytes);
+  } catch (e) {
+    return {
+      path: '',
+      name,
+      ok: false,
+      reason: e instanceof Error ? e.message : 'write failed',
+      kind: 'image',
+    };
+  }
+  // describeAttachments re-stats the file we just wrote, which catches
+  // any sneaky failure (zero-byte write, permission issue) and gives us
+  // the same shape every other call site already handles.
+  return describeAttachments([fullPath])[0];
 }

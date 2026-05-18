@@ -24,6 +24,7 @@ export const IpcChannels = {
   AgentSetEffort: 'agent:setEffort',
   AgentPickWorkspace: 'agent:pickWorkspace',
   AttachmentPick: 'attachment:pick',
+  AttachmentSavePaste: 'attachment:savePaste',
   DirectorList: 'director:list',
   DirectorSend: 'director:send',
   DirectorAcceptPlan: 'director:acceptPlan',
@@ -105,6 +106,15 @@ export interface PickAttachmentsResponse {
   attachments: { path: string; name: string; ok: boolean; reason?: string }[];
 }
 
+/** Single attachment info, mirroring main/attachments.ts AttachmentInfo. Used by savePastedImage. */
+export interface PastedImageInfo {
+  path: string;
+  name: string;
+  ok: boolean;
+  reason?: string;
+  kind?: 'text' | 'image' | 'unsupported';
+}
+
 export interface AgentEventAgentPayload {
   projectId: string;
   agent: Agent;
@@ -178,6 +188,17 @@ export interface OrchestratorApi {
   ) => Promise<{ ok: boolean }>;
   pickWorkspace: () => Promise<PickWorkspaceResponse>;
   pickAttachments: () => Promise<PickAttachmentsResponse>;
+  /**
+   * Save a base64-encoded image (typically from a clipboard paste) to a
+   * temp file and return an AttachmentInfo the UI can treat as if the
+   * user had picked it via the file dialog. The downstream runner reads
+   * the temp file and base64-encodes it again for the vision content
+   * block; round-trip is acceptable in exchange for a uniform pipeline.
+   */
+  savePastedImage: (
+    base64: string,
+    mediaType: string,
+  ) => Promise<PastedImageInfo>;
   listDirectorMessages: (projectId: string) => Promise<DirectorMessage[]>;
   sendToDirector: (
     projectId: string,

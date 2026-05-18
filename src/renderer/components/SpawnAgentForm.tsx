@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { ClipboardEvent } from 'react';
 import type {
   AgentRole,
   EffortLevel,
@@ -7,6 +8,7 @@ import type {
 import { Icon } from './Icon';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
+import { handleImagePaste } from '../lib/imagePaste';
 
 const ROLES: { id: AgentRole; label: string; tint: string }[] = [
   { id: 'pm', label: 'Project Manager', tint: '#4ade80' },
@@ -206,14 +208,19 @@ export function SpawnAgentForm({
               className="text-input task-input"
               value={task}
               onChange={(e) => setTask(e.target.value)}
-              placeholder="Describe what you want the agent to do…"
+              onPaste={(e: ClipboardEvent<HTMLTextAreaElement>) => {
+                void handleImagePaste(e, (info) =>
+                  setAttachments((prev) => [...prev, info]),
+                );
+              }}
+              placeholder="Describe what you want the agent to do… (paste images to attach)"
               rows={6}
             />
           </div>
 
           <div className="field">
             <span className="lbl">
-              Attachments · optional · text files only (md / code / config)
+              Attachments · optional · text files (md / code / config) or images (paste or pick)
             </span>
             <div className="att-row" style={{ marginBottom: 4 }}>
               {attachments.map((a) => (

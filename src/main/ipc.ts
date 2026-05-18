@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { ipcMain, app, BrowserWindow, dialog, shell } from 'electron';
 import {
   IpcChannels,
@@ -31,7 +32,7 @@ import {
 } from './agents/runner';
 import * as director from './director/runner';
 import { deleteAgent } from './persistence';
-import { describeAttachments } from './attachments';
+import { describeAttachments, savePastedImage } from './attachments';
 import {
   createProject,
   deleteProject,
@@ -381,6 +382,18 @@ export function registerIpcHandlers(): void {
     }
     return { attachments: describeAttachments(result.filePaths) };
   });
+
+  ipcMain.handle(
+    IpcChannels.AttachmentSavePaste,
+    (_event, base64: string, mediaType: string) => {
+      // Per-app subdir under the OS temp so we don't trip on collisions
+      // with other apps. We don't actively prune — the OS does that
+      // eventually for %TEMP%, and the data is non-sensitive once the
+      // agent run is over.
+      const tempDir = path.join(app.getPath('temp'), 'orchestrator-paste');
+      return savePastedImage(tempDir, base64, mediaType);
+    },
+  );
 
   // ─────────────────────────── Director ───────────────────────────
   ipcMain.handle(

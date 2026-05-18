@@ -69,6 +69,12 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.AttachmentPick) as Promise<
       import('../shared/ipc').PickAttachmentsResponse
     >,
+  savePastedImage: (base64, mediaType) =>
+    ipcRenderer.invoke(
+      IpcChannels.AttachmentSavePaste,
+      base64,
+      mediaType,
+    ) as Promise<import('../shared/ipc').PastedImageInfo>,
 
   listDirectorMessages: (projectId) =>
     ipcRenderer.invoke(
