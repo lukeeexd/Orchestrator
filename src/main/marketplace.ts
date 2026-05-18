@@ -1,6 +1,10 @@
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { Readable } from 'node:stream';
 import { app } from 'electron';
 import { getDb, scheduleSave } from './db';
 import { MARKETPLACE_GLOBAL_SCOPE_ID } from '../shared/ipc';
@@ -136,50 +140,186 @@ export async function probeGit(): Promise<string | null> {
 }
 
 /**
- * Sync (clone-or-fetch) a marketplace source. First-time sync does a
- * shallow clone (`--depth 1`); subsequent syncs fetch the latest tip
- * of the source's default branch and hard-reset the working tree to
- * it (no local edits to preserve).
- *
- * Returns the new HEAD SHA and a `changed` flag indicating whether
- * anything moved since the last sync — callers use the flag to decide
- * whether to fire "update available" notifications.
- *
- * Throws on git failure / network failure / missing `git` binary; the
- * caller is responsible for surfacing the error.
+ * Run `tar` (or the system equivalent) with the given args. Used for
+ * extracting the GitHub tarball fallback when git isn't available.
+ * Windows 10+ ships bsdtar at C:\Windows\System32\tar.exe so this
+ * works without a node-tar dependency on every supported platform.
  */
-export async function syncSource(
+function runTar(
+  args: string[],
+  options?: { cwd?: string; timeoutMs?: number },
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('tar', args, {
+      cwd: options?.cwd,
+      shell: false,
+      windowsHide: true,
+    });
+    let stderr = '';
+    proc.stderr?.setEncoding('utf8');
+    proc.stderr?.on('data', (c: string) => {
+      stderr += c;
+    });
+    proc.on('error', (err) => reject(err));
+    const timer = options?.timeoutMs
+      ? setTimeout(() => {
+          try {
+            proc.kill();
+          } catch {
+            /* ignore */
+          }
+          reject(new Error(`tar timed out after ${options.timeoutMs}ms`));
+        }, options.timeoutMs)
+      : null;
+    proc.on('close', (code) => {
+      if (timer) clearTimeout(timer);
+      if (code === 0) resolve();
+      else
+        reject(
+          new Error(
+            `tar ${args.join(' ')} failed (${code}): ${stderr.trim() || '(no stderr)'}`,
+          ),
+        );
+    });
+  });
+}
+
+interface SyncMethod {
+  kind: 'git-clone' | 'git-fetch' | 'tarball';
+}
+
+/**
+ * GitHub-tarball fallback. Used when git isn't on PATH (or its clone
+ * step failed). Downloads `https://codeload.github.com/<owner>/<repo>/
+ * tar.gz/<branch>` via the platform's native fetch, streams it to a
+ * temp file, extracts via the system `tar`, and atomically replaces
+ * the cache dir. Looks up the latest commit SHA via the GitHub API
+ * (unauthenticated; rate-limited to 60 requests/hour per IP which is
+ * more than enough for our use case).
+ */
+async function syncSourceViaTarball(
   source: SkillSourceRow,
 ): Promise<{ sha: string; changed: boolean }> {
-  const dir = sourceDir(source.id);
-  const exists = fs.existsSync(path.join(dir, '.git'));
+  // 1. Resolve the branch's HEAD SHA so we can store it. The
+  //    User-Agent header is required by GitHub's API; we send a
+  //    generic Orchestrator identifier.
+  const apiUrl = `https://api.github.com/repos/${source.repo}/commits/${encodeURIComponent(
+    source.defaultBranch,
+  )}`;
+  const apiResp = await fetch(apiUrl, {
+    headers: { 'User-Agent': 'Orchestrator (skill-marketplace)' },
+  });
+  if (!apiResp.ok) {
+    const body = await apiResp.text();
+    throw new Error(
+      `GitHub API ${apiResp.status} on ${apiUrl}: ${body.slice(0, 200)}`,
+    );
+  }
+  const apiJson = (await apiResp.json()) as { sha?: unknown };
+  const sha = typeof apiJson.sha === 'string' ? apiJson.sha : null;
+  if (!sha) {
+    throw new Error(`GitHub API didn't return a commit SHA for ${source.repo}`);
+  }
 
-  if (!exists) {
-    // Fresh clone. Ensure the parent dir exists; clone --depth 1
-    // straight into our managed location.
+  // 2. Stream the tarball to a temp file.
+  const tarballUrl = `https://codeload.github.com/${source.repo}/tar.gz/${encodeURIComponent(
+    source.defaultBranch,
+  )}`;
+  const tarResp = await fetch(tarballUrl, {
+    headers: { 'User-Agent': 'Orchestrator (skill-marketplace)' },
+  });
+  if (!tarResp.ok || !tarResp.body) {
+    throw new Error(
+      `tarball fetch ${tarResp.status} on ${tarballUrl}`,
+    );
+  }
+  const tempTar = path.join(
+    os.tmpdir(),
+    `orchestrator-marketplace-${randomUUID()}.tar.gz`,
+  );
+  await pipeline(
+    Readable.fromWeb(tarResp.body as never),
+    fs.createWriteStream(tempTar),
+  );
+
+  // 3. Extract to a sibling temp dir, then atomic-replace the cache
+  //    dir. We use a temp dir + rename instead of extracting into the
+  //    final location so a partial extract from a network failure
+  //    doesn't leave a corrupted cache.
+  const tempExtract = path.join(
+    os.tmpdir(),
+    `orchestrator-marketplace-${randomUUID()}-extract`,
+  );
+  fs.mkdirSync(tempExtract, { recursive: true });
+  try {
+    await runTar(['-xzf', tempTar, '-C', tempExtract], {
+      timeoutMs: 5 * 60 * 1000,
+    });
+
+    // GitHub tarballs always have a single top-level dir named
+    // <owner>-<repo>-<short-sha>. Move that dir's contents (i.e.
+    // rename it) into the cache location.
+    const entries = fs.readdirSync(tempExtract);
+    if (entries.length !== 1) {
+      throw new Error(
+        `unexpected tarball layout: ${entries.length} top-level entries`,
+      );
+    }
+    const inner = path.join(tempExtract, entries[0]);
+    const dir = sourceDir(source.id);
     fs.mkdirSync(path.dirname(dir), { recursive: true });
-    // If the directory exists but isn't a git repo (e.g. partial
-    // clone from a previous crash), remove it first so clone has a
-    // clean target.
     if (fs.existsSync(dir)) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
-    await runGit(
-      [
-        'clone',
-        '--depth',
-        '1',
-        '--branch',
-        source.defaultBranch,
-        `https://github.com/${source.repo}.git`,
-        dir,
-      ],
-      { timeoutMs: 5 * 60 * 1000 },
-    );
-    const sha = await runGit(['rev-parse', 'HEAD'], { cwd: dir });
-    return { sha, changed: source.lastSyncSha !== sha };
+    fs.renameSync(inner, dir);
+  } finally {
+    // Best-effort cleanup. The OS temp will reap leftovers anyway.
+    try {
+      fs.unlinkSync(tempTar);
+    } catch {
+      /* ignore */
+    }
+    try {
+      fs.rmSync(tempExtract, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   }
 
+  return { sha, changed: source.lastSyncSha !== sha };
+}
+
+async function syncSourceViaGitClone(
+  source: SkillSourceRow,
+): Promise<{ sha: string; changed: boolean }> {
+  const dir = sourceDir(source.id);
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  // If the directory exists but isn't a git repo (e.g. partial clone
+  // from a previous crash, or a prior tarball install that we're now
+  // upgrading), remove it first so clone has a clean target.
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  await runGit(
+    [
+      'clone',
+      '--depth',
+      '1',
+      '--branch',
+      source.defaultBranch,
+      `https://github.com/${source.repo}.git`,
+      dir,
+    ],
+    { timeoutMs: 5 * 60 * 1000 },
+  );
+  const sha = await runGit(['rev-parse', 'HEAD'], { cwd: dir });
+  return { sha, changed: source.lastSyncSha !== sha };
+}
+
+async function syncSourceViaGitFetch(
+  source: SkillSourceRow,
+): Promise<{ sha: string; changed: boolean }> {
+  const dir = sourceDir(source.id);
   // Incremental: fetch the tip of the branch (shallow), then hard-reset.
   await runGit(
     ['fetch', '--depth', '1', 'origin', source.defaultBranch],
@@ -190,6 +330,49 @@ export async function syncSource(
   });
   const sha = await runGit(['rev-parse', 'HEAD'], { cwd: dir });
   return { sha, changed: source.lastSyncSha !== sha };
+}
+
+/**
+ * Sync a marketplace source. Strategy:
+ *
+ * - If the cache dir already has a `.git/` subdir (a previous git
+ *   clone), do an incremental `git fetch --depth 1 + git reset --hard`.
+ *   Cheapest path; preserves git's delta-transfer benefits.
+ * - Otherwise: try a shallow `git clone --depth 1`. If git isn't on
+ *   PATH or the clone errors (network glitch, repo issue), fall back
+ *   to downloading the GitHub tarball via native fetch + extracting
+ *   with the system `tar`. The tarball path never produces a `.git/`
+ *   directory, so subsequent syncs for the same source stay on the
+ *   tarball path (no incremental, full re-download each time — fine
+ *   on broadband, slow on tethered, but at least it works without git
+ *   installed).
+ *
+ * Returns the new HEAD SHA and a `changed` flag the caller uses to
+ * decide whether to fire "update available" notifications.
+ */
+export async function syncSource(
+  source: SkillSourceRow,
+): Promise<{ sha: string; changed: boolean }> {
+  const dir = sourceDir(source.id);
+  if (fs.existsSync(path.join(dir, '.git'))) {
+    return syncSourceViaGitFetch(source);
+  }
+  const gitAvailable = (await probeGit()) !== null;
+  if (gitAvailable) {
+    try {
+      return await syncSourceViaGitClone(source);
+    } catch (e) {
+      // Don't surface yet — the tarball fallback might succeed. We
+      // do still log so the user can see the original error via
+      // devtools if the fallback also fails (then the tarball error
+      // is what bubbles up).
+      console.warn(
+        `[marketplace] git clone failed for ${source.id}, falling back to tarball:`,
+        e instanceof Error ? e.message : e,
+      );
+    }
+  }
+  return syncSourceViaTarball(source);
 }
 
 /**
