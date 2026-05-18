@@ -14,9 +14,9 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current focus | **Post-v1 cadence — roughly one minor every couple of days.** Next: v0.7.0 (first end-to-end test of the curated-tag-body release-notes workflow). |
-| Latest release | **v0.6.0** (Director skill slot) |
-| Last updated | 2026-05-18 |
+| Current focus | **Post-v1 cadence — roughly one minor every couple of days.** v0.8.0 ships the Skill Marketplace + MCP + cross-provider stack. Next: dogfood + Phase-3 polish backlog. |
+| Latest release | **v0.8.0** (Skill Marketplace, MCP, cross-provider) |
+| Last updated | 2026-05-19 |
 | Repo | `github.com/lukeeexd/Orchestrator` (**public** as of 2026-05-17). Branches: `main` (release), `dev` (working). |
 
 ## Decisions locked
@@ -155,7 +155,7 @@ Things that landed partially or are explicitly tabled. New sessions can pick fro
 - [x] Code signing deferred — SmartScreen warning is acceptable for self-install
 - [x] Dogfood + tag v0.1.0 on main — shipped 2026-05-15. Post-v1 cadence picked up from there; see "Post-v1 highlights" below for what landed v0.2 – v0.6.
 
-## Post-v1 highlights (v0.2 → v0.6)
+## Post-v1 highlights (v0.2 → v0.8)
 
 Bundled here because the cadence ran roughly one minor every couple of days and the per-release detail lives in the curated annotated-tag bodies on GitHub.
 
@@ -171,6 +171,8 @@ Bundled here because the cadence ran roughly one minor every couple of days and 
 - **ASAR integrity-fuse reversal.** v0.4.0 tried turning the fuses on — silent install failure. Reverted; fuses stay off until the integrity-hash flow is verified end-to-end. (`0a61b6b`)
 - **Release-notes workflow fix.** `actions/checkout` now fetches tag objects so curated annotated-tag bodies show up on the GitHub Release without a manual `gh release edit`. **v0.7.0 will be the first end-to-end test.** A `Write-Host` diagnostic in `release.yml` is there for debugging if it doesn't render.
 - **Going public.** Personal identifiers scrubbed from history; repo flipped public on 2026-05-17.
+- **v0.7.0 — Multimodal attachments.** Images (paste / drag-drop / pick) and PDFs ride as Anthropic vision / document content blocks via `claude --input-format stream-json`. Director→agent attachment forwarding so the coder sees the same screenshot the Director saw. Picker filter, drag-drop for text + PDF, image thumbnails in chip rows.
+- **v0.8.0 — Skill Marketplace + MCP + cross-provider.** New rail item for installing Claude Code skill bundles from GitHub-hosted marketplaces (default: `alirezarezvani/claude-skills`). Hybrid global/project scope; per-role + per-skill granularity; "Add source" supports any GitHub repo with a `.claude-plugin/marketplace.json`. Per-project MCP server config with curated presets (GitHub, Brave/Tavily/Exa/DuckDuckGo, Sequential Thinking, etc). Cross-provider: per-agent provider override, `directorProvider` lets the Director run on a different CLI than the agents, mixed-provider plans where the Director picks claude or codex per plan row. Tools tab "skills" renamed to "prompts" to disambiguate from Marketplace skills.
 
 ## Hardest unknowns (spike when their milestone arrives)
 
