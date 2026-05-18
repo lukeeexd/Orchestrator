@@ -209,6 +209,20 @@ export function saveDirectorSessionId(
   scheduleSave();
 }
 
+/**
+ * Drop just the saved Director session id, leaving chat messages
+ * intact. Used when the Director's provider changes — the new CLI
+ * can't resume a session created by the old one, so the next turn
+ * has to start fresh.
+ */
+export function clearDirectorSessionId(projectId: string): void {
+  const db = getDb();
+  const stmt = db.prepare(`DELETE FROM kv WHERE key = ?`);
+  stmt.run([sessionKey(projectId)]);
+  stmt.free();
+  scheduleSave();
+}
+
 export function loadDirectorSessionId(projectId: string): string | null {
   const db = getDb();
   const stmt = db.prepare(`SELECT value FROM kv WHERE key = ?`);

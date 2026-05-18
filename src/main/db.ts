@@ -207,6 +207,17 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE agents ADD COLUMN provider TEXT;`);
     },
   },
+  {
+    version: 14,
+    up: (db) => {
+      // Project-level Director provider override. NULL → Director uses
+      // the project's main `provider` column, matching the original
+      // single-provider-per-project behaviour. Letting the Director run
+      // on a different CLI than the agents (e.g. claude Director
+      // orchestrating codex coders) is the whole point of this column.
+      db.exec(`ALTER TABLE projects ADD COLUMN director_provider TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

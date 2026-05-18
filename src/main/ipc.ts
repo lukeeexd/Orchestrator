@@ -49,6 +49,7 @@ import {
   setActiveProjectId,
   setProjectDirectorEffort,
   setProjectDirectorModel,
+  setProjectDirectorProvider,
   setProjectRoleTools,
   setProjectWorkspace,
 } from './projects';
@@ -222,6 +223,24 @@ export function registerIpcHandlers(): void {
     IpcChannels.ProjectSetDirectorEffort,
     (_event, id: string, effort: EffortLevel | null): { ok: true } => {
       setProjectDirectorEffort(id, isEffortLevel(effort) ? effort : null);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetDirectorProvider,
+    (
+      _event,
+      id: string,
+      provider: import('../shared/types').Provider | null,
+    ): { ok: true } => {
+      const value =
+        provider === 'claude' || provider === 'codex' ? provider : null;
+      setProjectDirectorProvider(id, value);
+      // The new CLI can't resume the old CLI's session id, so drop the
+      // saved Director session and any in-memory state. Chat history
+      // stays — the user can still see what was said; the next turn
+      // just doesn't have model-side memory of it.
+      director.resetSessionForProviderChange(id);
       return { ok: true };
     },
   );

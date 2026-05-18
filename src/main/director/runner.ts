@@ -261,13 +261,18 @@ class DirectorSession {
     // spawn `codex exec -m claude-opus-4-7-1m` (which is what happened
     // before this branch was provider-aware — silent empty response).
     const project = getProject(this.projectId);
-    const provider = project?.provider ?? 'claude';
+    // The Director can opt into a different CLI than the agents via
+    // project.directorProvider — e.g. claude Director orchestrating a
+    // fleet of codex specialists. Falls through to the project's main
+    // provider when unset.
+    const provider =
+      project?.directorProvider ?? project?.provider ?? 'claude';
     // The persisted directorModel might be stale (e.g. left over from
     // before the project was a codex project, or hand-edited). Validate
-    // it matches the project provider — if not, fall through to the
-    // provider's default. Without this, `codex exec -m claude-opus-4-7-1m`
-    // returns an empty agent_message and the Director chat shows
-    // "(empty response)" with no clue why.
+    // it matches the Director's effective provider — if not, fall
+    // through to the provider's default. Without this, `codex exec -m
+    // claude-opus-4-7-1m` returns an empty agent_message and the
+    // Director chat shows "(empty response)" with no clue why.
     const persistedDirector =
       project?.directorModel && modelMatchesProvider(project.directorModel, provider)
         ? project.directorModel
@@ -430,6 +435,23 @@ export function hydrateAll(projectIds: string[]): void {
 export function discardSession(projectId: string): void {
   sessions.get(projectId)?.abort();
   sessions.delete(projectId);
+}
+
+/**
+ * Drop the in-memory Director session and clear its persisted SDK
+ * session id, leaving the chat-message history intact. The next
+ * sendFromUser lazily creates a new session with a null `sessionId`,
+ * so the new provider's CLI gets a fresh start rather than trying to
+ * resume a session id it can't read.
+ *
+ * Used when a project's Director provider is changed mid-run — the
+ * claude and codex CLIs don't share session formats, so any saved id
+ * becomes garbage to the new CLI.
+ */
+export function resetSessionForProviderChange(projectId: string): void {
+  sessions.get(projectId)?.abort();
+  sessions.delete(projectId);
+  persistence.clearDirectorSessionId(projectId);
 }
 
 /**

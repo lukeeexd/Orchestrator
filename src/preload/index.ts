@@ -164,6 +164,12 @@ const api: OrchestratorApi = {
       id,
       effort,
     ) as Promise<{ ok: true }>,
+  setProjectDirectorProvider: (id, provider) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetDirectorProvider,
+      id,
+      provider,
+    ) as Promise<{ ok: true }>,
   setProjectRoleTools: (id, roleTools) =>
     ipcRenderer.invoke(
       IpcChannels.ProjectSetRoleTools,

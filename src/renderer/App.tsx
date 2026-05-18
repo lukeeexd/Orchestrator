@@ -99,6 +99,7 @@ export function App() {
     setWorkspace: setProjectWorkspace,
     setDirectorModel: setProjectDirectorModel,
     setDirectorEffort: setProjectDirectorEffort,
+    setDirectorProvider: setProjectDirectorProvider,
     setRoleTools: setProjectRoleTools,
     remove: removeProject,
   } = useProjects();
@@ -109,22 +110,29 @@ export function App() {
   // codex project doesn't silently get the global claude default
   // (claude-opus-4-7-1m), which codex would reject as an unknown model.
   const activeProvider = activeProject?.provider ?? 'claude';
+  // The Director can opt into a different CLI than the agents via
+  // directorProvider. Default → use the project's agent provider, same
+  // as before this knob existed.
+  const directorProvider =
+    activeProject?.directorProvider ?? activeProvider;
   const providerDefaultModel = defaultModelForProvider(activeProvider);
+  const directorProviderDefaultModel =
+    defaultModelForProvider(directorProvider);
   const fallbackModel =
     activeProvider === 'claude'
       ? settings?.defaultModel ?? providerDefaultModel
       : providerDefaultModel;
   const directorFallbackModel =
-    activeProvider === 'claude'
-      ? settings?.defaultDirectorModel || fallbackModel
-      : providerDefaultModel;
-  // If the stored directorModel doesn't match the project's provider
-  // (e.g. legacy value or a project that was created codex but acquired
-  // a claude model via picker before this fix landed), fall through to
-  // the provider-appropriate default.
+    directorProvider === 'claude'
+      ? settings?.defaultDirectorModel || directorProviderDefaultModel
+      : directorProviderDefaultModel;
+  // If the stored directorModel doesn't match the Director's effective
+  // provider (e.g. legacy value, or the Director provider was just
+  // flipped to one whose model picker hasn't been touched yet), fall
+  // through to the provider-appropriate default.
   const persistedDirector =
     activeProject?.directorModel &&
-    modelMatchesProvider(activeProject.directorModel, activeProvider)
+    modelMatchesProvider(activeProject.directorModel, directorProvider)
       ? activeProject.directorModel
       : undefined;
   const directorModel = persistedDirector || directorFallbackModel;
@@ -387,12 +395,22 @@ export function App() {
               mode={mode}
               model={directorModel}
               effort={directorEffort}
+              directorProvider={directorProvider}
+              projectProvider={activeProvider}
               onModeChange={setMode}
               onModelChange={(m) => {
                 if (activeProjectId) void setProjectDirectorModel(activeProjectId, m);
               }}
               onEffortChange={(e) => {
                 if (activeProjectId) void setProjectDirectorEffort(activeProjectId, e);
+              }}
+              onDirectorProviderChange={(p) => {
+                if (!activeProjectId) return;
+                // null = clear override → fall back to project default.
+                void setProjectDirectorProvider(
+                  activeProjectId,
+                  p === activeProvider ? null : p,
+                );
               }}
               onSend={send}
               onSpawnPlan={spawnPlan}
@@ -401,7 +419,6 @@ export function App() {
                   await window.api.wipeDirector(activeProjectId);
               }}
               viewMode={viewMode}
-              provider={activeProject?.provider ?? 'claude'}
               projectId={activeProjectId}
               onSlashAction={async (action: BuiltinAction) => {
                 switch (action) {

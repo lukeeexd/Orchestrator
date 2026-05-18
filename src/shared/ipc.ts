@@ -41,6 +41,7 @@ export const IpcChannels = {
   ProjectSetWorkspace: 'project:setWorkspace',
   ProjectSetDirectorModel: 'project:setDirectorModel',
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
+  ProjectSetDirectorProvider: 'project:setDirectorProvider',
   ProjectSetRoleTools: 'project:setRoleTools',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
@@ -272,6 +273,16 @@ export interface OrchestratorApi {
   setProjectDirectorEffort: (
     id: string,
     effort: import('./types').EffortLevel,
+  ) => Promise<{ ok: true }>;
+  /**
+   * Set the Director's provider override for a project, or clear it
+   * by passing null. The main side also resets the Director's stored
+   * session id — the new CLI can't resume a session created by the
+   * old one, so the next turn starts fresh. Chat history stays put.
+   */
+  setProjectDirectorProvider: (
+    id: string,
+    provider: import('./types').Provider | null,
   ) => Promise<{ ok: true }>;
   setProjectRoleTools: (
     id: string,

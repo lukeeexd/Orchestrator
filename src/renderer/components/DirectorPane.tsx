@@ -48,9 +48,19 @@ interface Props {
   mode: DirectorMode;
   model: string;
   effort: EffortLevel;
+  /**
+   * The Director's effective provider. Computed in the parent as
+   * project.directorProvider ?? project.provider — lets the Director
+   * run on a different CLI than the project's agent default.
+   */
+  directorProvider: Provider;
+  /** The project's main provider (used for the codex agents badge etc). */
+  projectProvider: Provider;
   onModeChange: (next: DirectorMode) => void;
   onModelChange: (next: string) => void;
   onEffortChange: (next: EffortLevel) => void;
+  /** Switches the Director to a specific CLI. Pass project default to clear the override. */
+  onDirectorProviderChange: (next: Provider) => void;
   onSend: (
     body: string,
     mode: DirectorMode,
@@ -59,7 +69,6 @@ interface Props {
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   onWipe: () => Promise<void>;
   viewMode: ViewMode;
-  provider: Provider;
   /** Project id used to scope which `.claude/commands/` directory to load from. */
   projectId: string | null;
   /** Dispatches built-in slash command actions (rail nav, wipe, etc). */
@@ -81,14 +90,16 @@ export function DirectorPane({
   mode,
   model,
   effort,
+  directorProvider,
+  projectProvider,
   onModeChange,
   onModelChange,
   onEffortChange,
+  onDirectorProviderChange,
   onSend,
   onSpawnPlan,
   onWipe,
   viewMode,
-  provider,
   projectId,
   onSlashAction,
 }: Props) {
@@ -99,23 +110,43 @@ export function DirectorPane({
         <span className="title">
           <b>Director</b>
         </span>
-        {provider === 'codex' && (
+        {projectProvider === 'codex' && (
           <span
             className="badge"
-            title="This project runs against the `codex` CLI. Effort + tool allow-lists are simpler/different for Codex agents."
+            title="This project's agents run against the `codex` CLI. Effort + tool allow-lists are simpler/different for Codex agents."
             style={{ background: 'var(--sub-2)', color: 'var(--muted)' }}
           >
-            codex
+            agents: codex
+          </span>
+        )}
+        {directorProvider !== projectProvider && (
+          <span
+            className="badge"
+            title={`Director is overridden to ${directorProvider} (project default for agents is ${projectProvider}).`}
+            style={{ background: 'var(--sub-2)', color: 'var(--accent)' }}
+          >
+            director: {directorProvider}
           </span>
         )}
         <ModeToggle mode={mode} onChange={onModeChange} />
+        <select
+          className="text-input settings-select model-picker-compact"
+          value={directorProvider}
+          onChange={(e) =>
+            onDirectorProviderChange(e.target.value as Provider)
+          }
+          title="Director's CLI provider. Can differ from the project's agent default — useful for e.g. running a claude Director over codex specialists. Switching providers resets the Director's session (chat history stays)."
+        >
+          <option value="claude">claude</option>
+          <option value="codex">codex</option>
+        </select>
         <ModelPicker
           value={model}
           onChange={onModelChange}
           compact
-          provider={provider}
+          provider={directorProvider}
         />
-        {provider === 'claude' && (
+        {directorProvider === 'claude' && (
           <EffortPicker value={effort} onChange={onEffortChange} compact />
         )}
         <span className="spacer" />

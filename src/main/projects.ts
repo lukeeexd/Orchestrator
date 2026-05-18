@@ -23,7 +23,7 @@ function asInt(v: unknown, fallback = 0): number {
 export function listProjects(): Project[] {
   const db = getDb();
   const res = db.exec(
-    `SELECT id, name, workspace, created_at, director_model, director_effort, role_tools, provider FROM projects ORDER BY created_at ASC`,
+    `SELECT id, name, workspace, created_at, director_model, director_effort, role_tools, provider, director_provider FROM projects ORDER BY created_at ASC`,
   );
   if (res.length === 0) return [];
   return res[0].values.map((row) => {
@@ -31,6 +31,7 @@ export function listProjects(): Project[] {
     const de = row[5];
     const rt = row[6];
     const pv = row[7];
+    const dpv = row[8];
     return {
       id: asStr(row[0]),
       name: asStr(row[1]),
@@ -39,6 +40,8 @@ export function listProjects(): Project[] {
       provider: asProvider(pv),
       directorModel: typeof dm === 'string' && dm.length > 0 ? dm : undefined,
       directorEffort: isEffortLevel(de) ? de : undefined,
+      directorProvider:
+        dpv === 'claude' || dpv === 'codex' ? dpv : undefined,
       roleTools: parseRoleTools(rt),
     };
   });
@@ -84,6 +87,29 @@ export function setProjectDirectorEffort(
     `UPDATE projects SET director_effort = ? WHERE id = ?`,
   );
   stmt.run([effort && isEffortLevel(effort) ? effort : null, id]);
+  stmt.free();
+  scheduleSave();
+}
+
+/**
+ * Set the Director's provider override for a project. Pass `null` (or
+ * an invalid value) to clear, returning the Director to the project's
+ * default. The caller is responsible for resetting any in-memory and
+ * persisted Director session id — switching providers invalidates the
+ * existing session id because the new CLI can't resume a session
+ * created by the old one.
+ */
+export function setProjectDirectorProvider(
+  id: string,
+  provider: Provider | null,
+): void {
+  const db = getDb();
+  const value =
+    provider === 'claude' || provider === 'codex' ? provider : null;
+  const stmt = db.prepare(
+    `UPDATE projects SET director_provider = ? WHERE id = ?`,
+  );
+  stmt.run([value, id]);
   stmt.free();
   scheduleSave();
 }
