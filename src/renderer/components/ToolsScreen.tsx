@@ -95,7 +95,7 @@ export function ToolsScreen({ project, onChange, onMcpChange }: Props) {
     void setRoleAllowList(role, [...ROLES[role].tools]);
   };
 
-  const [tab, setTab] = useState<'tools' | 'skills' | 'mcp'>('tools');
+  const [tab, setTab] = useState<'tools' | 'prompts' | 'mcp'>('tools');
 
   if (!project) {
     return (
@@ -127,7 +127,7 @@ export function ToolsScreen({ project, onChange, onMcpChange }: Props) {
         <div
           className="mode-toggle"
           style={{ marginLeft: 12 }}
-          title="Per-role configuration: tool allow-lists (claude only) or skill prompts (both providers)."
+          title="Per-role configuration: tool allow-lists (claude only) or per-role prompt extensions (both providers). For Claude Code skills loaded from a marketplace, see the Marketplace rail item."
         >
           <button
             className={tab === 'tools' ? 'on' : ''}
@@ -136,10 +136,11 @@ export function ToolsScreen({ project, onChange, onMcpChange }: Props) {
             tools
           </button>
           <button
-            className={tab === 'skills' ? 'on' : ''}
-            onClick={() => setTab('skills')}
+            className={tab === 'prompts' ? 'on' : ''}
+            onClick={() => setTab('prompts')}
+            title="Per-role prompt extensions appended to each agent's system prompt at spawn time. For Claude Code skills loaded from a marketplace, see the Marketplace rail item."
           >
-            skills
+            prompts
           </button>
           <button
             className={tab === 'mcp' ? 'on' : ''}
@@ -154,17 +155,22 @@ export function ToolsScreen({ project, onChange, onMcpChange }: Props) {
       <div className="settings-body">
         {tab === 'mcp' ? (
           <McpEditor project={project} onMcpChange={onMcpChange} />
-        ) : tab === 'skills' ? (
+        ) : tab === 'prompts' ? (
           <section className="settings-section">
-            <h3 className="settings-h">Per-role skill prompts</h3>
+            <h3 className="settings-h">Per-role prompt extensions</h3>
             <p className="settings-help">
               Markdown appended to each role&apos;s system prompt at spawn
               time. Lets you teach a role about your codebase&apos;s
               conventions without editing the hardcoded prompts. Saved
               per-project at{' '}
               <code>{`<workspace>/.orchestrator/skills/<role>.md`}</code>.
-              Empty file means &quot;no skill&quot; (overrides any in-app
-              default).
+              Empty file means &quot;no extension&quot; (overrides any
+              in-app default). Distinct from{' '}
+              <strong>Marketplace</strong> skills — those are loaded as
+              Claude Code plugins via <code>--plugin-dir</code> and
+              surface as <code>/skill-name</code> commands the model can
+              invoke on demand; these prompt extensions are static text
+              that always shapes the role&apos;s disposition.
             </p>
             <SkillsEditor project={project} />
           </section>
@@ -178,7 +184,7 @@ export function ToolsScreen({ project, onChange, onMcpChange }: Props) {
               allow-lists. Per-role sandbox overrides aren&apos;t exposed
               yet — every codex agent currently runs with{' '}
               <code>workspace-write</code>. Switch to the{' '}
-              <strong>skills</strong> tab to author per-role guidance that
+              <strong>prompts</strong> tab to author per-role guidance that
               <em> does</em> apply on codex.
             </div>
           </section>
