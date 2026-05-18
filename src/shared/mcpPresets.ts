@@ -138,6 +138,63 @@ export const MCP_PRESETS: McpPreset[] = [
     parse: (e) => ({ BRAVE_API_KEY: e.env?.BRAVE_API_KEY ?? '' }),
   },
   {
+    id: 'tavily',
+    label: 'Tavily Search',
+    description:
+      'AI-purpose-built search with summaries and citations. Free tier covers ~1,000 searches/month, which is plenty for personal research workflows.',
+    docs: 'https://github.com/tavily-ai/tavily-mcp',
+    fields: [
+      {
+        key: 'TAVILY_API_KEY',
+        label: 'Tavily API key',
+        type: 'password',
+        required: true,
+        help: 'Sign up at app.tavily.com and copy your API key.',
+      },
+    ],
+    build: (v) => ({
+      command: 'npx',
+      args: ['-y', 'tavily-mcp'],
+      env: { TAVILY_API_KEY: v.TAVILY_API_KEY ?? '' },
+    }),
+    parse: (e) => ({ TAVILY_API_KEY: e.env?.TAVILY_API_KEY ?? '' }),
+  },
+  {
+    id: 'exa',
+    label: 'Exa Search',
+    description:
+      'Neural search optimised for technical / code content. Strong on "find papers about X" or "examples of pattern Y in the wild" queries.',
+    docs: 'https://github.com/exa-labs/exa-mcp-server',
+    fields: [
+      {
+        key: 'EXA_API_KEY',
+        label: 'Exa API key',
+        type: 'password',
+        required: true,
+        help: 'Sign up at dashboard.exa.ai. Free tier exists; heavy use is metered.',
+      },
+    ],
+    build: (v) => ({
+      command: 'npx',
+      args: ['-y', 'exa-mcp-server'],
+      env: { EXA_API_KEY: v.EXA_API_KEY ?? '' },
+    }),
+    parse: (e) => ({ EXA_API_KEY: e.env?.EXA_API_KEY ?? '' }),
+  },
+  {
+    id: 'duckduckgo',
+    label: 'DuckDuckGo Search',
+    description:
+      'Free, no-API-key web search via DuckDuckGo. Lighter results than Brave/Tavily/Exa, but zero signup. Requires Python uv (`pip install uv` / `pipx install uv`) on PATH — the server is a community Python package, not an npm one.',
+    docs: 'https://github.com/nickclyde/duckduckgo-mcp-server',
+    fields: [],
+    build: () => ({
+      command: 'uvx',
+      args: ['duckduckgo-mcp-server'],
+    }),
+    parse: () => ({}),
+  },
+  {
     id: 'filesystem',
     label: 'Filesystem (extra paths)',
     description:
