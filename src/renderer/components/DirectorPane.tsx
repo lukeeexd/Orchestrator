@@ -25,7 +25,10 @@ import { EffortPicker } from './EffortPicker';
 import { DirectorStream } from './DirectorStream';
 import type { ViewMode } from './TopBar';
 import type { BuiltinAction } from '../../shared/builtinCommands';
-import { handleImageDrop, handleImagePaste } from '../lib/imagePaste';
+import {
+  handleAttachmentDrop,
+  handleAttachmentPaste,
+} from '../lib/attachmentDataTransfer';
 
 const ROLE_TINT: Record<Agent['role'], string> = {
   pm: '#4ade80',
@@ -687,7 +690,7 @@ function Composer({
             refreshSlash(target.value, target.selectionStart ?? 0);
           }}
           onPaste={(e: ClipboardEvent<HTMLTextAreaElement>) => {
-            void handleImagePaste(e, (info) =>
+            void handleAttachmentPaste(e, (info) =>
               setAttachments((prev) => [...prev, info]),
             );
           }}
@@ -695,14 +698,14 @@ function Composer({
             e.preventDefault()
           }
           onDrop={(e: DragEvent<HTMLTextAreaElement>) => {
-            void handleImageDrop(e, (info) =>
+            void handleAttachmentDrop(e, (info) =>
               setAttachments((prev) => [...prev, info]),
             );
           }}
           placeholder={
             mode === 'auto'
-              ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ for agents, paste or drop images to attach)'
-              : 'Ask the Director for advice… (/ for commands, @ for agents, paste or drop images to attach)'
+              ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ for agents, paste or drop files to attach)'
+              : 'Ask the Director for advice… (/ for commands, @ for agents, paste or drop files to attach)'
           }
           rows={3}
         />
@@ -778,7 +781,7 @@ function Composer({
           style={{ height: 22 }}
           onClick={() => void pick()}
           disabled={busy}
-          title="Attach text files (md / code / config) or images (or paste images directly)"
+          title="Attach text / images / PDF — or paste / drop them directly into the textarea"
         >
           <Icon name="attach" size={11} /> Attach
         </button>

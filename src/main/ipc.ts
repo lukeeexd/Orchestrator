@@ -412,6 +412,17 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IpcChannels.AttachmentDescribePaths,
+    (_event, paths: string[]) => {
+      // Wraps describeAttachments so the drag-drop handler can validate
+      // non-image files (text, PDF) the same way the picker does. Image
+      // drops go through savePastedImage instead — we don't have a
+      // ready disk path for an in-memory blob.
+      return describeAttachments(Array.isArray(paths) ? paths : []);
+    },
+  );
+
+  ipcMain.handle(
     IpcChannels.AttachmentDispose,
     (_event, target: string): { ok: boolean } => {
       // disposePastedFile rejects anything outside our managed subdir,

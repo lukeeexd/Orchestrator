@@ -8,7 +8,10 @@ import type {
 import { Icon } from './Icon';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
-import { handleImageDrop, handleImagePaste } from '../lib/imagePaste';
+import {
+  handleAttachmentDrop,
+  handleAttachmentPaste,
+} from '../lib/attachmentDataTransfer';
 
 const ROLES: { id: AgentRole; label: string; tint: string }[] = [
   { id: 'pm', label: 'Project Manager', tint: '#4ade80' },
@@ -213,7 +216,7 @@ export function SpawnAgentForm({
               value={task}
               onChange={(e) => setTask(e.target.value)}
               onPaste={(e: ClipboardEvent<HTMLTextAreaElement>) => {
-                void handleImagePaste(e, (info) =>
+                void handleAttachmentPaste(e, (info) =>
                   setAttachments((prev) => [...prev, info]),
                 );
               }}
@@ -221,18 +224,18 @@ export function SpawnAgentForm({
                 e.preventDefault()
               }
               onDrop={(e: DragEvent<HTMLTextAreaElement>) => {
-                void handleImageDrop(e, (info) =>
+                void handleAttachmentDrop(e, (info) =>
                   setAttachments((prev) => [...prev, info]),
                 );
               }}
-              placeholder="Describe what you want the agent to do… (paste or drop images to attach)"
+              placeholder="Describe what you want the agent to do… (paste or drop files to attach)"
               rows={6}
             />
           </div>
 
           <div className="field">
             <span className="lbl">
-              Attachments · optional · text files (md / code / config) or images (paste or pick)
+              Attachments · optional · text / images / PDF · paste, drop, or pick
             </span>
             <div className="att-row" style={{ marginBottom: 4 }}>
               {attachments.map((a) => (

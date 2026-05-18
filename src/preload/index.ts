@@ -1,4 +1,9 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import {
+  contextBridge,
+  ipcRenderer,
+  webUtils,
+  type IpcRendererEvent,
+} from 'electron';
 import {
   IpcChannels,
   type AcceptPlanRequest,
@@ -79,6 +84,15 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.AttachmentDispose, path) as Promise<{
       ok: boolean;
     }>,
+  describeAttachmentPaths: (paths) =>
+    ipcRenderer.invoke(
+      IpcChannels.AttachmentDescribePaths,
+      paths,
+    ) as Promise<import('../shared/ipc').PastedImageInfo[]>,
+  // Runs synchronously in the preload context using Electron's webUtils.
+  // Returning a string (not a Promise) makes the drop-handler glue much
+  // tidier — no extra await before we even have the path.
+  getDroppedFilePath: (file: File) => webUtils.getPathForFile(file),
 
   listDirectorMessages: (projectId) =>
     ipcRenderer.invoke(

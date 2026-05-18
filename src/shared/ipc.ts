@@ -26,6 +26,7 @@ export const IpcChannels = {
   AttachmentPick: 'attachment:pick',
   AttachmentSavePaste: 'attachment:savePaste',
   AttachmentDispose: 'attachment:dispose',
+  AttachmentDescribePaths: 'attachment:describePaths',
   DirectorList: 'director:list',
   DirectorSend: 'director:send',
   DirectorAcceptPlan: 'director:acceptPlan',
@@ -217,6 +218,22 @@ export interface OrchestratorApi {
    * which ones we own.
    */
   disposeAttachment: (path: string) => Promise<{ ok: boolean }>;
+  /**
+   * Run describeAttachments on a list of paths and return the chip-shaped
+   * results. Used by the drag-drop handler for non-image files — the
+   * renderer resolves dropped File objects to disk paths via
+   * `getDroppedFilePath` and then validates them through this channel.
+   */
+  describeAttachmentPaths: (paths: string[]) => Promise<PastedImageInfo[]>;
+  /**
+   * Resolve a File object (typically from a drag-drop or file input) to
+   * its absolute disk path. Runs in the preload context via Electron's
+   * webUtils.getPathForFile — the only way to get the path with
+   * contextIsolation on, since File.path was removed for security.
+   * Returns an empty string if the File doesn't correspond to a real
+   * on-disk file (e.g. an in-memory blob).
+   */
+  getDroppedFilePath: (file: File) => string;
   listDirectorMessages: (projectId: string) => Promise<DirectorMessage[]>;
   sendToDirector: (
     projectId: string,
