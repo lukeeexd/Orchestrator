@@ -24,6 +24,8 @@ export const IpcChannels = {
   AgentSetEffort: 'agent:setEffort',
   AgentPickWorkspace: 'agent:pickWorkspace',
   AttachmentPick: 'attachment:pick',
+  AttachmentSavePaste: 'attachment:savePaste',
+  AttachmentDispose: 'attachment:dispose',
   DirectorList: 'director:list',
   DirectorSend: 'director:send',
   DirectorAcceptPlan: 'director:acceptPlan',
@@ -105,6 +107,15 @@ export interface PickAttachmentsResponse {
   attachments: { path: string; name: string; ok: boolean; reason?: string }[];
 }
 
+/** Single attachment info, mirroring main/attachments.ts AttachmentInfo. Used by savePastedImage. */
+export interface PastedImageInfo {
+  path: string;
+  name: string;
+  ok: boolean;
+  reason?: string;
+  kind?: 'text' | 'image' | 'unsupported';
+}
+
 export interface AgentEventAgentPayload {
   projectId: string;
   agent: Agent;
@@ -153,6 +164,14 @@ export interface AcceptPlanRequest {
   projectId: string;
   rows: PlanRow[];
   workspace: string;
+  /**
+   * Attachment paths from the user message that prompted this plan.
+   * Forwarded to every agent the plan auto-spawns so they see the same
+   * images/text the Director did. Without this, the Director can
+   * describe a screenshot in its plan, but the coder/qa/etc agents
+   * receive only the plan's task text and never the image itself.
+   */
+  attachments?: string[];
 }
 
 export interface AcceptPlanResponse {
@@ -178,6 +197,26 @@ export interface OrchestratorApi {
   ) => Promise<{ ok: boolean }>;
   pickWorkspace: () => Promise<PickWorkspaceResponse>;
   pickAttachments: () => Promise<PickAttachmentsResponse>;
+  /**
+   * Save a base64-encoded image (typically from a clipboard paste) to a
+   * temp file and return an AttachmentInfo the UI can treat as if the
+   * user had picked it via the file dialog. The downstream runner reads
+   * the temp file and base64-encodes it again for the vision content
+   * block; round-trip is acceptable in exchange for a uniform pipeline.
+   */
+  savePastedImage: (
+    base64: string,
+    mediaType: string,
+  ) => Promise<PastedImageInfo>;
+  /**
+   * Best-effort cleanup of an ephemeral attachment file (a path the user
+   * just removed from a chip list). The main side validates that the path
+   * is inside our managed temp subdir before deleting — picked attachments
+   * (the user's own files outside that subdir) are silently ignored, so
+   * the renderer can call this for every chip removal without tracking
+   * which ones we own.
+   */
+  disposeAttachment: (path: string) => Promise<{ ok: boolean }>;
   listDirectorMessages: (projectId: string) => Promise<DirectorMessage[]>;
   sendToDirector: (
     projectId: string,

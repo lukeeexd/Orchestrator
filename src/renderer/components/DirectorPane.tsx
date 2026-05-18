@@ -3,6 +3,8 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
+  type DragEvent,
   type KeyboardEvent,
 } from 'react';
 import type {
@@ -23,6 +25,7 @@ import { EffortPicker } from './EffortPicker';
 import { DirectorStream } from './DirectorStream';
 import type { ViewMode } from './TopBar';
 import type { BuiltinAction } from '../../shared/builtinCommands';
+import { handleImageDrop, handleImagePaste } from '../lib/imagePaste';
 
 const ROLE_TINT: Record<Agent['role'], string> = {
   pm: '#4ade80',
@@ -140,6 +143,7 @@ export function DirectorPane({
       )}
 
       <Composer
+        key={projectId ?? 'no-project'}
         busy={busy}
         mode={mode}
         agents={agents}
@@ -423,6 +427,10 @@ function Composer({
 
   const remove = (path: string) => {
     setAttachments((prev) => prev.filter((a) => a.path !== path));
+    // Fire-and-forget cleanup of the ephemeral paste-temp file (if any).
+    // Main-side guards against deleting picked attachments outside our
+    // managed temp dir, so this is safe for every chip removal.
+    if (path) void window.api.disposeAttachment(path);
   };
 
   const submit = async () => {
@@ -678,10 +686,23 @@ function Composer({
             refreshMention(target.value, target.selectionStart ?? 0);
             refreshSlash(target.value, target.selectionStart ?? 0);
           }}
+          onPaste={(e: ClipboardEvent<HTMLTextAreaElement>) => {
+            void handleImagePaste(e, (info) =>
+              setAttachments((prev) => [...prev, info]),
+            );
+          }}
+          onDragOver={(e: DragEvent<HTMLTextAreaElement>) =>
+            e.preventDefault()
+          }
+          onDrop={(e: DragEvent<HTMLTextAreaElement>) => {
+            void handleImageDrop(e, (info) =>
+              setAttachments((prev) => [...prev, info]),
+            );
+          }}
           placeholder={
             mode === 'auto'
-              ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ to reference an agent)'
-              : 'Ask the Director for advice… (/ for commands, @ to reference an agent)'
+              ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ for agents, paste or drop images to attach)'
+              : 'Ask the Director for advice… (/ for commands, @ for agents, paste or drop images to attach)'
           }
           rows={3}
         />
@@ -757,7 +778,7 @@ function Composer({
           style={{ height: 22 }}
           onClick={() => void pick()}
           disabled={busy}
-          title="Attach text files (md / code / config)"
+          title="Attach text files (md / code / config) or images (or paste images directly)"
         >
           <Icon name="attach" size={11} /> Attach
         </button>

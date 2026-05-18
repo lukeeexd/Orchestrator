@@ -10,6 +10,7 @@ import { ensureDefaultProject, listProjects } from './projects';
 import { probeCli } from './cli/spawn';
 import { setCliStatus } from './cli/status';
 import { setupAutoUpdater } from './updater';
+import { cleanupPastedImagesAtStart } from './attachments';
 
 if (started) {
   app.quit();
@@ -63,6 +64,13 @@ app.whenReady().then(async () => {
   // we can't resume its session. Flip those to 'error: Interrupted'
   // before hydrating so the renderer sees the right state.
   markRunningAgentsAsInterrupted();
+  // Wipe any pasted-image temp files left behind by previous sessions.
+  // Their associated agent runs are long dead and the files are
+  // non-sensitive — best-effort sweep keeps the temp dir from growing
+  // without bound.
+  cleanupPastedImagesAtStart(
+    path.join(app.getPath('temp'), 'orchestrator-paste'),
+  );
   ensureDefaultProject();
   director.hydrateAll(listProjects().map((p) => p.id));
   registry.hydrate();

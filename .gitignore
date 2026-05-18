@@ -1,6 +1,3 @@
-# Local tool scratch dirs (third-party CLIs that drop state into the cwd
-# teams.db when codex spawns it through Orchestrator).
-
 # Logs
 logs
 *.log

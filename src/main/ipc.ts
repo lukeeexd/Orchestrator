@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { ipcMain, app, BrowserWindow, dialog, shell } from 'electron';
 import {
   IpcChannels,
@@ -31,7 +32,12 @@ import {
 } from './agents/runner';
 import * as director from './director/runner';
 import { deleteAgent } from './persistence';
-import { describeAttachments } from './attachments';
+import {
+  describeAttachments,
+  disposePastedFile,
+  savePastedImage,
+  supportedAttachmentExtensions,
+} from './attachments';
 import {
   createProject,
   deleteProject,
@@ -372,15 +378,50 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IpcChannels.AttachmentPick, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return { attachments: [] };
+    // Filter the dialog to types we can actually do something with —
+    // text files inline as code blocks, images flow through as vision
+    // content blocks, PDFs as document blocks. Anything else used to
+    // sneak through and chip as 'unsupported', wasting a click.
     const result = await dialog.showOpenDialog(win, {
       title: 'Attach files',
       properties: ['openFile', 'multiSelections'],
+      filters: [
+        {
+          name: 'Supported attachments',
+          extensions: supportedAttachmentExtensions(),
+        },
+        { name: 'All files', extensions: ['*'] },
+      ],
     });
     if (result.canceled || result.filePaths.length === 0) {
       return { attachments: [] };
     }
     return { attachments: describeAttachments(result.filePaths) };
   });
+
+  ipcMain.handle(
+    IpcChannels.AttachmentSavePaste,
+    (_event, base64: string, mediaType: string) => {
+      // Per-app subdir under the OS temp so we don't trip on collisions
+      // with other apps. App-startup sweep handles long-term hygiene;
+      // per-chip dispose (below) handles the immediate "user clicked ×"
+      // case.
+      const tempDir = path.join(app.getPath('temp'), 'orchestrator-paste');
+      return savePastedImage(tempDir, base64, mediaType);
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AttachmentDispose,
+    (_event, target: string): { ok: boolean } => {
+      // disposePastedFile rejects anything outside our managed subdir,
+      // so it's safe for the renderer to call this for every chip
+      // removal — picked attachments outside the subdir are silently
+      // ignored.
+      const tempDir = path.join(app.getPath('temp'), 'orchestrator-paste');
+      return { ok: disposePastedFile(tempDir, target) };
+    },
+  );
 
   // ─────────────────────────── Director ───────────────────────────
   ipcMain.handle(
@@ -472,6 +513,17 @@ export function registerIpcHandlers(): void {
         ...(resolvedDirectorEffort ? { effort: resolvedDirectorEffort } : {}),
       };
 
+      // Attachments from the user message that prompted this plan flow
+      // to every agent the plan auto-spawns. Without this the Director
+      // can see (and describe) a pasted screenshot but the coder/qa/etc
+      // agents receive only the plan's text and never the image — so the
+      // Director can say "look at the screenshot" and the worker has
+      // no screenshot to look at.
+      const planAttachments =
+        req.attachments && req.attachments.length > 0
+          ? req.attachments
+          : undefined;
+
       const spawned: { id: string; name: string }[] = [];
       const firstId =
         req.rows.length > 0
@@ -483,6 +535,7 @@ export function registerIpcHandlers(): void {
                 workspace: req.workspace,
                 spawnedBy: 'director',
                 ...directorOverrides,
+                ...(planAttachments ? { attachments: planAttachments } : {}),
               },
               agentSinks,
             )
@@ -517,6 +570,7 @@ export function registerIpcHandlers(): void {
               workspace: req.workspace,
               spawnedBy: 'director',
               ...directorOverrides,
+              ...(planAttachments ? { attachments: planAttachments } : {}),
             },
             agentSinks,
           );
