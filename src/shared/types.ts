@@ -66,6 +66,16 @@ export interface Project {
    */
   directorProvider?: Provider;
   /**
+   * Project-level MCP server config, stored verbatim as the JSON the
+   * `claude --mcp-config` flag accepts (typically `{"mcpServers": {...}}`).
+   * Empty / undefined → no extra MCP servers, the spawn skips
+   * `--mcp-config` entirely. Codex spawns ignore this — codex exec has
+   * no equivalent flag. Mirrored to disk under userData/mcp-configs/
+   * so the CLI can read it from a file path instead of taking the
+   * whole JSON over argv.
+   */
+  mcpConfig?: string;
+  /**
    * Per-role tool allow-list overrides. Keys are AgentRole values; values are
    * the tools that role is permitted in this project. Roles not present in
    * the map fall back to the role's default tool set from `shared/roles.ts`.

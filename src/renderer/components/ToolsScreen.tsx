@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { AgentRole, Project } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { KNOWN_TOOLS } from '../../shared/tools';
@@ -10,6 +10,9 @@ interface Props {
   onChange: (
     roleTools: Partial<Record<AgentRole, string[]>> | null,
   ) => Promise<void>;
+  onMcpChange: (
+    config: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const ROLE_TINT: Record<AgentRole, string> = {
@@ -23,7 +26,7 @@ const ROLE_TINT: Record<AgentRole, string> = {
 
 const ROLE_ORDER: AgentRole[] = ['pm', 'researcher', 'coder', 'qa', 'devops', 'security'];
 
-export function ToolsScreen({ project, onChange }: Props) {
+export function ToolsScreen({ project, onChange, onMcpChange }: Props) {
   // Compose the live allow-list for every role: project override (if any)
   // wins over the role's hardcoded default. Same precedence the runner
   // uses at spawn time — keep them in lockstep.
@@ -84,7 +87,7 @@ export function ToolsScreen({ project, onChange }: Props) {
     void setRoleAllowList(role, [...ROLES[role].tools]);
   };
 
-  const [tab, setTab] = useState<'tools' | 'skills'>('tools');
+  const [tab, setTab] = useState<'tools' | 'skills' | 'mcp'>('tools');
 
   if (!project) {
     return (
@@ -130,12 +133,20 @@ export function ToolsScreen({ project, onChange }: Props) {
           >
             skills
           </button>
+          <button
+            className={tab === 'mcp' ? 'on' : ''}
+            onClick={() => setTab('mcp')}
+          >
+            mcp
+          </button>
         </div>
         <span className="spacer" />
       </div>
 
       <div className="settings-body">
-        {tab === 'skills' ? (
+        {tab === 'mcp' ? (
+          <McpEditor project={project} onMcpChange={onMcpChange} />
+        ) : tab === 'skills' ? (
           <section className="settings-section">
             <h3 className="settings-h">Per-role skill prompts</h3>
             <p className="settings-help">
@@ -264,5 +275,164 @@ export function ToolsScreen({ project, onChange }: Props) {
         )}
       </div>
     </div>
+  );
+}
+
+const EXAMPLE_MCP_CONFIG = `{
+  "mcpServers": {
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    }
+  }
+}`;
+
+function McpEditor({
+  project,
+  onMcpChange,
+}: {
+  project: Project;
+  onMcpChange: (
+    config: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>;
+}) {
+  // Local draft state lets the user edit without spam-saving every
+  // keystroke. The Save button commits and only then does the project
+  // record (and the on-disk mirror file) update.
+  const [draft, setDraft] = useState(project.mcpConfig ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  // Resync when the upstream project changes (e.g. switching projects).
+  useEffect(() => {
+    setDraft(project.mcpConfig ?? '');
+    setError(null);
+    setSaved(false);
+  }, [project.id, project.mcpConfig]);
+
+  const dirty = draft !== (project.mcpConfig ?? '');
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const value = draft.trim().length > 0 ? draft : null;
+      const res = await onMcpChange(value);
+      if (!res.ok) {
+        setError(res.error ?? 'save failed');
+      } else {
+        setSaved(true);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const res = await onMcpChange(null);
+      if (!res.ok) {
+        setError(res.error ?? 'clear failed');
+      } else {
+        setDraft('');
+        setSaved(true);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="settings-section">
+      <h3 className="settings-h">MCP server config</h3>
+      <p className="settings-help">
+        JSON config in the shape <code>claude --mcp-config</code> expects.
+        Passed to every claude-provider spawn in this project — the
+        Director and all auto-spawned agents inherit it. Saved per-project
+        in app data; not committed to your workspace. See the{' '}
+        <a
+          href="https://modelcontextprotocol.io/quickstart/user"
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          MCP docs
+        </a>{' '}
+        for available servers and their setup.
+      </p>
+      {project.provider === 'codex' && project.directorProvider !== 'claude' && (
+        <div
+          className="inline-empty"
+          style={{ padding: 14, marginBottom: 10 }}
+        >
+          This project runs against <code>codex exec</code>, which has no
+          equivalent to <code>--mcp-config</code>. Anything saved here
+          will sit on disk but never be applied — switch the project (or
+          just the Director) to claude to make use of MCP.
+        </div>
+      )}
+      <textarea
+        className="text-input"
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          setSaved(false);
+        }}
+        placeholder={EXAMPLE_MCP_CONFIG}
+        rows={18}
+        spellCheck={false}
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 12,
+          whiteSpace: 'pre',
+          overflowX: 'auto',
+        }}
+      />
+      {error && (
+        <div className="form-error" style={{ marginTop: 6 }}>
+          {error}
+        </div>
+      )}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginTop: 8,
+        }}
+      >
+        <button
+          className="tb-btn primary"
+          onClick={() => void save()}
+          disabled={busy || !dirty}
+          title={
+            dirty
+              ? 'Validate JSON and save for this project'
+              : 'No unsaved changes'
+          }
+        >
+          {busy ? 'Saving…' : dirty ? 'Save' : 'Saved'}
+        </button>
+        {project.mcpConfig && (
+          <button
+            className="tb-btn"
+            onClick={() => void clear()}
+            disabled={busy}
+            title="Drop the saved config; future spawns won't pass --mcp-config"
+          >
+            <Icon name="x" size={11} /> Clear
+          </button>
+        )}
+        {saved && !dirty && !error && (
+          <span style={{ color: 'var(--accent)', fontSize: 11 }}>
+            Saved — next spawn picks it up.
+          </span>
+        )}
+      </div>
+    </section>
   );
 }

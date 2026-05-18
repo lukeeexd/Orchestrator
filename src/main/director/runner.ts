@@ -23,7 +23,7 @@ import { nowTs } from '../agents/classifier';
 import * as persistence from '../persistence';
 import { prepareAttachments } from '../attachments';
 import * as registry from '../agents/registry';
-import { getProject } from '../projects';
+import { getMcpConfigPath, getProject } from '../projects';
 
 /**
  * Build the Director's effective system prompt: the hardcoded base
@@ -339,6 +339,9 @@ class DirectorSession {
               ...(prep.documents.length > 0
                 ? { documents: prep.documents }
                 : {}),
+              ...((p) => (p ? { mcpConfigPath: p } : {}))(
+                getMcpConfigPath(this.projectId),
+              ),
               abortController: this.controller,
               agent: 'director',
               agents: {

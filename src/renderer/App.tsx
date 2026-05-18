@@ -100,6 +100,7 @@ export function App() {
     setDirectorModel: setProjectDirectorModel,
     setDirectorEffort: setProjectDirectorEffort,
     setDirectorProvider: setProjectDirectorProvider,
+    setMcpConfig,
     setRoleTools: setProjectRoleTools,
     remove: removeProject,
   } = useProjects();
@@ -501,6 +502,11 @@ export function App() {
             onChange={async (roleTools) => {
               if (activeProjectId)
                 await setProjectRoleTools(activeProjectId, roleTools);
+            }}
+            onMcpChange={async (config) => {
+              if (!activeProjectId)
+                return { ok: false, error: 'no active project' };
+              return setMcpConfig(activeProjectId, config);
             }}
           />
         ) : active === 'cost' ? (

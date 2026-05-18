@@ -42,6 +42,7 @@ export const IpcChannels = {
   ProjectSetDirectorModel: 'project:setDirectorModel',
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
   ProjectSetDirectorProvider: 'project:setDirectorProvider',
+  ProjectSetMcpConfig: 'project:setMcpConfig',
   ProjectSetRoleTools: 'project:setRoleTools',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
@@ -284,6 +285,19 @@ export interface OrchestratorApi {
     id: string,
     provider: import('./types').Provider | null,
   ) => Promise<{ ok: true }>;
+  /**
+   * Save a project's MCP server config — JSON string in the
+   * `claude --mcp-config` shape (typically `{"mcpServers": {...}}`).
+   * Pass null or empty to clear. The main side validates that the
+   * payload parses as JSON; an invalid string returns
+   * `{ ok: false, error }` instead of corrupting the project record.
+   * Claude spawns pick up the new config on their next run; codex
+   * spawns ignore MCP entirely (codex exec has no equivalent flag).
+   */
+  setProjectMcpConfig: (
+    id: string,
+    config: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>;
   setProjectRoleTools: (
     id: string,
     roleTools: Partial<Record<import('./types').AgentRole, string[]>> | null,

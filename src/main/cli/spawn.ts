@@ -24,6 +24,12 @@ export interface ClaudeQueryOptions {
   images?: ImageContentBlock[];
   /** Optional PDF content blocks. Same trigger semantics as `images`. */
   documents?: DocumentContentBlock[];
+  /**
+   * Optional path to an MCP server config JSON file (the shape `claude
+   * --mcp-config` expects, typically `{"mcpServers": {...}}`). Skipped
+   * when absent or when the file doesn't exist on disk.
+   */
+  mcpConfigPath?: string;
   /** Per-agent definitions, passed as `--agents <json>`. Same shape as the SDK's options.agents. */
   agents: Record<
     string,
@@ -193,6 +199,9 @@ function buildArgs(o: ClaudeQueryOptions): string[] {
   }
   if (o.betas && o.betas.length > 0) {
     args.push('--betas', ...o.betas);
+  }
+  if (o.mcpConfigPath) {
+    args.push('--mcp-config', o.mcpConfigPath);
   }
 
   return args;

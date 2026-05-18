@@ -24,7 +24,7 @@ import { readSettings } from '../settings';
 import * as director from '../director/runner';
 import * as persistence from '../persistence';
 import { prepareAttachments } from '../attachments';
-import { getProject } from '../projects';
+import { getMcpConfigPath, getProject } from '../projects';
 import { effectiveSkill } from '../skills';
 
 /**
@@ -396,6 +396,9 @@ ${task}`;
             ...(prep.documents.length > 0
               ? { documents: prep.documents }
               : {}),
+            ...((p) => (p ? { mcpConfigPath: p } : {}))(
+              getMcpConfigPath(entry.agent.projectId),
+            ),
             abortController: controller,
             resume: parentSessionId,
             forkSession: true,
@@ -495,6 +498,9 @@ ${req.task}`;
             ...(prep.documents.length > 0
               ? { documents: prep.documents }
               : {}),
+            ...((p) => (p ? { mcpConfigPath: p } : {}))(
+              getMcpConfigPath(req.projectId),
+            ),
             abortController: controller,
             agent: 'main',
             agents: {
@@ -660,6 +666,9 @@ ${body}`;
             ...(prep.documents.length > 0
               ? { documents: prep.documents }
               : {}),
+            ...((p) => (p ? { mcpConfigPath: p } : {}))(
+              getMcpConfigPath(entry.agent.projectId),
+            ),
             abortController: controller,
             resume: entry.agent.sessionId,
             // Pass the agent config explicitly so the resumed turn uses

@@ -50,6 +50,7 @@ import {
   setProjectDirectorEffort,
   setProjectDirectorModel,
   setProjectDirectorProvider,
+  setProjectMcpConfig,
   setProjectRoleTools,
   setProjectWorkspace,
 } from './projects';
@@ -241,6 +242,30 @@ export function registerIpcHandlers(): void {
       // stays — the user can still see what was said; the next turn
       // just doesn't have model-side memory of it.
       director.resetSessionForProviderChange(id);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetMcpConfig,
+    (
+      _event,
+      id: string,
+      config: string | null,
+    ): { ok: boolean; error?: string } => {
+      // Validate the payload parses as JSON before persisting — a bad
+      // config string would otherwise wreck every subsequent spawn for
+      // the project. Empty / null clears the config (no validation).
+      if (config && config.trim().length > 0) {
+        try {
+          JSON.parse(config);
+        } catch (e) {
+          return {
+            ok: false,
+            error: e instanceof Error ? e.message : 'invalid JSON',
+          };
+        }
+      }
+      setProjectMcpConfig(id, config);
       return { ok: true };
     },
   );

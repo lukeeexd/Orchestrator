@@ -218,6 +218,19 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE projects ADD COLUMN director_provider TEXT;`);
     },
   },
+  {
+    version: 15,
+    up: (db) => {
+      // Project-level MCP server config — JSON string in the shape
+      // claude --mcp-config expects (typically {"mcpServers": {...}}).
+      // NULL → no MCP servers; the spawn skips --mcp-config entirely.
+      // Codex spawns ignore this column (codex doesn't support
+      // --mcp-config). The string is also mirrored to a file in
+      // app userData so the CLI can read a real path — passing huge
+      // JSON via argv would risk Windows' command-line length cap.
+      db.exec(`ALTER TABLE projects ADD COLUMN mcp_config TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;
