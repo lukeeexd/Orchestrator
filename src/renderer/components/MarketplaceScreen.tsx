@@ -442,11 +442,15 @@ function SourceSection({
               placeholder={`Search ${bundles.length} bundles…`}
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              style={{ flex: 1, height: 24 }}
+              // flex-basis 0 + minWidth 0 so the input can both
+              // grow to fill and shrink below content size. Without
+              // minWidth: 0 a long-options select on the right
+              // squeezes the input down to a few pixels.
+              style={{ flex: '1 1 0%', minWidth: 0, height: 24 }}
             />
             <button
               className={'tb-btn' + (installedOnly ? ' primary' : '')}
-              style={{ height: 24 }}
+              style={{ height: 24, flex: '0 0 auto' }}
               onClick={() => setInstalledOnly((v) => !v)}
               disabled={installedCount === 0}
               title={
@@ -460,13 +464,16 @@ function SourceSection({
               installed{installedCount > 0 ? ` (${installedCount})` : ''}
             </button>
             {categories.length > 0 && (
+              // Reusing model-picker-compact gives the select the
+              // chevron-aware right padding + a sensible min-width
+              // that fits "all categories" without truncation.
               <select
-                className="text-input settings-select"
+                className="text-input settings-select model-picker-compact"
                 value={categoryFilter}
                 onChange={(e) =>
                   setCategoryFilter(e.target.value as typeof categoryFilter)
                 }
-                style={{ height: 24 }}
+                style={{ flex: '0 0 auto' }}
               >
                 <option value="all">all categories</option>
                 {categories.map((c) => (
