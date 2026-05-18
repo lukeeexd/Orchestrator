@@ -133,6 +133,11 @@ function SourceSection({
 
   const [filter, setFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string | 'all'>('all');
+  const [installedOnly, setInstalledOnly] = useState(false);
+  const installedBundleIds = useMemo(
+    () => new Set(subscriptions.map((s) => s.bundleId)),
+    [subscriptions],
+  );
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -143,6 +148,7 @@ function SourceSection({
   const filteredBundles = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return bundles.filter((b) => {
+      if (installedOnly && !installedBundleIds.has(b.id)) return false;
       if (categoryFilter !== 'all' && b.category !== categoryFilter)
         return false;
       if (!q) return true;
@@ -151,30 +157,58 @@ function SourceSection({
       if (b.keywords?.some((k) => k.toLowerCase().includes(q))) return true;
       return false;
     });
-  }, [bundles, filter, categoryFilter]);
+  }, [bundles, filter, categoryFilter, installedOnly, installedBundleIds]);
+
+  const installedCount = subscriptions.length;
 
   return (
     <section className="settings-section">
       <div
         style={{
           display: 'flex',
-          alignItems: 'baseline',
+          alignItems: 'center',
           gap: 8,
-          marginBottom: 6,
+          marginBottom: 8,
         }}
       >
-        <h3 className="settings-h" style={{ margin: 0 }}>
-          {source.repo}
-        </h3>
-        <span
-          className="meta"
-          style={{ fontSize: 11, color: 'var(--muted)' }}
+        <code
+          style={{
+            fontSize: 12,
+            color: 'var(--text)',
+            background: 'transparent',
+            padding: 0,
+          }}
         >
-          {source.lastSyncSha
-            ? `${source.lastSyncSha.slice(0, 7)} · `
-            : ''}
-          last sync {timeAgo(source.lastSyncAt)}
+          {source.repo}
+        </code>
+        <span style={{ color: 'var(--muted-2)' }}>·</span>
+        {source.lastSyncSha && (
+          <>
+            <code
+              style={{
+                fontSize: 10,
+                color: 'var(--muted)',
+                background: 'transparent',
+                padding: 0,
+              }}
+              title={source.lastSyncSha}
+            >
+              {source.lastSyncSha.slice(0, 7)}
+            </code>
+            <span style={{ color: 'var(--muted-2)' }}>·</span>
+          </>
+        )}
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+          synced {timeAgo(source.lastSyncAt)}
         </span>
+        {installedCount > 0 && (
+          <>
+            <span style={{ color: 'var(--muted-2)' }}>·</span>
+            <span style={{ fontSize: 11, color: 'var(--accent)' }}>
+              {installedCount} installed
+            </span>
+          </>
+        )}
         <span className="spacer" />
         <button
           className="tb-btn"
@@ -215,6 +249,21 @@ function SourceSection({
               onChange={(e) => setFilter(e.target.value)}
               style={{ flex: 1, height: 24 }}
             />
+            <button
+              className={'tb-btn' + (installedOnly ? ' primary' : '')}
+              style={{ height: 24 }}
+              onClick={() => setInstalledOnly((v) => !v)}
+              disabled={installedCount === 0}
+              title={
+                installedCount === 0
+                  ? 'No bundles installed yet'
+                  : installedOnly
+                    ? 'Showing only installed bundles — click to show all'
+                    : 'Show only installed bundles'
+              }
+            >
+              installed{installedCount > 0 ? ` (${installedCount})` : ''}
+            </button>
             {categories.length > 0 && (
               <select
                 className="text-input settings-select"
