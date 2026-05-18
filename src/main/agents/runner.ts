@@ -474,6 +474,25 @@ async function run(
     for (const line of prep.warnLines) {
       sinks.onLog(agentId, { ts: nowTs(), kind: 'warn', msg: line });
     }
+    // Diagnostic: surface the marketplace plugins we're about to load
+    // so the user can verify --plugin-dir is being passed correctly.
+    // Emitted only when the spawn is going to claude (codex ignores
+    // pluginDirs); skipped silently when no bundles are subscribed.
+    if (runProvider === 'claude') {
+      const pluginDirs = pluginDirsForProject(req.projectId, req.role);
+      if (pluginDirs.length > 0) {
+        const summary = pluginDirs
+          .map((p) => p.split(/[/\\]/).pop() ?? p)
+          .join(', ');
+        sinks.onLog(agentId, {
+          ts: nowTs(),
+          kind: 'note',
+          msg: `Loading ${pluginDirs.length} skill bundle${
+            pluginDirs.length === 1 ? '' : 's'
+          } via --plugin-dir: ${summary}`,
+        });
+      }
+    }
     const promptWithContext = `[workspace] ${workdir}
 All file paths resolve here — your Read, Write, Edit, Glob, Grep tools all operate inside this folder. Use simple relative paths like "notes.md" (preferred) or the absolute path above.
 
