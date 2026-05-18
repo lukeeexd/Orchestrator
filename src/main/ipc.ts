@@ -730,6 +730,9 @@ export function registerIpcHandlers(): void {
         bundleId,
         bundle.version,
       );
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId,
+      });
       return { ok: true };
     },
   );
@@ -743,6 +746,9 @@ export function registerIpcHandlers(): void {
       bundleId: string,
     ): { ok: true } => {
       marketplace.unsubscribeBundle(projectId, sourceId, bundleId);
+      broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+        projectId,
+      });
       return { ok: true };
     },
   );
@@ -805,6 +811,9 @@ export function registerIpcHandlers(): void {
           bundleId,
           bundle.version,
         );
+        broadcast(IpcChannels.MarketplaceEventSubscriptionsChanged, {
+          projectId,
+        });
       }
       return { ok: true };
     },

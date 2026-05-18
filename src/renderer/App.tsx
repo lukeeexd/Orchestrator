@@ -14,6 +14,7 @@ import { useAgents } from './hooks/useAgents';
 import { useDirector } from './hooks/useDirector';
 import { useSettings } from './hooks/useSettings';
 import { useProjects } from './hooks/useProjects';
+import { useMarketplace } from './hooks/useMarketplace';
 import { TopBar, type ViewMode } from './components/TopBar';
 import { LeftRail, type RailScreen } from './components/LeftRail';
 import { StatusBar } from './components/StatusBar';
@@ -24,6 +25,7 @@ import { ResizeHandle } from './components/ResizeHandle';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { ToolsScreen } from './components/ToolsScreen';
+import { MarketplaceScreen } from './components/MarketplaceScreen';
 import { SpendScreen } from './components/SpendScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { CliMissingGate } from './components/CliMissingGate';
@@ -35,7 +37,10 @@ import {
 } from './components/ProjectTabs';
 
 const PLACEHOLDERS: Record<
-  Exclude<RailScreen, 'agents' | 'settings' | 'tools' | 'cost' | 'history'>,
+  Exclude<
+    RailScreen,
+    'agents' | 'settings' | 'tools' | 'cost' | 'history' | 'marketplace'
+  >,
   { title: string; icon: Parameters<typeof PlaceholderScreen>[0]['icon']; body: string }
 > = {
   templates: {
@@ -104,6 +109,7 @@ export function App() {
     setRoleTools: setProjectRoleTools,
     remove: removeProject,
   } = useProjects();
+  const marketplace = useMarketplace(activeProjectId);
   const activeProject: Project | null =
     projects.find((p) => p.id === activeProjectId) ?? null;
   const workspace = activeProject?.workspace ?? '';
@@ -383,6 +389,7 @@ export function App() {
         <LeftRail
           active={active}
           agentCount={agents.length}
+          marketplaceUpdateCount={marketplace.pendingUpdates.length}
           onSelect={setActive}
         />
 
@@ -508,6 +515,11 @@ export function App() {
                 return { ok: false, error: 'no active project' };
               return setMcpConfig(activeProjectId, config);
             }}
+          />
+        ) : active === 'marketplace' ? (
+          <MarketplaceScreen
+            projectId={activeProjectId}
+            projectName={activeProject?.name ?? null}
           />
         ) : active === 'cost' ? (
           <SpendScreen />

@@ -4,6 +4,7 @@ export type RailScreen =
   | 'agents'
   | 'templates'
   | 'tools'
+  | 'marketplace'
   | 'cost'
   | 'history'
   | 'settings';
@@ -18,10 +19,16 @@ interface RailItem {
 interface Props {
   active: RailScreen;
   agentCount: number;
+  marketplaceUpdateCount: number;
   onSelect: (next: RailScreen) => void;
 }
 
-export function LeftRail({ active, agentCount, onSelect }: Props) {
+export function LeftRail({
+  active,
+  agentCount,
+  marketplaceUpdateCount,
+  onSelect,
+}: Props) {
   const items: RailItem[] = [
     {
       id: 'agents',
@@ -31,6 +38,13 @@ export function LeftRail({ active, agentCount, onSelect }: Props) {
     },
     { id: 'templates', icon: 'templates', label: 'Templates' },
     { id: 'tools', icon: 'tools', label: 'Tools' },
+    {
+      id: 'marketplace',
+      icon: 'pin',
+      label: 'Marketplace',
+      badge:
+        marketplaceUpdateCount > 0 ? String(marketplaceUpdateCount) : undefined,
+    },
     { id: 'cost', icon: 'cost', label: 'Spend' },
     { id: 'history', icon: 'history', label: 'Runs' },
   ];

@@ -223,6 +223,11 @@ const api: OrchestratorApi = {
       sourceId: string;
       patch: Partial<import('../shared/ipc').MarketplaceSourceView>;
     }>(IpcChannels.MarketplaceEventSourcePatch, cb),
+  onMarketplaceSubscriptionsChanged: (cb) =>
+    subscribe<{ projectId: string }>(
+      IpcChannels.MarketplaceEventSubscriptionsChanged,
+      cb,
+    ),
   setProjectRoleTools: (id, roleTools) =>
     ipcRenderer.invoke(
       IpcChannels.ProjectSetRoleTools,

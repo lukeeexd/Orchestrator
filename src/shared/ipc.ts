@@ -51,6 +51,7 @@ export const IpcChannels = {
   MarketplaceRefresh: 'marketplace:refresh',
   MarketplaceAckUpdate: 'marketplace:ackUpdate',
   MarketplaceEventSourcePatch: 'marketplace:event:sourcePatch',
+  MarketplaceEventSubscriptionsChanged: 'marketplace:event:subscriptionsChanged',
   ProjectSetRoleTools: 'project:setRoleTools',
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
@@ -378,6 +379,10 @@ export interface OrchestratorApi {
   /** Subscribe to source-row patches (sync state, badges, error). */
   onMarketplaceSourcePatch: (
     cb: (p: { sourceId: string; patch: Partial<MarketplaceSourceView> }) => void,
+  ) => () => void;
+  /** Fires when subscribe / unsubscribe / ackUpdate touches a project's subscription list, so any open hooks for that project can re-fetch. */
+  onMarketplaceSubscriptionsChanged: (
+    cb: (p: { projectId: string }) => void,
   ) => () => void;
   setProjectRoleTools: (
     id: string,
