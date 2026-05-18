@@ -11,6 +11,7 @@ import { probeCli } from './cli/spawn';
 import { setCliStatus } from './cli/status';
 import { setupAutoUpdater } from './updater';
 import { cleanupPastedImagesAtStart } from './attachments';
+import * as marketplace from './marketplace';
 
 if (started) {
   app.quit();
@@ -76,12 +77,44 @@ app.whenReady().then(async () => {
   registry.hydrate();
   registerIpcHandlers();
   setupAutoUpdater();
+  // Seed the default skill marketplace (idempotent — INSERT OR IGNORE)
+  // and fire async syncs for any source that hasn't been refreshed in
+  // 24h. Fire-and-forget — git clone takes a moment and we don't want
+  // it blocking the UI. Errors get logged but don't surface as a
+  // user-facing failure: the user can hit Refresh manually if needed.
+  marketplace.ensureSource({
+    id: 'alirezarezvani/claude-skills',
+    repo: 'alirezarezvani/claude-skills',
+    defaultBranch: 'main',
+  });
+  void syncStaleMarketplaceSources();
   createWindow();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+async function syncStaleMarketplaceSources(): Promise<void> {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const sources = marketplace.listSources();
+  for (const source of sources) {
+    if (!source.enabled) continue;
+    if (source.lastSyncAt && source.lastSyncAt > cutoff) continue;
+    try {
+      const { sha } = await marketplace.syncSource(source);
+      marketplace.recordSourceSync(source.id, sha, Date.now());
+    } catch (e) {
+      // Network failure, git not on PATH, etc — log and move on. The
+      // user can hit Refresh manually from the Marketplace screen and
+      // see the same error inline.
+      console.error(
+        `[marketplace] startup sync failed for ${source.id}:`,
+        e instanceof Error ? e.message : e,
+      );
+    }
+  }
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

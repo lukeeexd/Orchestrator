@@ -25,6 +25,7 @@ import * as director from '../director/runner';
 import * as persistence from '../persistence';
 import { prepareAttachments } from '../attachments';
 import { getMcpConfigPath, getProject } from '../projects';
+import { pluginDirsForProject } from '../marketplace';
 import { effectiveSkill } from '../skills';
 
 /**
@@ -399,6 +400,9 @@ ${task}`;
             ...((p) => (p ? { mcpConfigPath: p } : {}))(
               getMcpConfigPath(entry.agent.projectId),
             ),
+            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
+              pluginDirsForProject(entry.agent.projectId),
+            ),
             abortController: controller,
             resume: parentSessionId,
             forkSession: true,
@@ -500,6 +504,9 @@ ${req.task}`;
               : {}),
             ...((p) => (p ? { mcpConfigPath: p } : {}))(
               getMcpConfigPath(req.projectId),
+            ),
+            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
+              pluginDirsForProject(req.projectId),
             ),
             abortController: controller,
             agent: 'main',
@@ -668,6 +675,9 @@ ${body}`;
               : {}),
             ...((p) => (p ? { mcpConfigPath: p } : {}))(
               getMcpConfigPath(entry.agent.projectId),
+            ),
+            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
+              pluginDirsForProject(entry.agent.projectId),
             ),
             abortController: controller,
             resume: entry.agent.sessionId,

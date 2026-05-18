@@ -30,6 +30,13 @@ export interface ClaudeQueryOptions {
    * when absent or when the file doesn't exist on disk.
    */
   mcpConfigPath?: string;
+  /**
+   * Plugin directories to load for this run. Each path is passed as
+   * `--plugin-dir <path>` (repeatable). Used by the skill marketplace
+   * to inject the project's subscribed skill bundles into every claude
+   * spawn. Empty / undefined → no extra flags.
+   */
+  pluginDirs?: string[];
   /** Per-agent definitions, passed as `--agents <json>`. Same shape as the SDK's options.agents. */
   agents: Record<
     string,
@@ -202,6 +209,11 @@ function buildArgs(o: ClaudeQueryOptions): string[] {
   }
   if (o.mcpConfigPath) {
     args.push('--mcp-config', o.mcpConfigPath);
+  }
+  if (o.pluginDirs && o.pluginDirs.length > 0) {
+    for (const dir of o.pluginDirs) {
+      args.push('--plugin-dir', dir);
+    }
   }
 
   return args;

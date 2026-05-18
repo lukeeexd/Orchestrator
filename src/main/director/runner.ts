@@ -24,6 +24,7 @@ import * as persistence from '../persistence';
 import { prepareAttachments } from '../attachments';
 import * as registry from '../agents/registry';
 import { getMcpConfigPath, getProject } from '../projects';
+import { pluginDirsForProject } from '../marketplace';
 
 /**
  * Build the Director's effective system prompt: the hardcoded base
@@ -341,6 +342,9 @@ class DirectorSession {
                 : {}),
               ...((p) => (p ? { mcpConfigPath: p } : {}))(
                 getMcpConfigPath(this.projectId),
+              ),
+              ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
+                pluginDirsForProject(this.projectId),
               ),
               abortController: this.controller,
               agent: 'director',
