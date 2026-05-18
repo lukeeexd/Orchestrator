@@ -501,6 +501,17 @@ export function registerIpcHandlers(): void {
         ...(resolvedDirectorEffort ? { effort: resolvedDirectorEffort } : {}),
       };
 
+      // Attachments from the user message that prompted this plan flow
+      // to every agent the plan auto-spawns. Without this the Director
+      // can see (and describe) a pasted screenshot but the coder/qa/etc
+      // agents receive only the plan's text and never the image — so the
+      // Director can say "look at the screenshot" and the worker has
+      // no screenshot to look at.
+      const planAttachments =
+        req.attachments && req.attachments.length > 0
+          ? req.attachments
+          : undefined;
+
       const spawned: { id: string; name: string }[] = [];
       const firstId =
         req.rows.length > 0
@@ -512,6 +523,7 @@ export function registerIpcHandlers(): void {
                 workspace: req.workspace,
                 spawnedBy: 'director',
                 ...directorOverrides,
+                ...(planAttachments ? { attachments: planAttachments } : {}),
               },
               agentSinks,
             )
@@ -546,6 +558,7 @@ export function registerIpcHandlers(): void {
               workspace: req.workspace,
               spawnedBy: 'director',
               ...directorOverrides,
+              ...(planAttachments ? { attachments: planAttachments } : {}),
             },
             agentSinks,
           );

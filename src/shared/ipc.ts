@@ -164,6 +164,14 @@ export interface AcceptPlanRequest {
   projectId: string;
   rows: PlanRow[];
   workspace: string;
+  /**
+   * Attachment paths from the user message that prompted this plan.
+   * Forwarded to every agent the plan auto-spawns so they see the same
+   * images/text the Director did. Without this, the Director can
+   * describe a screenshot in its plan, but the coder/qa/etc agents
+   * receive only the plan's task text and never the image itself.
+   */
+  attachments?: string[];
 }
 
 export interface AcceptPlanResponse {

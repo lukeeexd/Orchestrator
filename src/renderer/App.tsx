@@ -234,11 +234,33 @@ export function App() {
       }
       ws = path;
     }
+    // Find the user message that triggered this plan — scan backwards
+    // from the plan message to the most recent 'user' entry. Its
+    // attachments (typically pasted screenshots) flow through to every
+    // agent the plan spawns, so the coder sees the same image the
+    // Director did. Skipping intermediate system/handoff messages is
+    // important: those don't carry user-supplied attachments.
+    const planIdx = messages.findIndex((m) => m.id === msg.id);
+    let originatingAttachments: string[] | undefined;
+    if (planIdx >= 0) {
+      for (let i = planIdx - 1; i >= 0; i--) {
+        if (messages[i].who === 'user') {
+          const refs = messages[i].attachments;
+          if (refs && refs.length > 0) {
+            originatingAttachments = refs.map((a) => a.path);
+          }
+          break;
+        }
+      }
+    }
     try {
       await window.api.acceptPlan({
         projectId: activeProjectId,
         rows: effectiveRows,
         workspace: ws,
+        ...(originatingAttachments
+          ? { attachments: originatingAttachments }
+          : {}),
       });
     } catch (e) {
       console.error('[orchestrator] spawn failed', e);
