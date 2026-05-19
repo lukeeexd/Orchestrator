@@ -175,7 +175,12 @@ const api: OrchestratorApi = {
       IpcChannels.ProjectSetMcpConfig,
       id,
       config,
-    ) as Promise<{ ok: boolean; error?: string }>,
+    ) as Promise<{ ok: boolean; error?: string; commands?: string[] }>,
+  previewMcpConfigCommands: (config) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectPreviewMcpConfigCommands,
+      config,
+    ) as Promise<{ commands: string[] }>,
 
   // ─────────────────────────── Marketplace ───────────────────────────
   listMarketplaceSources: () =>

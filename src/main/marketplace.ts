@@ -189,6 +189,50 @@ interface SyncMethod {
 }
 
 /**
+ * Walk every entry inside `root` and throw if any of them resolves
+ * (via realpath) to a path outside `root`. Defense-in-depth against
+ * a tar that didn't strip `..` entries: a malicious marketplace
+ * source could otherwise plant files at known absolute paths during
+ * the extract step. The post-extract walk is cheap (tens of files)
+ * and bails on the first escape.
+ */
+function assertNoPathTraversal(root: string): void {
+  const rootReal = fs.realpathSync(root);
+  const stack: string[] = [root];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) break;
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const child = path.join(current, entry.name);
+      // realpath the child (resolves symlinks). If realpath itself
+      // fails (broken symlink / dangling junction), refuse — we
+      // can't prove it's contained.
+      let childReal: string;
+      try {
+        childReal = fs.realpathSync(child);
+      } catch {
+        throw new Error(
+          `tarball contains an unresolvable entry: ${entry.name}`,
+        );
+      }
+      if (
+        !(
+          childReal === rootReal ||
+          childReal.startsWith(rootReal + path.sep)
+        )
+      ) {
+        throw new Error(
+          `tarball escapes extract root: ${child} -> ${childReal}`,
+        );
+      }
+      if (entry.isDirectory() && !entry.isSymbolicLink()) {
+        stack.push(child);
+      }
+    }
+  }
+}
+
+/**
  * GitHub-tarball fallback. Used when git isn't on PATH (or its clone
  * step failed). Downloads `https://codeload.github.com/<owner>/<repo>/
  * tar.gz/<branch>` via the platform's native fetch, streams it to a
@@ -233,28 +277,40 @@ async function syncSourceViaTarball(
       `tarball fetch ${tarResp.status} on ${tarballUrl}`,
     );
   }
+  // L2: pre-allocate both temp paths and put the entire write +
+  // extract flow under one try/finally so a throw mid-pipeline (or
+  // mid-mkdir) doesn't orphan the partially-written tarball.
   const tempTar = path.join(
     os.tmpdir(),
     `orchestrator-marketplace-${randomUUID()}.tar.gz`,
   );
-  await pipeline(
-    Readable.fromWeb(tarResp.body as never),
-    fs.createWriteStream(tempTar),
-  );
-
-  // 3. Extract to a sibling temp dir, then atomic-replace the cache
-  //    dir. We use a temp dir + rename instead of extracting into the
-  //    final location so a partial extract from a network failure
-  //    doesn't leave a corrupted cache.
   const tempExtract = path.join(
     os.tmpdir(),
     `orchestrator-marketplace-${randomUUID()}-extract`,
   );
-  fs.mkdirSync(tempExtract, { recursive: true });
   try {
+    await pipeline(
+      Readable.fromWeb(tarResp.body as never),
+      fs.createWriteStream(tempTar),
+    );
+
+    // 3. Extract to a sibling temp dir, then atomic-replace the cache
+    //    dir. We use a temp dir + rename instead of extracting into the
+    //    final location so a partial extract from a network failure
+    //    doesn't leave a corrupted cache.
+    fs.mkdirSync(tempExtract, { recursive: true });
+
     await runTar(['-xzf', tempTar, '-C', tempExtract], {
       timeoutMs: 5 * 60 * 1000,
     });
+
+    // M5: defense-in-depth path traversal guard. Microsoft's bsdtar
+    // on Win10+ already rejects `..` entries, but a GNU tar in the
+    // user's PATH (msys/WSL passthrough) would follow them. Walk
+    // the extracted tree and refuse any file whose normalized path
+    // escapes tempExtract. If any escape is found we treat the
+    // whole extract as poisoned and bail before the rename.
+    assertNoPathTraversal(tempExtract);
 
     // GitHub tarballs always have a single top-level dir named
     // <owner>-<repo>-<short-sha>. Move that dir's contents (i.e.

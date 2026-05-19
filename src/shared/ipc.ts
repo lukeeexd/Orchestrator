@@ -43,6 +43,7 @@ export const IpcChannels = {
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
   ProjectSetDirectorProvider: 'project:setDirectorProvider',
   ProjectSetMcpConfig: 'project:setMcpConfig',
+  ProjectPreviewMcpConfigCommands: 'project:previewMcpConfigCommands',
   MarketplaceListSources: 'marketplace:listSources',
   MarketplaceListBundles: 'marketplace:listBundles',
   MarketplaceListSubscriptions: 'marketplace:listSubscriptions',
@@ -525,10 +526,27 @@ export interface OrchestratorApi {
    * Claude spawns pick up the new config on their next run; codex
    * spawns ignore MCP entirely (codex exec has no equivalent flag).
    */
+  /**
+   * Returns the list of commands the MCP config would spawn on each
+   * agent run, parsed from `mcpServers[*].command`. Used by the
+   * renderer to show a "this will execute X on every spawn"
+   * confirmation step before commit. Empty config / invalid JSON
+   * returns an empty commands array — the actual commit call
+   * returns the parse error.
+   */
+  previewMcpConfigCommands: (
+    config: string | null,
+  ) => Promise<{ commands: string[] }>;
+  /**
+   * Returns the commands as part of the response so the renderer can
+   * show a "saved — these commands will run on each spawn" confirm
+   * message. Also pushed as a Director system message for an audit
+   * trail the user can see later.
+   */
   setProjectMcpConfig: (
     id: string,
     config: string | null,
-  ) => Promise<{ ok: boolean; error?: string }>;
+  ) => Promise<{ ok: boolean; error?: string; commands?: string[] }>;
   // ───────────────────────── Skill marketplace ─────────────────────────
   /** Configured marketplace sources (the alirezarezvani repo etc.). */
   listMarketplaceSources: () => Promise<MarketplaceSourceView[]>;

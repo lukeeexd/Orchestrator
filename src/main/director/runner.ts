@@ -127,6 +127,25 @@ class DirectorSession {
     void this.pump();
   }
 
+  /**
+   * Push a free-form system message into the chat. Used for audit-
+   * trail events like "MCP config updated — these commands will
+   * execute on every spawn" so the user has a persistent visible
+   * record of trust-relevant decisions.
+   *
+   * Doesn't queue a Director turn — pure UI notification.
+   */
+  notifySystem(body: string): void {
+    this.pushMessage({
+      id: randomUUID(),
+      projectId: this.projectId,
+      who: 'system',
+      name: 'system',
+      time: timeOnly(),
+      body,
+    });
+  }
+
   notifyAgentDone(agentName: string, summary: string): void {
     const body = `[handoff] Agent ${agentName} completed. ${
       summary ? 'Summary: ' + summary : 'No summary.'
@@ -565,6 +584,10 @@ export function notifyAgentDone(
   summary: string,
 ): void {
   getSession(projectId).notifyAgentDone(agentName, summary);
+}
+
+export function notifySystem(projectId: string, body: string): void {
+  getSession(projectId).notifySystem(body);
 }
 
 export function acknowledgePlanAccepted(

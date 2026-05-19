@@ -42,6 +42,15 @@ import {
   supportedAttachmentExtensions,
 } from './attachments';
 import * as marketplace from './marketplace';
+import {
+  assertValidWorkspacePath,
+  assertWorkspaceMatchesProject,
+} from './security/workspace';
+import { extractMcpCommands } from './security/mcp';
+import {
+  allowAttachment,
+  isAttachmentAllowed,
+} from './security/attachments';
 import type {
   MarketplaceBundleView,
   MarketplaceSourceView,
@@ -202,7 +211,17 @@ export function registerIpcHandlers(): void {
       workspace: string,
       provider?: import('../shared/types').Provider,
     ): Project => {
-      const project = createProject(name, workspace, provider ?? 'claude');
+      // C2: validate the workspace if one was supplied at creation
+      // time. The empty string is allowed — a project can be created
+      // with no workspace yet (the rail asks the user to pick one
+      // before the first spawn) — and the spawn handler's
+      // match-against-stored-workspace check catches anything that
+      // tries to sneak in later.
+      const validatedWs =
+        typeof workspace === 'string' && workspace.length > 0
+          ? assertValidWorkspacePath(workspace)
+          : '';
+      const project = createProject(name, validatedWs, provider ?? 'claude');
       // If the user has the "copy globals to new projects" toggle on,
       // snapshot every current global marketplace sub into the new
       // project as a project-scoped clone (preserving its roles +
@@ -261,7 +280,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IpcChannels.ProjectSetWorkspace,
     (_event, id: string, workspace: string): { ok: true } => {
-      setProjectWorkspace(id, workspace);
+      // C2: validate before writing. Rejects UNC, device-namespace,
+      // root-only, and non-existent targets so a malicious or
+      // mistyped path can't poison the project record (which would
+      // then flow to every subsequent spawn via the match check).
+      const validated = assertValidWorkspacePath(workspace);
+      setProjectWorkspace(id, validated);
       return { ok: true };
     },
   );
@@ -303,13 +327,17 @@ export function registerIpcHandlers(): void {
       _event,
       id: string,
       config: string | null,
-    ): { ok: boolean; error?: string } => {
-      // Validate the payload parses as JSON before persisting — a bad
-      // config string would otherwise wreck every subsequent spawn for
-      // the project. Empty / null clears the config (no validation).
+    ): { ok: boolean; error?: string; commands?: string[] } => {
+      // H3: parse + extract the commands the config would spawn so
+      // we can return them to the renderer (for a confirmation
+      // step) and surface them in the Director chat as a persistent
+      // audit trail. `claude --mcp-config` literally spawns
+      // `mcpServers[*].command`, so a renderer that can write the
+      // config can pick the binary that runs on every agent spawn.
+      let commands: string[] = [];
       if (config && config.trim().length > 0) {
         try {
-          JSON.parse(config);
+          commands = extractMcpCommands(config);
         } catch (e) {
           return {
             ok: false,
@@ -318,7 +346,31 @@ export function registerIpcHandlers(): void {
         }
       }
       setProjectMcpConfig(id, config);
-      return { ok: true };
+      // Audit trail in the Director chat so the user has a visible
+      // record that "X started running on each spawn at HH:MM:SS".
+      // Skipped on clear (commands == [] and config null).
+      if (commands.length > 0) {
+        const list = commands.join(', ');
+        director.notifySystem(
+          id,
+          `MCP config updated. The following commands will execute on every Claude agent spawn for this project: ${list}`,
+        );
+      } else if (!config) {
+        director.notifySystem(id, 'MCP config cleared.');
+      }
+      return { ok: true, commands };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.ProjectPreviewMcpConfigCommands,
+    (_event, config: string | null): { commands: string[] } => {
+      if (!config || config.trim().length === 0) return { commands: [] };
+      try {
+        return { commands: extractMcpCommands(config) };
+      } catch {
+        return { commands: [] };
+      }
     },
   );
   ipcMain.handle(
@@ -380,7 +432,18 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IpcChannels.AgentSpawn,
     async (_event, req: SpawnAgentRequest): Promise<SpawnAgentResponse> => {
-      const result = await spawnAgent(req, agentSinks);
+      // C2: pin the cwd to the project's stored workspace so a
+      // compromised renderer can't redirect a spawn into C:\Users\
+      // or a UNC mount. Throws WorkspaceRejected -> propagates as
+      // a rejected IPC promise the renderer's catch already handles.
+      const validated = assertWorkspaceMatchesProject(
+        req.projectId,
+        req.workspace,
+      );
+      const result = await spawnAgent(
+        { ...req, workspace: validated },
+        agentSinks,
+      );
       return { ok: true, agentId: result.agentId };
     },
   );
@@ -488,6 +551,19 @@ export function registerIpcHandlers(): void {
     if (result.canceled || result.filePaths.length === 0) {
       return { attachments: [] };
     }
+    // M2: every picked path is a user-gesture event — allow-list
+    // it so the runner can later read it via prepareAttachments
+    // and the renderer can read its thumb via AttachmentReadThumb.
+    // Paths that fail realpath resolution (deleted between pick
+    // and IPC return) are dropped silently and chip as "read
+    // failed" via describeAttachments.
+    for (const p of result.filePaths) {
+      try {
+        allowAttachment(p);
+      } catch {
+        /* describeAttachments will mark it ok:false */
+      }
+    }
     return { attachments: describeAttachments(result.filePaths) };
   });
 
@@ -498,17 +574,29 @@ export function registerIpcHandlers(): void {
       // with other apps. App-startup sweep handles long-term hygiene;
       // per-chip dispose (below) handles the immediate "user clicked ×"
       // case.
-      return savePastedImage(pasteTempDir(), base64, mediaType);
+      const info = savePastedImage(pasteTempDir(), base64, mediaType);
+      // M2: allow-list the written path so subsequent runner reads
+      // succeed. The save itself is server-driven (we minted the
+      // path), so this is trust-bounded.
+      if (info.ok && info.path) {
+        try {
+          allowAttachment(info.path);
+        } catch {
+          /* lost between write and realpath — skip allow-list,
+             describeAttachments already covers the failure path */
+        }
+      }
+      return info;
     },
   );
 
   ipcMain.handle(
     IpcChannels.AttachmentReadThumb,
     (_event, target: string): string => {
-      // Gateway lives inside readAttachmentAsDataUrl — only image
-      // extensions get served, oversize / missing / non-file paths
-      // return an empty string and the renderer falls back to the
-      // generic icon.
+      // M2: only serve thumbs for paths in the per-session allow-
+      // list. Without this, a renderer can call readThumb on any
+      // image file on disk and exfiltrate it as a data URL.
+      if (!isAttachmentAllowed(target)) return '';
       return readAttachmentAsDataUrl(target);
     },
   );
@@ -520,7 +608,18 @@ export function registerIpcHandlers(): void {
       // non-image files (text, PDF) the same way the picker does. Image
       // drops go through savePastedImage instead — we don't have a
       // ready disk path for an in-memory blob.
-      return describeAttachments(Array.isArray(paths) ? paths : []);
+      const list = Array.isArray(paths) ? paths : [];
+      // M2: drag-drop is a user gesture too — allow-list each path
+      // we describe. Paths that fail realpath are skipped here and
+      // chip as ok:false via describeAttachments below.
+      for (const p of list) {
+        try {
+          allowAttachment(p);
+        } catch {
+          /* skip */
+        }
+      }
+      return describeAttachments(list);
     },
   );
 
@@ -599,6 +698,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IpcChannels.DirectorAcceptPlan,
     async (_event, req: AcceptPlanRequest): Promise<AcceptPlanResponse> => {
+      // C2: validate the plan workspace ONCE up front so every row
+      // (the first synchronous spawn + the detached loop's rest)
+      // uses the same pinned, validated path. Throws on mismatch.
+      const validatedWorkspace = assertWorkspaceMatchesProject(
+        req.projectId,
+        req.workspace,
+      );
       // Director auto-spawns inherit the Director's effective model +
       // effort — using the same cascade the Director itself uses
       // (per-project override → settings.defaultDirectorModel/Effort →
@@ -644,7 +750,7 @@ export function registerIpcHandlers(): void {
                 projectId: req.projectId,
                 role: req.rows[0].role,
                 task: req.rows[0].task,
-                workspace: req.workspace,
+                workspace: validatedWorkspace,
                 spawnedBy: 'director',
                 ...directorOverrides,
                 // Per-row provider override (mixed-provider plans).
