@@ -69,7 +69,6 @@ export const IpcChannels = {
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
-  AppCliStatus: 'app:cliStatus',
   AppCliStatusByProvider: 'app:cliStatusByProvider',
   AppOpenUsage: 'app:openUsage',
   SpendGet: 'spend:get',
@@ -292,8 +291,11 @@ export interface MarketplaceSubscriptionView {
    * 'director' (if present). An empty array subscribes the bundle
    * without making it available to any role — the UI surfaces that
    * as a "no agents" hint.
+   *
+   * L4: narrowed from `string[] | null` to the actual union the
+   * runtime enforces. Anything else round-trips a no-op.
    */
-  roles: string[] | null;
+  roles: Array<import('./types').AgentRole | 'director'> | null;
   selectedSkills: MarketplaceSelectedSkills;
   /** Derived from projectId — 'global' for the sentinel, 'project' otherwise. */
   scope: 'global' | 'project';
@@ -410,8 +412,36 @@ export interface AcceptPlanRequest {
   attachments?: string[];
 }
 
+/**
+ * Returned by `acceptPlan`. Plans are spawned sequentially — rows
+ * 2..N kick off in a detached loop that fires the next spawn only
+ * after the previous one reaches a terminal status. So this is the
+ * set of agent IDs that exist *at the time the IPC call resolves*,
+ * not the full plan's worth.
+ *
+ * In practice that's always row 1 (the only spawn that happens
+ * synchronously in acceptPlan). Subsequent rows surface to the
+ * renderer via the `onAgent` event stream as they spawn. H10: the
+ * old "array of all spawned IDs" contract was misleading — the
+ * array always had exactly one (or zero) elements.
+ */
 export interface AcceptPlanResponse {
-  spawnedAgentIds: string[];
+  /** Agent ID of the first row, if any. Empty for a zero-row plan. */
+  firstSpawnedAgentId: string | null;
+}
+
+/**
+ * Payload for the `ackDirectorRedirect` IPC. Promoted from three
+ * inline copies (preload signature, main handler signature, renderer
+ * call site) to a single named interface so a future field change
+ * lands in one place. M13.
+ */
+export interface DirectorAckRedirectRequest {
+  projectId: string;
+  messageId: string;
+  agentName: string;
+  ok: boolean;
+  error?: string;
 }
 
 export interface OrchestratorApi {
@@ -484,13 +514,7 @@ export interface OrchestratorApi {
     attachments?: string[],
   ) => Promise<{ ok: true }>;
   acceptPlan: (req: AcceptPlanRequest) => Promise<AcceptPlanResponse>;
-  ackDirectorRedirect: (req: {
-    projectId: string;
-    messageId: string;
-    agentName: string;
-    ok: boolean;
-    error?: string;
-  }) => Promise<{ ok: true }>;
+  ackDirectorRedirect: (req: DirectorAckRedirectRequest) => Promise<{ ok: true }>;
   abortDirector: (projectId: string) => Promise<{ ok: true }>;
   wipeDirector: (projectId: string) => Promise<{ ok: true }>;
   // Projects
@@ -502,10 +526,24 @@ export interface OrchestratorApi {
   ) => Promise<Project>;
   setActiveProject: (id: string) => Promise<{ ok: true }>;
   renameProject: (id: string, name: string) => Promise<{ ok: true }>;
-  setProjectDirectorModel: (id: string, model: string) => Promise<{ ok: true }>;
+  /**
+   * Set the Director's per-project model override, or clear it by
+   * passing `''` (empty string). The main side normalises empty to
+   * NULL on the row, returning the project to the cascade default.
+   */
+  setProjectDirectorModel: (
+    id: string,
+    model: string,
+  ) => Promise<{ ok: true }>;
+  /**
+   * Set the Director's per-project effort override, or clear it by
+   * passing `null`. H10: the param was previously typed `EffortLevel`
+   * only, so renderers had to bypass types to clear the override —
+   * even though the main handler accepted null all along.
+   */
   setProjectDirectorEffort: (
     id: string,
-    effort: import('./types').EffortLevel,
+    effort: import('./types').EffortLevel | null,
   ) => Promise<{ ok: true }>;
   /**
    * Set the Director's provider override for a project, or clear it
@@ -720,10 +758,6 @@ export interface OrchestratorApi {
   deleteProject: (id: string) => Promise<{ ok: true }>;
   getActiveProjectId: () => Promise<string | null>;
   showSettingsFile: () => Promise<{ ok: boolean }>;
-  getClaudeCliStatus: () => Promise<{
-    available: boolean;
-    version: string | null;
-  }>;
   /** Status for a specific provider's CLI (claude / codex). */
   getCliStatus: (
     provider: import('./types').Provider,

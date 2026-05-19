@@ -147,25 +147,46 @@ export function setProjectMcpConfig(
   scheduleSave();
 
   // Mirror to disk for the CLI to read.
+  // M13: assert UUID-shape on the id before joining into the
+  // userData path. The id flows from IPC; today it's always
+  // randomUUID-issued, but a future caller passing a hand-edited
+  // value could escape the mcp-configs/ dir via a relative
+  // segment.
+  if (!isUuid(id)) {
+    throw new Error(`invalid project id: ${id}`);
+  }
   const filePath = mcpConfigPath(id);
   if (value) {
     try {
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
       fs.writeFileSync(filePath, value, 'utf8');
       return filePath;
-    } catch {
-      // If the file write fails the DB is still correct; subsequent
-      // spawns will skip --mcp-config because the file isn't there.
-      return null;
+    } catch (e) {
+      // M13: previously swallowed silently. Bubble so the caller
+      // (IPC handler) can return ok:false to the renderer instead
+      // of leaving the user with a DB row that doesn't match disk
+      // and no signal that anything went wrong.
+      throw new Error(
+        `failed to write MCP config to ${filePath}: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
     }
   } else {
     try {
       fs.unlinkSync(filePath);
     } catch {
-      // already gone
+      // already gone — that's the intended end state
     }
     return null;
   }
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(s: string): boolean {
+  return typeof s === 'string' && UUID_RE.test(s);
 }
 
 /**

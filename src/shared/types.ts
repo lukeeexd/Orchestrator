@@ -224,10 +224,10 @@ export interface SpawnAgentRequest {
   attachments?: string[];
 }
 
-export interface SpawnAgentResponse {
-  ok: true;
-  agentId: string;
-}
+// SpawnAgentResponse lives in shared/ipc.ts — keeping the IPC
+// surface in one place. The earlier duplicate here was never
+// imported but drifted independently when ipc.ts gained the
+// `ok: true` literal.
 
 export interface SpendBucket {
   /** Display label for the bucket (project name, model id, or role label). */

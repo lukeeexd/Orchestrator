@@ -415,22 +415,11 @@ export function loadAgents(): Agent[] {
       // Reverse so we end up in ascending seq order in agent.log.
       const tail: LogLine[] = [];
       for (const lrow of lr[0].values) {
-        const rawMsg = asStr(lrow[3]);
-        let parsedMsg: string | ToolCall = rawMsg;
-        if (rawMsg.startsWith('{')) {
-          try {
-            const obj = JSON.parse(rawMsg);
-            if (obj && typeof obj === 'object' && 'fn' in obj) {
-              parsedMsg = obj as ToolCall;
-            }
-          } catch {
-            // leave as string
-          }
-        }
+        const kind = asStr(lrow[2]) as LogLine['kind'];
         tail.push({
           ts: asStr(lrow[1]),
-          kind: asStr(lrow[2]) as LogLine['kind'],
-          msg: parsedMsg,
+          kind,
+          msg: parseStoredMsg(kind, asStr(lrow[3])),
         });
       }
       tail.reverse();
@@ -438,6 +427,32 @@ export function loadAgents(): Agent[] {
     }
   }
   return out;
+}
+
+/**
+ * M13: parse a stored log-line msg back into its in-memory shape.
+ * Replaces the previous "starts with `{`" probe with a discriminator
+ * on the LogLine kind — tool entries are the only ones that
+ * serialize a ToolCall; every other kind is a plain string. A bare
+ * `{` at the start of a thought line no longer trips a spurious
+ * JSON.parse.
+ */
+function parseStoredMsg(
+  kind: LogLine['kind'],
+  raw: string,
+): string | ToolCall {
+  if (kind !== 'tool') return raw;
+  try {
+    const obj = JSON.parse(raw) as unknown;
+    if (obj && typeof obj === 'object' && 'fn' in obj) {
+      return obj as ToolCall;
+    }
+  } catch {
+    // Persisted tool line that didn't deserialize — surface the raw
+    // text rather than dropping the entry. The renderer's LogLineRow
+    // handles either branch of the union.
+  }
+  return raw;
 }
 
 /**
@@ -479,22 +494,11 @@ export function listLogLinesForAgent(
   if (rows.length === 0) return [];
   const out: LogLine[] = [];
   for (const lrow of rows[0].values) {
-    const rawMsg = asStr(lrow[3]);
-    let parsedMsg: string | ToolCall = rawMsg;
-    if (rawMsg.startsWith('{')) {
-      try {
-        const obj = JSON.parse(rawMsg);
-        if (obj && typeof obj === 'object' && 'fn' in obj) {
-          parsedMsg = obj as ToolCall;
-        }
-      } catch {
-        // leave as string
-      }
-    }
+    const kind = asStr(lrow[2]) as LogLine['kind'];
     out.push({
       ts: asStr(lrow[1]),
-      kind: asStr(lrow[2]) as LogLine['kind'],
-      msg: parsedMsg,
+      kind,
+      msg: parseStoredMsg(kind, asStr(lrow[3])),
     });
   }
   out.reverse();

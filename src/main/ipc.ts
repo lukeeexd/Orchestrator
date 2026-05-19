@@ -17,7 +17,7 @@ import type {
   SpawnAgentRequest,
 } from '../shared/types';
 import { readSettings, writeSettings, settingsFilePath } from './settings';
-import { getClaudeCliStatus, getCliStatus } from './cli/status';
+import { getCliStatus } from './cli/status';
 import { getSpendSummary } from './spend';
 import { listHistory } from './history';
 import { listSlashCommands } from './commands';
@@ -107,11 +107,10 @@ export function registerIpcHandlers(): void {
     },
   );
 
-  ipcMain.handle(
-    IpcChannels.AppCliStatus,
-    (): { available: boolean; version: string | null } => getClaudeCliStatus(),
-  );
-
+  // L4: dropped the parameterless AppCliStatus channel — it was a
+  // claude-only convenience the renderer no longer used. Every
+  // call site goes through the parameterised AppCliStatusByProvider
+  // now.
   ipcMain.handle(
     IpcChannels.AppCliStatusByProvider,
     (
@@ -345,7 +344,17 @@ export function registerIpcHandlers(): void {
           };
         }
       }
-      setProjectMcpConfig(id, config);
+      try {
+        setProjectMcpConfig(id, config);
+      } catch (e) {
+        // M13: setProjectMcpConfig now throws on disk-write
+        // failure instead of swallowing — surface it so the user
+        // sees why their MCP servers won't load next spawn.
+        return {
+          ok: false,
+          error: e instanceof Error ? e.message : 'mcp-config write failed',
+        };
+      }
       // Audit trail in the Director chat so the user has a visible
       // record that "X started running on each spawn at HH:MM:SS".
       // Skipped on clear (commands == [] and config null).
@@ -408,16 +417,22 @@ export function registerIpcHandlers(): void {
       }),
     onLog: (agentId: string, line: import('../shared/types').LogLine) => {
       const entry = registry.get(agentId);
+      // M13: agent gone from the registry → nothing to dispatch to.
+      // Previously we broadcast with projectId='' which the renderer
+      // silently filtered out, hiding the late line entirely. With
+      // the early return that's now explicit.
+      if (!entry) return;
       broadcast(IpcChannels.AgentEventLog, {
-        projectId: entry?.agent.projectId ?? '',
+        projectId: entry.agent.projectId,
         agentId,
         line,
       });
     },
     onPatch: (agentId: string, patch: Partial<Agent>) => {
       const entry = registry.get(agentId);
+      if (!entry) return;
       broadcast(IpcChannels.AgentEventPatch, {
-        projectId: entry?.agent.projectId ?? '',
+        projectId: entry.agent.projectId,
         agentId,
         patch,
       });
@@ -463,7 +478,14 @@ export function registerIpcHandlers(): void {
     IpcChannels.AgentRemove,
     (_event, id: string): { ok: boolean } => {
       const entry = registry.get(id);
-      const projectId = entry?.agent.projectId ?? '';
+      // M13: capture projectId from the registry entry BEFORE
+      // removing; without it we'd broadcast with '' and the
+      // renderer's per-project filter would drop the event,
+      // leaving the row visually orphaned until project switch.
+      // If the entry doesn't exist there's nothing to remove and
+      // nothing to broadcast.
+      if (!entry) return { ok: false };
+      const projectId = entry.agent.projectId;
       const ok = registry.remove(id);
       if (ok) {
         deleteAgent(id);
@@ -676,13 +698,7 @@ export function registerIpcHandlers(): void {
     IpcChannels.DirectorAckRedirect,
     (
       _event,
-      req: {
-        projectId: string;
-        messageId: string;
-        agentName: string;
-        ok: boolean;
-        error?: string;
-      },
+      req: import('../shared/ipc').DirectorAckRedirectRequest,
     ): { ok: true } => {
       director.acknowledgeRedirect(
         req.projectId,
@@ -838,7 +854,7 @@ export function registerIpcHandlers(): void {
         }
       })();
 
-      return { spawnedAgentIds: spawned.map((s) => s.id) };
+      return { firstSpawnedAgentId: spawned[0]?.id ?? null };
     },
   );
 
@@ -854,6 +870,24 @@ export function registerIpcHandlers(): void {
       lastSyncAt: row.lastSyncAt,
       lastSyncSha: row.lastSyncSha,
     };
+  }
+
+  // L4: roles persisted in the DB are stored as plain strings, but
+  // the IPC contract narrows to the actual union. Filter through
+  // the known role set on the way out so a hand-edited row can't
+  // smuggle a bogus role identifier into the renderer.
+  const KNOWN_ROLES: ReadonlyArray<
+    import('../shared/types').AgentRole | 'director'
+  > = ['pm', 'researcher', 'coder', 'qa', 'devops', 'security', 'director'];
+  const KNOWN_ROLE_SET = new Set<string>(KNOWN_ROLES);
+
+  function narrowRoles(
+    raw: string[] | null,
+  ): Array<import('../shared/types').AgentRole | 'director'> | null {
+    if (raw === null) return null;
+    return raw.filter((r): r is import('../shared/types').AgentRole | 'director' =>
+      KNOWN_ROLE_SET.has(r),
+    );
   }
 
   ipcMain.handle(IpcChannels.MarketplaceListSources, (): MarketplaceSourceView[] =>
@@ -882,7 +916,7 @@ export function registerIpcHandlers(): void {
         bundleId: s.bundleId,
         subscribedAt: s.subscribedAt,
         installedVersion: s.installedVersion,
-        roles: s.roles,
+        roles: narrowRoles(s.roles),
         selectedSkills: s.selectedSkills,
         scope:
           s.projectId === MARKETPLACE_GLOBAL_SCOPE_ID

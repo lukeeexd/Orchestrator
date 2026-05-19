@@ -326,11 +326,6 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.AppShowSettingsFile) as Promise<{
       ok: boolean;
     }>,
-  getClaudeCliStatus: () =>
-    ipcRenderer.invoke(IpcChannels.AppCliStatus) as Promise<{
-      available: boolean;
-      version: string | null;
-    }>,
   getCliStatus: (provider) =>
     ipcRenderer.invoke(
       IpcChannels.AppCliStatusByProvider,

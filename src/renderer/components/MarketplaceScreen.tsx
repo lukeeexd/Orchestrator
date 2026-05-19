@@ -439,7 +439,13 @@ function RecommendedSetupModal({
 
 // ─────────────────────────── Agent skills view ───────────────────────────
 
-const AGENT_ROLES: ReadonlyArray<{ id: string; label: string; hint: string }> = [
+type MarketplaceRoleId = import('../../shared/types').AgentRole | 'director';
+
+const AGENT_ROLES: ReadonlyArray<{
+  id: MarketplaceRoleId;
+  label: string;
+  hint: string;
+}> = [
   { id: 'director', label: 'Director', hint: 'Plans + supervises agents' },
   { id: 'pm', label: 'PM', hint: 'Decomposes tasks; read-only' },
   { id: 'researcher', label: 'Researcher', hint: 'Reads, web-fetches, summarises' },
@@ -1847,7 +1853,7 @@ function SourceSection({
   );
 }
 
-const ALL_ROLES: { key: string; tint: string }[] = [
+const ALL_ROLES: { key: MarketplaceRoleId; tint: string }[] = [
   { key: 'pm', tint: '#4ade80' },
   { key: 'researcher', tint: '#60a5fa' },
   { key: 'coder', tint: '#c084fc' },
@@ -1936,9 +1942,10 @@ function BundleCard({
 
   // A chip is "on" when roles is null (all-roles legacy default) or
   // when it includes this role. Click toggles.
-  const isRoleOn = (key: string) => roles === null || roles.includes(key);
+  const isRoleOn = (key: MarketplaceRoleId) =>
+    roles === null || roles.includes(key);
 
-  const toggleRole = (key: string) => {
+  const toggleRole = (key: MarketplaceRoleId) => {
     const currentlyOn = isRoleOn(key);
     if (roles === null) {
       // First per-role edit: start from "all roles", remove the
