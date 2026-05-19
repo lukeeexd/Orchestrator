@@ -68,6 +68,11 @@ class DirectorSession {
   private sessionId: string | null = null;
   private controller: AbortController | null = null;
   private currentMode: DirectorMode = 'auto';
+  // Set by abort(); consulted at the top of each runTurn so an
+  // abort landing between turns (queue draining + new turn
+  // starting) isn't silently dropped by the unconditional
+  // `this.controller = new AbortController()` at runTurn entry.
+  private pendingAbort = false;
 
   constructor(projectId: string) {
     this.projectId = projectId;
@@ -83,6 +88,7 @@ class DirectorSession {
   }
 
   abort(): void {
+    this.pendingAbort = true;
     this.controller?.abort();
   }
 
@@ -207,6 +213,14 @@ class DirectorSession {
     this.busy = true;
     try {
       while (this.queue.length > 0) {
+        // Honour an abort that landed between turns. Without this,
+        // queued messages would keep firing fresh runTurn calls
+        // (each minting a brand new controller) even though the
+        // user already aborted.
+        if (this.pendingAbort) {
+          this.queue.length = 0;
+          break;
+        }
         const next = this.queue.shift();
         if (!next) break;
         const attachments = next.kind === 'user' ? next.attachments : undefined;
@@ -214,6 +228,10 @@ class DirectorSession {
       }
     } finally {
       this.busy = false;
+      // Reset the flag at end of drain so a future user message can
+      // resume the conversation. Mirrors the abort/resume model in
+      // the renderer (Director isn't terminated, just interrupted).
+      this.pendingAbort = false;
     }
   }
 
@@ -289,6 +307,11 @@ class DirectorSession {
       env.ANTHROPIC_API_KEY = settings.apiKey;
     }
 
+    // Late-arriving abort: pump() already guards this, but if a
+    // race lets us reach runTurn after abort was called, bail before
+    // minting a fresh controller that the original abort signal
+    // can't reach.
+    if (this.pendingAbort) return;
     this.controller = new AbortController();
 
     const directorMessage: DirectorMessage = {

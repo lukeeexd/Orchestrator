@@ -27,6 +27,7 @@ import {
   spawnAgent,
   redirectAgent,
   forkAgent,
+  abortAgent,
   registry,
   awaitCompletion,
 } from './agents/runner';
@@ -386,17 +387,12 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IpcChannels.AgentAbort,
-    (_event, id: string): { ok: boolean } => {
-      const ok = registry.abort(id);
-      if (ok) {
-        const patch: Partial<Agent> = {
-          status: 'aborted',
-          statusLabel: 'Aborted',
-        };
-        registry.patch(id, patch);
-        agentSinks.onPatch(id, patch);
-      }
-      return { ok };
+    async (_event, id: string): Promise<{ ok: boolean }> => {
+      // Routed through runner.abortAgent so it acquires the
+      // per-agent lock — otherwise an abort racing a redirect's
+      // controller-swap can land on the pre-swap controller and
+      // the post-swap run continues unaffected.
+      return abortAgent(id, agentSinks);
     },
   );
 

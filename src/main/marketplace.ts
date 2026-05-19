@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -1023,15 +1023,43 @@ function parseSkillFrontmatter(raw: string): {
 }
 
 /**
+ * Cache of materialized subset dirs keyed by their stable
+ * `(scope, role, sourceId, bundleId)` location. Value tracks the
+ * inputs that produced the on-disk subset so we can skip the
+ * rm+rebuild when nothing has changed.
+ *
+ * Invalidation token = `(bundle-dir mtime, sorted-skills hash)`.
+ * A `syncSource` re-clone of the source bumps the bundle dir's
+ * mtime; the user toggling skills changes the hash. Either trips
+ * the cache miss and we rebuild.
+ *
+ * The cache also serves as a per-key mutex: two parallel
+ * `materializeSubset` calls that would otherwise race the same
+ * rm+cpSync against each other see a cache hit on the second call
+ * (because the first call's writes are visible synchronously) and
+ * skip the rebuild entirely.
+ */
+interface SubsetCacheEntry {
+  bundleMtimeMs: number;
+  skillsHash: string;
+}
+const subsetCache = new Map<string, SubsetCacheEntry>();
+
+function hashSkills(skills: readonly string[]): string {
+  const sorted = [...skills].sort();
+  return createHash('sha1').update(sorted.join('\x00')).digest('hex');
+}
+
+/**
  * Build a synthetic plugin directory containing the bundle's
  * `.claude-plugin/` plus only the chosen skill subdirs. Returns the
  * absolute path to the synthetic dir, ready to pass as --plugin-dir.
  *
- * Rebuilt from scratch each time it's called (cheap — SKILL.md files
- * are small and we only copy a handful). That's deliberate: caching
- * adds an invalidation problem (the bundle dir can change after a
- * sync brings in new skill content), and the throughput cost is in
- * the millisecond range vs the seconds claude takes to spin up.
+ * Cached on `(bundle mtime, sorted skills)` — two parallel spawns
+ * of the same (scope, role, source, bundle) won't race a rebuild
+ * against each other, and an unchanged repeat call returns
+ * instantly. A `syncSource` re-clone bumps the bundle mtime which
+ * is what trips the cache and forces a fresh subset.
  */
 function materializeSubset(
   scope: string,
@@ -1057,6 +1085,23 @@ function materializeSubset(
     subsetRoot,
     `${sanitizeId(scope)}--${sanitizeId(role)}--${sanitizeId(sourceId)}--${sanitizeId(bundleId)}`,
   );
+
+  // Cache check. statSync throws on missing source bundle dir —
+  // let it propagate, the bundle isn't materializable.
+  const bundleStat = fs.statSync(bundleDir);
+  const bundleMtimeMs = bundleStat.mtimeMs;
+  const skillsHash = hashSkills(skills);
+  const cacheKey = subsetDir;
+  const cached = subsetCache.get(cacheKey);
+  if (
+    cached &&
+    cached.bundleMtimeMs === bundleMtimeMs &&
+    cached.skillsHash === skillsHash &&
+    fs.existsSync(subsetDir)
+  ) {
+    return subsetDir;
+  }
+
   if (fs.existsSync(subsetDir)) {
     fs.rmSync(subsetDir, { recursive: true, force: true });
   }
@@ -1090,6 +1135,7 @@ function materializeSubset(
     const skillDest = path.join(destRoot, skillId);
     fs.cpSync(skillSrc, skillDest, { recursive: true });
   }
+  subsetCache.set(cacheKey, { bundleMtimeMs, skillsHash });
   return subsetDir;
 }
 

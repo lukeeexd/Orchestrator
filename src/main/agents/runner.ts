@@ -47,6 +47,11 @@ function buildSystemPromptFor(role: AgentRole, projectId: string): string {
 }
 import { runClaudeQuery } from '../cli/spawn';
 import { runCodexQuery } from '../cli/codex';
+import {
+  awaitCompletion as awaitLockedCompletion,
+  trackCompletion,
+  withAgentLock,
+} from './agent-lock';
 
 /**
  * Resolve the tool allow-list for an agent: per-project role override
@@ -130,15 +135,17 @@ function checkBudget(
   return null;
 }
 
-const completions = new Map<string, Promise<void>>();
-
 /**
  * Returns a promise that resolves when the given agent reaches a terminal
  * status (done | error | aborted). Already-completed agents resolve
  * immediately.
+ *
+ * Backed by the generation-tagged tracker in `agent-lock.ts` so a
+ * redirect or fork replacing the in-flight entry doesn't trip the
+ * earlier cleanup timer.
  */
 export function awaitCompletion(agentId: string): Promise<void> {
-  return completions.get(agentId) ?? Promise.resolve();
+  return awaitLockedCompletion(agentId);
 }
 
 export async function spawnAgent(
@@ -209,25 +216,17 @@ export async function spawnAgent(
 
   const settings = readSettings();
 
-  let resolveDone!: () => void;
-  const donePromise = new Promise<void>((res) => {
-    resolveDone = res;
-  });
-  completions.set(id, donePromise);
-
   // Fire-and-forget the async run; events stream via sinks.
-  run(id, req, req.workspace, settings, controller, sinks)
-    .catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      sinks.onLog(id, { ts: nowTs(), kind: 'error', msg: `runner crashed: ${msg}` });
-      sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
-    })
-    .finally(() => {
-      resolveDone();
-      // Keep the entry in `completions` for a short tail so late awaiters
-      // resolve immediately, then drop it. Memory hygiene.
-      setTimeout(() => completions.delete(id), 60_000);
-    });
+  // The lock is unnecessary on a freshly minted id (no other caller
+  // can target it yet), but using the same trackCompletion helper as
+  // redirect/fork keeps the cleanup story uniform.
+  const work = run(id, req, req.workspace, settings, controller, sinks);
+  trackCompletion(id, work);
+  work.catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    sinks.onLog(id, { ts: nowTs(), kind: 'error', msg: `runner crashed: ${msg}` });
+    sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
+  });
 
   return { agentId: id };
 }
@@ -239,6 +238,18 @@ export async function spawnAgent(
  * the parent stays intact and untouched.
  */
 export async function forkAgent(
+  req: ForkAgentRequest,
+  sinks: RunnerSinks,
+): Promise<{ ok: boolean; agentId?: string; error?: string }> {
+  // Lock on the parent: the fork reads parent.sessionId atomically
+  // and a concurrent redirect on the parent could otherwise swap
+  // the session out from under us mid-read.
+  return withAgentLock(req.parentAgentId, () =>
+    forkAgentLocked(req, sinks),
+  );
+}
+
+async function forkAgentLocked(
   req: ForkAgentRequest,
   sinks: RunnerSinks,
 ): Promise<{ ok: boolean; agentId?: string; error?: string }> {
@@ -311,33 +322,24 @@ export async function forkAgent(
   persistence.saveAgent(agent);
   sinks.onAgent(agent);
 
-  let resolveDone!: () => void;
-  const donePromise = new Promise<void>((res) => {
-    resolveDone = res;
-  });
-  completions.set(id, donePromise);
-
-  runFork(
+  const work = runFork(
     id,
     parent.agent.sessionId,
     req.task,
     req.attachments,
     controller,
     sinks,
-  )
-    .catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      sinks.onLog(id, {
-        ts: nowTs(),
-        kind: 'error',
-        msg: `fork crashed: ${msg}`,
-      });
-      sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
-    })
-    .finally(() => {
-      resolveDone();
-      setTimeout(() => completions.delete(id), 60_000);
+  );
+  trackCompletion(id, work);
+  work.catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    sinks.onLog(id, {
+      ts: nowTs(),
+      kind: 'error',
+      msg: `fork crashed: ${msg}`,
     });
+    sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
+  });
 
   return { ok: true, agentId: id };
 }
@@ -565,6 +567,17 @@ export async function redirectAgent(
   req: RedirectAgentRequest,
   sinks: RunnerSinks,
 ): Promise<{ ok: boolean; error?: string }> {
+  // Lock the agent id: the [status check → status flip → controller
+  // swap → kick off work] sequence must be atomic, otherwise two
+  // redirects in the same tick both pass the 'running' guard and
+  // the first controller leaks unreferenced.
+  return withAgentLock(req.agentId, () => redirectAgentLocked(req, sinks));
+}
+
+async function redirectAgentLocked(
+  req: RedirectAgentRequest,
+  sinks: RunnerSinks,
+): Promise<{ ok: boolean; error?: string }> {
   const entry = registry.get(req.agentId);
   if (!entry) return { ok: false, error: 'agent not found' };
   const agent = entry.agent;
@@ -588,13 +601,7 @@ export async function redirectAgent(
   const controller = new AbortController();
   registry.setController(req.agentId, controller);
 
-  let resolveDone!: () => void;
-  const donePromise = new Promise<void>((res) => {
-    resolveDone = res;
-  });
-  completions.set(req.agentId, donePromise);
-
-  runRedirect(
+  const work = runRedirect(
     req.agentId,
     req.body,
     req.attachments,
@@ -602,20 +609,17 @@ export async function redirectAgent(
     req.effort,
     controller,
     sinks,
-  )
-    .catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      sinks.onLog(req.agentId, {
-        ts: nowTs(),
-        kind: 'error',
-        msg: `redirect crashed: ${msg}`,
-      });
-      sinks.onPatch(req.agentId, { status: 'error', statusLabel: 'Crashed' });
-    })
-    .finally(() => {
-      resolveDone();
-      setTimeout(() => completions.delete(req.agentId), 60_000);
+  );
+  trackCompletion(req.agentId, work);
+  work.catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    sinks.onLog(req.agentId, {
+      ts: nowTs(),
+      kind: 'error',
+      msg: `redirect crashed: ${msg}`,
     });
+    sinks.onPatch(req.agentId, { status: 'error', statusLabel: 'Crashed' });
+  });
 
   return { ok: true };
 }
@@ -737,6 +741,30 @@ ${body}`;
   }
 }
 
+/**
+ * Abort a running agent. Acquired the per-agent lock so we serialize
+ * with any in-flight redirect/fork critical section — without this,
+ * an abort racing a redirect's controller-swap can land on the
+ * pre-swap controller and the post-swap run continues unaffected.
+ */
+export async function abortAgent(
+  id: string,
+  sinks: RunnerSinks,
+): Promise<{ ok: boolean }> {
+  return withAgentLock(id, () => {
+    const ok = registry.abort(id);
+    if (ok) {
+      const patch: Partial<Agent> = {
+        status: 'aborted',
+        statusLabel: 'Aborted',
+      };
+      registry.patch(id, patch);
+      sinks.onPatch(id, patch);
+    }
+    return { ok };
+  });
+}
+
 function startElapsedTimer(
   agentId: string,
   controller: AbortController,
@@ -758,6 +786,12 @@ function startElapsedTimer(
       e.agent.budget.seconds > 0 &&
       (Date.now() - e.agent.startedAt) / 1000 > e.agent.budget.seconds
     ) {
+      // Stop the timer FIRST so a late assistant/result event in
+      // consumeQuery can't overwrite "Budget exceeded" with a
+      // generic 'is_error' subtype label. The runFork/runRedirect/
+      // run finally-blocks also clearInterval defensively, but by
+      // then consumeQuery has already drained one more event.
+      clearInterval(elapsedTimer);
       sinks.onLog(agentId, {
         ts: nowTs(),
         kind: 'error',
@@ -776,6 +810,15 @@ function startElapsedTimer(
   }, 1000);
   return elapsedTimer;
 }
+
+/**
+ * Terminal-status set covers the post-abort patch states. Once an
+ * agent reaches one of these, consumeQuery must stop draining the
+ * CLI tail — otherwise a buffered `result` event arriving after a
+ * budget abort overwrites "Budget exceeded" with the CLI's generic
+ * is_error subtype.
+ */
+const TERMINAL_STATUSES = new Set(['done', 'error', 'aborted']);
 
 function safeResolveLoadout(
   projectId: string,
@@ -909,6 +952,12 @@ async function consumeQuery(
 
   for await (const event of q) {
     if (controller.signal.aborted) break;
+    // Once a terminal status has been written (typically by the
+    // wall-clock budget timer aborting the run), stop draining the
+    // CLI tail. Otherwise a buffered `result` event lands and the
+    // is_error subtype overwrites "Budget exceeded".
+    const guard = registry.get(agentId);
+    if (guard && TERMINAL_STATUSES.has(guard.agent.status)) break;
     const ev = event as { type: string; session_id?: string; [k: string]: unknown };
 
     // Capture session_id whenever we see one — needed for Redirect to
