@@ -6,6 +6,29 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
+// H7: code-signing is currently *off* — the GitHub release artifact
+// and the auto-updater payload land unsigned, so MITM on
+// update.electronjs.org or a compromised release artifact could
+// ship arbitrary code as an "update". Squirrel verifies SHA1 of
+// payloads but not Authenticode.
+//
+// To enable, set the `WINDOWS_SIGN_*` env vars below (cert path +
+// password OR an Azure Code Signing endpoint identity) and the
+// `windowsSign` block will wire up. Once verified end-to-end via a
+// signed Squirrel installer that auto-updates successfully on a
+// non-dev machine, the two ASAR-integrity fuses can be flipped on
+// in the FusesPlugin section.
+const windowsSignFromEnv = (): NonNullable<
+  ConstructorParameters<typeof MakerSquirrel>[0]
+>['windowsSign'] => {
+  const certificateFile = process.env.WINDOWS_SIGN_CERT_FILE;
+  const certificatePassword = process.env.WINDOWS_SIGN_CERT_PASSWORD;
+  if (certificateFile && certificatePassword) {
+    return { certificateFile, certificatePassword };
+  }
+  return undefined;
+};
+
 const config: ForgeConfig = {
   packagerConfig: {
     name: 'Orchestrator',
@@ -37,6 +60,12 @@ const config: ForgeConfig = {
       authors: 'lukeeexd',
       description: 'Desktop app for orchestrating Claude agents.',
       setupExe: 'Orchestrator-Setup.exe',
+      // H7: signed when WINDOWS_SIGN_CERT_FILE +
+      // WINDOWS_SIGN_CERT_PASSWORD are set in CI; falls through
+      // unsigned for local dev builds (no cert).
+      ...(windowsSignFromEnv()
+        ? { windowsSign: windowsSignFromEnv() }
+        : {}),
     }),
   ],
   plugins: [
