@@ -56,6 +56,7 @@ export const IpcChannels = {
   MarketplaceRemoveSource: 'marketplace:removeSource',
   MarketplaceSetSourceEnabled: 'marketplace:setSourceEnabled',
   MarketplaceListBundleSkills: 'marketplace:listBundleSkills',
+  MarketplaceReadSkill: 'marketplace:readSkill',
   MarketplaceSetSkills: 'marketplace:setSkills',
   MarketplaceGetChangelog: 'marketplace:getChangelog',
   MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
@@ -592,6 +593,16 @@ export interface OrchestratorApi {
     sourceId: string,
     bundleId: string,
   ) => Promise<MarketplaceBundleSkillView[]>;
+  /**
+   * Read the full SKILL.md text for a specific skill inside a bundle.
+   * Returns `null` if the bundle's source hasn't been synced, the
+   * skill subdir is missing, or the SKILL.md file isn't there.
+   */
+  readMarketplaceSkill: (
+    sourceId: string,
+    bundleId: string,
+    skillId: string,
+  ) => Promise<string | null>;
   /**
    * Set the per-skill subset for a subscription. Three forms:
    *   - `null` — all skills load for every enabled role (default).

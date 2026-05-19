@@ -956,6 +956,39 @@ export function listBundleSkills(
 }
 
 /**
+ * Read the full text of a skill's SKILL.md, by `(sourceId, bundleId,
+ * skillId)`. Honours the same canonical-vs-legacy layout split as
+ * listBundleSkills — `<bundle>/skills/<id>/SKILL.md` first, falling
+ * back to `<bundle>/<id>/SKILL.md` for older marketplaces.
+ *
+ * Returns `null` when the bundle, the skill subdir, or the SKILL.md
+ * file is missing on disk. Callers (the preview modal) show a "not
+ * synced yet?" hint in that case.
+ */
+export function readSkillContent(
+  sourceId: string,
+  bundleId: string,
+  skillId: string,
+): string | null {
+  const bundle = findBundle(sourceId, bundleId);
+  if (!bundle) return null;
+  const bundleDir = bundlePluginDir(sourceId, bundle);
+  if (!fs.existsSync(bundleDir)) return null;
+  const candidates = [
+    path.join(bundleDir, 'skills', skillId, 'SKILL.md'),
+    path.join(bundleDir, skillId, 'SKILL.md'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
+    } catch {
+      // try the next layout
+    }
+  }
+  return null;
+}
+
+/**
  * Minimal YAML frontmatter parser: pulls `name:` and `description:`
  * out of the leading `---` block of a SKILL.md. Not a real YAML
  * parser — handles flat string fields only. Anything more exotic

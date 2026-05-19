@@ -230,6 +230,7 @@ export function MarketplaceScreen({
             sources={mp.sources}
             bundlesBySource={mp.bundlesBySource}
             listBundleSkills={mp.listBundleSkills}
+            readSkill={mp.readSkill}
             setSkills={mp.setSkills}
           />
         ) : mp.sources.length === 0 ? (
@@ -516,6 +517,7 @@ function AgentSkillsView({
   sources,
   bundlesBySource,
   listBundleSkills,
+  readSkill,
   setSkills,
 }: {
   subscriptions: MarketplaceSubscriptionView[];
@@ -525,6 +527,11 @@ function AgentSkillsView({
     sourceId: string,
     bundleId: string,
   ) => Promise<MarketplaceBundleSkillView[]>;
+  readSkill: (
+    sourceId: string,
+    bundleId: string,
+    skillId: string,
+  ) => Promise<string | null>;
   setSkills: (
     sourceId: string,
     bundleId: string,
@@ -532,6 +539,13 @@ function AgentSkillsView({
     skills: MarketplaceSelectedSkills,
   ) => Promise<void>;
 }) {
+  // Preview state — single modal shared across every checkbox. Stored
+  // here (rather than per-checkbox) so opening one closes any other.
+  const [previewTarget, setPreviewTarget] = useState<{
+    sourceId: string;
+    bundleId: string;
+    skill: MarketplaceBundleSkillView;
+  } | null>(null);
   const enabledSourceIds = useMemo(
     () => new Set(sources.filter((s) => s.enabled).map((s) => s.id)),
     [sources],
@@ -615,9 +629,25 @@ function AgentSkillsView({
               );
               await setSkills(sub.sourceId, sub.bundleId, sub.scope, next);
             }}
+            onPreview={(sub, skill) =>
+              setPreviewTarget({
+                sourceId: sub.sourceId,
+                bundleId: sub.bundleId,
+                skill,
+              })
+            }
           />
         );
       })}
+      {previewTarget && (
+        <SkillPreviewModal
+          sourceId={previewTarget.sourceId}
+          bundleId={previewTarget.bundleId}
+          skill={previewTarget.skill}
+          readSkill={readSkill}
+          onClose={() => setPreviewTarget(null)}
+        />
+      )}
     </div>
   );
 }
@@ -630,6 +660,7 @@ function RoleSkillCard({
   bundlesBySource,
   skillsCache,
   onToggle,
+  onPreview,
 }: {
   roleId: string;
   roleLabel: string;
@@ -641,6 +672,10 @@ function RoleSkillCard({
     sub: MarketplaceSubscriptionView,
     skillId: string,
     allSkillIds: string[],
+  ) => void;
+  onPreview: (
+    sub: MarketplaceSubscriptionView,
+    skill: MarketplaceBundleSkillView,
   ) => void;
 }) {
   return (
@@ -731,36 +766,63 @@ function RoleSkillCard({
                     const checked = isAll || checkedSet.has(s.id);
                     const allSkillIds = allSkills.map((x) => x.id);
                     return (
-                      <label
+                      <div
                         key={s.id}
-                        title={s.description ?? s.id}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 6,
+                          gap: 4,
                           fontSize: 11,
                           color: checked ? 'var(--text)' : 'var(--muted-2)',
-                          cursor: 'pointer',
                           padding: '2px 4px',
                           borderRadius: 3,
                         }}
                       >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => onToggle(sub, s.id, allSkillIds)}
-                          style={{ margin: 0 }}
-                        />
-                        <span
+                        <label
+                          title={s.description ?? s.id}
                           style={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            cursor: 'pointer',
+                            flex: 1,
+                            minWidth: 0,
                           }}
                         >
-                          {s.name ?? s.id}
-                        </span>
-                      </label>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              onToggle(sub, s.id, allSkillIds)
+                            }
+                            style={{ margin: 0 }}
+                          />
+                          <span
+                            style={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {s.name ?? s.id}
+                          </span>
+                        </label>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          onClick={() => onPreview(sub, s)}
+                          title={`Show the SKILL.md for ${s.id}`}
+                          style={{
+                            padding: 2,
+                            color: 'var(--muted)',
+                            background: 'transparent',
+                            border: 0,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Icon name="file" size={11} />
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -770,6 +832,145 @@ function RoleSkillCard({
         })
       )}
     </section>
+  );
+}
+
+function SkillPreviewModal({
+  sourceId,
+  bundleId,
+  skill,
+  readSkill,
+  onClose,
+}: {
+  sourceId: string;
+  bundleId: string;
+  skill: MarketplaceBundleSkillView;
+  readSkill: (
+    sourceId: string,
+    bundleId: string,
+    skillId: string,
+  ) => Promise<string | null>;
+  onClose: () => void;
+}) {
+  const [content, setContent] = useState<string | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readSkill(sourceId, bundleId, skill.id)
+      .then((raw) => {
+        if (cancelled) return;
+        setContent(raw);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [readSkill, sourceId, bundleId, skill.id]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 760,
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>{skill.name ?? skill.id}</b>
+            <span
+              style={{
+                marginLeft: 8,
+                color: 'var(--muted)',
+                fontSize: 11,
+                fontWeight: 400,
+              }}
+            >
+              <code>{bundleId}/{skill.id}</code>
+            </span>
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onClose} title="Close">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div
+          className="modal-body"
+          style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12 }}
+        >
+          {skill.description && (
+            <p
+              style={{
+                margin: '0 0 12px 0',
+                color: 'var(--muted)',
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              {skill.description}
+            </p>
+          )}
+          {content === undefined && !error && (
+            <div className="inline-empty" style={{ padding: 18 }}>
+              Loading SKILL.md…
+            </div>
+          )}
+          {error && (
+            <div className="form-error">
+              Failed to read SKILL.md: {error}
+            </div>
+          )}
+          {content === null && !error && (
+            <div className="inline-empty" style={{ padding: 18 }}>
+              No SKILL.md found on disk. The source may not be synced
+              yet, or the skill was removed upstream — refresh the
+              source from Browse bundles and try again.
+            </div>
+          )}
+          {typeof content === 'string' && (
+            <pre
+              style={{
+                margin: 0,
+                padding: 12,
+                background: 'var(--sub-2)',
+                borderRadius: 4,
+                fontSize: 11,
+                lineHeight: 1.5,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                color: 'var(--text)',
+                fontFamily:
+                  '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace',
+              }}
+            >
+              {content}
+            </pre>
+          )}
+        </div>
+        <div
+          className="modal-foot"
+          style={{
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+            padding: 12,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button className="tb-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -953,6 +953,17 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IpcChannels.MarketplaceReadSkill,
+    (
+      _event,
+      sourceId: string,
+      bundleId: string,
+      skillId: string,
+    ): string | null =>
+      marketplace.readSkillContent(sourceId, bundleId, skillId),
+  );
+
+  ipcMain.handle(
     IpcChannels.MarketplaceSetSkills,
     (
       _event,

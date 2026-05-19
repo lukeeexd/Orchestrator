@@ -68,6 +68,16 @@ interface UseMarketplaceResult {
     bundleId: string,
   ) => Promise<MarketplaceBundleSkillView[]>;
   /**
+   * Read the full SKILL.md text for a specific skill in a bundle.
+   * Returns null when the file isn't on disk (source not synced,
+   * skill removed upstream, etc.).
+   */
+  readSkill: (
+    sourceId: string,
+    bundleId: string,
+    skillId: string,
+  ) => Promise<string | null>;
+  /**
    * Set the per-skill picks on a subscription. Pass `null` for "all
    * skills in the bundle", a flat `string[]` for "these skills for
    * every enabled role" (legacy Pick modal form), or a
@@ -291,6 +301,12 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     [],
   );
 
+  const readSkill = useCallback(
+    async (sourceId: string, bundleId: string, skillId: string) =>
+      window.api.readMarketplaceSkill(sourceId, bundleId, skillId),
+    [],
+  );
+
   const getChangelog = useCallback(
     async (
       sourceId: string,
@@ -410,6 +426,7 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     removeSource,
     setSourceEnabled,
     listBundleSkills,
+    readSkill,
     setSkills,
     getChangelog,
     reload,
