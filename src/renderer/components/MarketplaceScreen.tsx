@@ -5,6 +5,7 @@ import type {
   MarketplaceBundleSkillView,
   MarketplaceBundleView,
   MarketplaceChangelogEntry,
+  MarketplaceLoadoutReport,
   MarketplaceSelectedSkills,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
@@ -233,6 +234,7 @@ export function MarketplaceScreen({
             bundlesBySource={mp.bundlesBySource}
             listBundleSkills={mp.listBundleSkills}
             readSkill={mp.readSkill}
+            resolveLoadout={mp.resolveLoadout}
             setSkills={mp.setSkills}
           />
         ) : mp.sources.length === 0 ? (
@@ -520,6 +522,7 @@ function AgentSkillsView({
   bundlesBySource,
   listBundleSkills,
   readSkill,
+  resolveLoadout,
   setSkills,
 }: {
   subscriptions: MarketplaceSubscriptionView[];
@@ -534,6 +537,7 @@ function AgentSkillsView({
     bundleId: string,
     skillId: string,
   ) => Promise<string | null>;
+  resolveLoadout: (role: string) => Promise<MarketplaceLoadoutReport>;
   setSkills: (
     sourceId: string,
     bundleId: string,
@@ -548,6 +552,9 @@ function AgentSkillsView({
     bundleId: string;
     skill: MarketplaceBundleSkillView;
   } | null>(null);
+  // Loadout modal target — null means "no modal open"; otherwise the
+  // role whose dry-run is being shown.
+  const [loadoutRole, setLoadoutRole] = useState<string | null>(null);
   const enabledSourceIds = useMemo(
     () => new Set(sources.filter((s) => s.enabled).map((s) => s.id)),
     [sources],
@@ -638,6 +645,7 @@ function AgentSkillsView({
                 skill,
               })
             }
+            onShowLoadout={() => setLoadoutRole(role.id)}
           />
         );
       })}
@@ -648,6 +656,13 @@ function AgentSkillsView({
           skill={previewTarget.skill}
           readSkill={readSkill}
           onClose={() => setPreviewTarget(null)}
+        />
+      )}
+      {loadoutRole && (
+        <LoadoutModal
+          role={loadoutRole}
+          resolveLoadout={resolveLoadout}
+          onClose={() => setLoadoutRole(null)}
         />
       )}
     </div>
@@ -663,6 +678,7 @@ function RoleSkillCard({
   skillsCache,
   onToggle,
   onPreview,
+  onShowLoadout,
 }: {
   roleId: string;
   roleLabel: string;
@@ -679,6 +695,7 @@ function RoleSkillCard({
     sub: MarketplaceSubscriptionView,
     skill: MarketplaceBundleSkillView,
   ) => void;
+  onShowLoadout: () => void;
 }) {
   return (
     <section
@@ -695,6 +712,15 @@ function RoleSkillCard({
       >
         <strong style={{ fontSize: 13 }}>{roleLabel}</strong>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>{roleHint}</span>
+        <span className="spacer" />
+        <button
+          className="tb-btn"
+          style={{ height: 20, fontSize: 10 }}
+          onClick={onShowLoadout}
+          title="Show what a fresh agent of this role would actually receive at spawn time — the resolved --plugin-dir paths, skills, and a rough context-budget estimate."
+        >
+          show loadout
+        </button>
       </div>
       {subs.length === 0 ? (
         <div style={{ fontSize: 11, color: 'var(--muted-2)' }}>
@@ -834,6 +860,223 @@ function RoleSkillCard({
         })
       )}
     </section>
+  );
+}
+
+function LoadoutModal({
+  role,
+  resolveLoadout,
+  onClose,
+}: {
+  role: string;
+  resolveLoadout: (role: string) => Promise<MarketplaceLoadoutReport>;
+  onClose: () => void;
+}) {
+  const [report, setReport] = useState<MarketplaceLoadoutReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void resolveLoadout(role)
+      .then((r) => {
+        if (!cancelled) setReport(r);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveLoadout, role]);
+
+  const roleLabel =
+    AGENT_ROLES.find((r) => r.id === role)?.label ?? role;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 720,
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>{roleLabel} loadout</b>
+            <span
+              style={{
+                marginLeft: 8,
+                color: 'var(--muted)',
+                fontSize: 11,
+                fontWeight: 400,
+              }}
+            >
+              dry-run — what a fresh <code>{role}</code> spawn would receive
+            </span>
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onClose} title="Close">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div
+          className="modal-body"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            padding: 12,
+          }}
+        >
+          {report === null && !error && (
+            <div className="inline-empty" style={{ padding: 18 }}>
+              Resolving…
+            </div>
+          )}
+          {error && (
+            <div className="form-error">Failed to resolve loadout: {error}</div>
+          )}
+          {report && (
+            <>
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: 10,
+                  background: 'var(--sub-2)',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}
+              >
+                <div>
+                  <strong>{report.totalSkills}</strong>{' '}
+                  {report.totalSkills === 1 ? 'skill' : 'skills'} across{' '}
+                  <strong>{report.entries.length}</strong>{' '}
+                  {report.entries.length === 1 ? 'bundle' : 'bundles'}.
+                </div>
+                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 4 }}>
+                  ~{report.approxFrontmatterChars.toLocaleString()} chars
+                  of skill-frontmatter added to the agent&apos;s system
+                  prompt. Full <code>SKILL.md</code> bodies only load
+                  on-demand when a skill triggers.
+                </div>
+              </div>
+              {report.entries.length === 0 ? (
+                <div className="inline-empty" style={{ padding: 18 }}>
+                  No skills load for this role. Agents will spawn with only
+                  their base toolset.
+                </div>
+              ) : (
+                report.entries.map((entry) => (
+                  <div
+                    key={`${entry.sourceId}\x00${entry.bundleId}`}
+                    style={{
+                      marginBottom: 10,
+                      padding: 10,
+                      background: 'var(--sub)',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'baseline',
+                        gap: 6,
+                        marginBottom: 4,
+                        fontSize: 12,
+                      }}
+                    >
+                      <code>{entry.bundleId}</code>
+                      <span style={{ color: 'var(--muted-2)' }}>·</span>
+                      <span style={{ color: 'var(--muted)', fontSize: 11 }}>
+                        {entry.scope}
+                      </span>
+                      <span style={{ color: 'var(--muted-2)' }}>·</span>
+                      <span style={{ color: 'var(--muted)', fontSize: 11 }}>
+                        {entry.skills.length}{' '}
+                        {entry.skills.length === 1 ? 'skill' : 'skills'}
+                      </span>
+                    </div>
+                    {entry.pluginDir && (
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: 'var(--muted-2)',
+                          marginBottom: 6,
+                          fontFamily:
+                            '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace',
+                          wordBreak: 'break-all',
+                        }}
+                        title={entry.pluginDir}
+                      >
+                        --plugin-dir {entry.pluginDir}
+                      </div>
+                    )}
+                    {entry.warning && (
+                      <div
+                        className="form-error"
+                        style={{
+                          fontSize: 11,
+                          marginBottom: 6,
+                          padding: '4px 8px',
+                        }}
+                      >
+                        ⚠ {entry.warning}
+                      </div>
+                    )}
+                    {entry.skills.length > 0 && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: 4,
+                        }}
+                      >
+                        {entry.skills.map((s) => (
+                          <code
+                            key={s.id}
+                            title={s.description ?? s.id}
+                            style={{
+                              fontSize: 10,
+                              padding: '2px 6px',
+                              background: 'var(--sub-2)',
+                              borderRadius: 3,
+                              color: 'var(--text-2)',
+                            }}
+                          >
+                            {s.id}
+                          </code>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </>
+          )}
+        </div>
+        <div
+          className="modal-foot"
+          style={{
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+            padding: 12,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button className="tb-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

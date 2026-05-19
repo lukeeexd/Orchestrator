@@ -3,6 +3,7 @@ import type {
   MarketplaceBundleSkillView,
   MarketplaceBundleView,
   MarketplaceChangelogEntry,
+  MarketplaceLoadoutReport,
   MarketplaceSelectedSkills,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
@@ -77,6 +78,13 @@ interface UseMarketplaceResult {
     bundleId: string,
     skillId: string,
   ) => Promise<string | null>;
+  /**
+   * Resolve the dry-run loadout for `role` in the active project.
+   * Returns the same data structure the runner sees at spawn time, so
+   * the UI can show "this is what a fresh agent of this role would
+   * load" without burning an actual spawn.
+   */
+  resolveLoadout: (role: string) => Promise<MarketplaceLoadoutReport>;
   /**
    * Set the per-skill picks on a subscription. Pass `null` for "all
    * skills in the bundle", a flat `string[]` for "these skills for
@@ -307,6 +315,14 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     [],
   );
 
+  const resolveLoadout = useCallback(
+    async (role: string) => {
+      const pid = projectId ?? MARKETPLACE_GLOBAL_SCOPE_ID;
+      return window.api.resolveMarketplaceLoadout(pid, role);
+    },
+    [projectId],
+  );
+
   const getChangelog = useCallback(
     async (
       sourceId: string,
@@ -427,6 +443,7 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     setSourceEnabled,
     listBundleSkills,
     readSkill,
+    resolveLoadout,
     setSkills,
     getChangelog,
     reload,

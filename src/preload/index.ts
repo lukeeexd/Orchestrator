@@ -269,6 +269,12 @@ const api: OrchestratorApi = {
       bundleId,
       skillId,
     ) as Promise<string | null>,
+  resolveMarketplaceLoadout: (projectId, role) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceResolveLoadout,
+      projectId,
+      role,
+    ) as Promise<import('../shared/ipc').MarketplaceLoadoutReport>,
   setMarketplaceBundleSkills: (projectId, sourceId, bundleId, skills) =>
     ipcRenderer.invoke(
       IpcChannels.MarketplaceSetSkills,

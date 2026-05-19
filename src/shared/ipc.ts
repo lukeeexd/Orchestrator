@@ -57,6 +57,7 @@ export const IpcChannels = {
   MarketplaceSetSourceEnabled: 'marketplace:setSourceEnabled',
   MarketplaceListBundleSkills: 'marketplace:listBundleSkills',
   MarketplaceReadSkill: 'marketplace:readSkill',
+  MarketplaceResolveLoadout: 'marketplace:resolveLoadout',
   MarketplaceSetSkills: 'marketplace:setSkills',
   MarketplaceGetChangelog: 'marketplace:getChangelog',
   MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
@@ -311,6 +312,27 @@ export interface MarketplaceChangelogEntry {
   version: string;
   date?: string;
   body: string;
+}
+
+/**
+ * One bundle's contribution to a role's resolved spawn-time loadout.
+ * Mirrors marketplace.LoadoutEntry; lives here so the renderer types
+ * don't cross into main.
+ */
+export interface MarketplaceLoadoutEntry {
+  sourceId: string;
+  bundleId: string;
+  scope: 'global' | 'project';
+  pluginDir: string | null;
+  skills: MarketplaceBundleSkillView[];
+  warning?: string;
+}
+
+export interface MarketplaceLoadoutReport {
+  role: string;
+  entries: MarketplaceLoadoutEntry[];
+  totalSkills: number;
+  approxFrontmatterChars: number;
 }
 
 export interface AgentEventAgentPayload {
@@ -603,6 +625,15 @@ export interface OrchestratorApi {
     bundleId: string,
     skillId: string,
   ) => Promise<string | null>;
+  /**
+   * Resolve the dry-run loadout for a role in a project — what
+   * --plugin-dir paths + skills a fresh spawn would receive, without
+   * actually spawning.
+   */
+  resolveMarketplaceLoadout: (
+    projectId: string,
+    role: string,
+  ) => Promise<MarketplaceLoadoutReport>;
   /**
    * Set the per-skill subset for a subscription. Three forms:
    *   - `null` — all skills load for every enabled role (default).

@@ -964,6 +964,16 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IpcChannels.MarketplaceResolveLoadout,
+    (
+      _event,
+      projectId: string,
+      role: string,
+    ): marketplace.LoadoutReport =>
+      marketplace.resolveLoadout(projectId, role),
+  );
+
+  ipcMain.handle(
     IpcChannels.MarketplaceSetSkills,
     (
       _event,
