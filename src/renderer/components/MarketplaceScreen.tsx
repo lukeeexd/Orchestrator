@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type {
   MarketplaceBundleSkillView,
   MarketplaceBundleView,
@@ -835,6 +837,24 @@ function RoleSkillCard({
   );
 }
 
+/**
+ * Strip the YAML frontmatter block from a SKILL.md (everything between
+ * the leading `---` and the next `---` on its own line). The modal's
+ * header already surfaces name + description, so re-rendering the raw
+ * YAML in the body would be redundant. If the file doesn't start with
+ * `---`, returns the input unchanged.
+ */
+function stripFrontmatter(raw: string): string {
+  if (!raw.startsWith('---')) return raw;
+  // Look for the closing `---` on its own line (with optional
+  // leading/trailing whitespace, tolerating CRLF).
+  const end = raw.search(/\r?\n---\s*(\r?\n|$)/);
+  if (end < 0) return raw;
+  const afterClose = raw.indexOf('\n', end + 1);
+  if (afterClose < 0) return '';
+  return raw.slice(afterClose + 1).replace(/^\s+/, '');
+}
+
 function SkillPreviewModal({
   sourceId,
   bundleId,
@@ -936,23 +956,11 @@ function SkillPreviewModal({
             </div>
           )}
           {typeof content === 'string' && (
-            <pre
-              style={{
-                margin: 0,
-                padding: 12,
-                background: 'var(--sub-2)',
-                borderRadius: 4,
-                fontSize: 11,
-                lineHeight: 1.5,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                color: 'var(--text)',
-                fontFamily:
-                  '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace',
-              }}
-            >
-              {content}
-            </pre>
+            <div className="md-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {stripFrontmatter(content)}
+              </ReactMarkdown>
+            </div>
           )}
         </div>
         <div
