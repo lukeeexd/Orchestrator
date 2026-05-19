@@ -24,7 +24,10 @@ import * as persistence from '../persistence';
 import { prepareAttachments } from '../attachments';
 import * as registry from '../agents/registry';
 import { getMcpConfigPath, getProject } from '../projects';
-import { pluginDirsForProject } from '../marketplace';
+import {
+  availableSkillsByRole as getMarketplaceSkillsByRole,
+  pluginDirsForProject,
+} from '../marketplace';
 
 /**
  * Build the Director's effective system prompt: the hardcoded base
@@ -228,6 +231,50 @@ class DirectorSession {
     return `[currently spawned agents]\n${lines.join('\n')}\n[/currently spawned agents]\n\n`;
   }
 
+  /**
+   * Build a `[project skills]` block listing the marketplace skills
+   * each agent role will have loaded. Empty when no role has any
+   * skill — keeps the prompt tight for projects without subscriptions.
+   * Descriptions are truncated to 80 chars so a 30-skill bundle
+   * doesn't blow out the Director's context per turn.
+   */
+  private buildSkillsBlock(): string {
+    const byRole = getMarketplaceSkillsByRole(this.projectId);
+    const order = [
+      'pm',
+      'researcher',
+      'coder',
+      'qa',
+      'devops',
+      'security',
+      'director',
+    ];
+    const anyHasSkills = order.some((r) => (byRole[r] ?? []).length > 0);
+    if (!anyHasSkills) return '';
+    const lines: string[] = ['[project skills — auto-loaded via --plugin-dir]'];
+    for (const role of order) {
+      const skills = byRole[role] ?? [];
+      if (skills.length === 0) {
+        lines.push(`${role}: none`);
+        continue;
+      }
+      lines.push(`${role}:`);
+      for (const s of skills) {
+        const desc =
+          s.description && s.description.length > 0
+            ? ' — ' +
+              (s.description.length > 80
+                ? s.description.slice(0, 80) + '…'
+                : s.description)
+            : '';
+        const name = s.name && s.name !== s.id ? ` (${s.name})` : '';
+        lines.push(`  - ${s.id}${name}${desc}`);
+      }
+    }
+    lines.push('[/project skills]');
+    return lines.join('\n') + '\n\n';
+  }
+
   private async runTurn(
     promptBody: string,
     mode: DirectorMode,
@@ -308,7 +355,8 @@ class DirectorSession {
         });
       }
       const agentBlock = this.buildFleetBlock();
-      const fullPrompt = `[mode: ${mode}]\n${agentBlock}${prep.textInline}${promptBody}`;
+      const skillsBlock = this.buildSkillsBlock();
+      const fullPrompt = `[mode: ${mode}]\n${skillsBlock}${agentBlock}${prep.textInline}${promptBody}`;
 
       const q =
         provider === 'codex'

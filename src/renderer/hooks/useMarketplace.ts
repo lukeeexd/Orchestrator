@@ -3,6 +3,9 @@ import type {
   MarketplaceBundleSkillView,
   MarketplaceBundleView,
   MarketplaceChangelogEntry,
+  MarketplaceLoadoutReport,
+  MarketplaceSelectedSkills,
+  MarketplaceSkillFireCount,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
@@ -66,12 +69,38 @@ interface UseMarketplaceResult {
     sourceId: string,
     bundleId: string,
   ) => Promise<MarketplaceBundleSkillView[]>;
-  /** Set per-skill subset on a subscription. Pass null for all-skills. */
+  /**
+   * Read the full SKILL.md text for a specific skill in a bundle.
+   * Returns null when the file isn't on disk (source not synced,
+   * skill removed upstream, etc.).
+   */
+  readSkill: (
+    sourceId: string,
+    bundleId: string,
+    skillId: string,
+  ) => Promise<string | null>;
+  /**
+   * Resolve the dry-run loadout for `role` in the active project.
+   * Returns the same data structure the runner sees at spawn time, so
+   * the UI can show "this is what a fresh agent of this role would
+   * load" without burning an actual spawn.
+   */
+  resolveLoadout: (role: string) => Promise<MarketplaceLoadoutReport>;
+  /** Live per-skill fire-count snapshot for the active project. */
+  fireCounts: MarketplaceSkillFireCount[];
+  /** Pull a fresh fire-count snapshot from main. */
+  reloadFireCounts: () => Promise<void>;
+  /**
+   * Set the per-skill picks on a subscription. Pass `null` for "all
+   * skills in the bundle", a flat `string[]` for "these skills for
+   * every enabled role" (legacy Pick modal form), or a
+   * `Record<role, string[]>` for per-role granularity.
+   */
   setSkills: (
     sourceId: string,
     bundleId: string,
     scope: 'global' | 'project',
-    skills: string[] | null,
+    skills: MarketplaceSelectedSkills,
   ) => Promise<void>;
   /** Fetch changelog entries between two versions for a source. */
   getChangelog: (
@@ -285,6 +314,35 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     [],
   );
 
+  const readSkill = useCallback(
+    async (sourceId: string, bundleId: string, skillId: string) =>
+      window.api.readMarketplaceSkill(sourceId, bundleId, skillId),
+    [],
+  );
+
+  const resolveLoadout = useCallback(
+    async (role: string) => {
+      const pid = projectId ?? MARKETPLACE_GLOBAL_SCOPE_ID;
+      return window.api.resolveMarketplaceLoadout(pid, role);
+    },
+    [projectId],
+  );
+
+  const [fireCounts, setFireCounts] = useState<MarketplaceSkillFireCount[]>(
+    [],
+  );
+  const reloadFireCounts = useCallback(async () => {
+    if (!projectId) {
+      setFireCounts([]);
+      return;
+    }
+    const rows = await window.api.listMarketplaceFireCounts(projectId);
+    setFireCounts(rows);
+  }, [projectId]);
+  useEffect(() => {
+    void reloadFireCounts();
+  }, [reloadFireCounts]);
+
   const getChangelog = useCallback(
     async (
       sourceId: string,
@@ -300,7 +358,7 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
       sourceId: string,
       bundleId: string,
       scope: 'global' | 'project',
-      skills: string[] | null,
+      skills: MarketplaceSelectedSkills,
     ) => {
       const scopeId = resolveScopeProjectId(scope);
       if (!scopeId) return;
@@ -404,6 +462,10 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     removeSource,
     setSourceEnabled,
     listBundleSkills,
+    readSkill,
+    resolveLoadout,
+    fireCounts,
+    reloadFireCounts,
     setSkills,
     getChangelog,
     reload,

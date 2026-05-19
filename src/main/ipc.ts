@@ -953,17 +953,65 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IpcChannels.MarketplaceReadSkill,
+    (
+      _event,
+      sourceId: string,
+      bundleId: string,
+      skillId: string,
+    ): string | null =>
+      marketplace.readSkillContent(sourceId, bundleId, skillId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceResolveLoadout,
+    (
+      _event,
+      projectId: string,
+      role: string,
+    ): marketplace.LoadoutReport =>
+      marketplace.resolveLoadout(projectId, role),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceListFireCounts,
+    (
+      _event,
+      projectId: string,
+    ): marketplace.SkillFireCount[] =>
+      marketplace.getSkillFireCounts(projectId),
+  );
+
+  ipcMain.handle(
     IpcChannels.MarketplaceSetSkills,
     (
       _event,
       projectId: string,
       sourceId: string,
       bundleId: string,
-      skills: string[] | null,
+      skills: marketplace.SelectedSkills,
     ): { ok: true } => {
-      const sanitized = skills
-        ? skills.filter((s): s is string => typeof s === 'string')
-        : null;
+      // Defensive: the renderer is trusted, but the IPC boundary is
+      // the right place to coerce shapes so a malformed call can't
+      // poison the column. Three valid forms:
+      //   null         → all skills
+      //   string[]     → flat (every role gets these)
+      //   { [r]: [] }  → per-role
+      let sanitized: marketplace.SelectedSkills = null;
+      if (Array.isArray(skills)) {
+        sanitized = skills.filter(
+          (s): s is string => typeof s === 'string' && s.length > 0,
+        );
+      } else if (skills && typeof skills === 'object') {
+        const map: Record<string, string[]> = {};
+        for (const [role, list] of Object.entries(skills)) {
+          if (!Array.isArray(list)) continue;
+          map[role] = list.filter(
+            (s): s is string => typeof s === 'string' && s.length > 0,
+          );
+        }
+        sanitized = map;
+      }
       marketplace.setSubscriptionSkills(
         projectId,
         sourceId,

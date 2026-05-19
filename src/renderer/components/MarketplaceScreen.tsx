@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type {
   MarketplaceBundleSkillView,
   MarketplaceBundleView,
   MarketplaceChangelogEntry,
+  MarketplaceLoadoutReport,
+  MarketplaceSelectedSkills,
+  MarketplaceSkillFireCount,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
-import { MARKETPLACE_DEFAULT_SOURCE_ID } from '../../shared/ipc';
+import {
+  MARKETPLACE_DEFAULT_SOURCE_ID,
+  MARKETPLACE_RECOMMENDED_DEFAULTS,
+} from '../../shared/ipc';
 import type { Provider } from '../../shared/types';
 import { Icon } from './Icon';
 import { useMarketplace } from '../hooks/useMarketplace';
@@ -37,6 +45,58 @@ export function MarketplaceScreen({
 }: Props) {
   const mp = useMarketplace(projectId);
   const [addOpen, setAddOpen] = useState(false);
+  const [recommendedOpen, setRecommendedOpen] = useState(false);
+  const [viewTab, setViewTab] = useState<'browse' | 'agents'>('browse');
+
+  // "Already applied" = every recommended bundle is subscribed at the
+  // global scope with the same per-role skill map. Any deviation (a
+  // role's list is empty when we wanted skills, has extras, or the
+  // wrong items) flips it back to not-applied so the user can re-
+  // baseline. selectedSkills === null is also a superset and counts
+  // as applied — they get everything plus more.
+  const recommendedApplied = useMemo(() => {
+    const rec = MARKETPLACE_RECOMMENDED_DEFAULTS;
+    for (const wanted of rec.bundles) {
+      const sub = mp.subscriptions.find(
+        (s) => s.sourceId === rec.sourceId && s.bundleId === wanted.bundleId,
+      );
+      if (!sub) return false;
+      const have = sub.selectedSkills;
+      if (have === null) continue; // superset; counts as applied
+      if (Array.isArray(have)) return false; // flat form ≠ per-role spec
+      for (const [role, wantList] of Object.entries(wanted.skillsByRole)) {
+        const haveList = have[role] ?? [];
+        if (haveList.length !== wantList.length) return false;
+        const haveSet = new Set(haveList);
+        for (const id of wantList) if (!haveSet.has(id)) return false;
+      }
+    }
+    return true;
+  }, [mp.subscriptions]);
+
+  const applyRecommended = async () => {
+    const rec = MARKETPLACE_RECOMMENDED_DEFAULTS;
+    for (const wanted of rec.bundles) {
+      // subscribe is idempotent (INSERT OR REPLACE) — also blanks
+      // roles + selectedSkills, which is fine since we set them next.
+      await mp.subscribe(rec.sourceId, wanted.bundleId, 'global');
+      await mp.setSkills(
+        rec.sourceId,
+        wanted.bundleId,
+        'global',
+        wanted.skillsByRole,
+      );
+      if (wanted.roles !== null) {
+        await mp.setRoles(
+          rec.sourceId,
+          wanted.bundleId,
+          'global',
+          wanted.roles,
+        );
+      }
+    }
+    setRecommendedOpen(false);
+  };
   // Banner condition: the active project has no claude side at all
   // (agents AND Director are codex). In that case, every subscription
   // the user makes here is dormant for *this* project — it'd only
@@ -81,7 +141,67 @@ export function MarketplaceScreen({
         >
           subscriptions for <code>{projectName ?? 'current project'}</code>
         </span>
+        <div
+          role="tablist"
+          style={{
+            marginLeft: 16,
+            display: 'flex',
+            gap: 0,
+            borderBottom: '1px solid transparent',
+          }}
+        >
+          {([
+            ['browse', 'Browse bundles'],
+            ['agents', 'Agent skills'],
+          ] as const).map(([key, label]) => {
+            const active = viewTab === key;
+            return (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setViewTab(key)}
+                className="tb-btn"
+                style={{
+                  height: 22,
+                  borderRadius: 0,
+                  borderBottom: active
+                    ? '2px solid var(--accent)'
+                    : '2px solid transparent',
+                  background: 'transparent',
+                  color: active ? 'var(--text)' : 'var(--muted)',
+                  fontWeight: active ? 600 : 400,
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
         <span className="spacer" />
+        <button
+          className="tb-btn"
+          style={{
+            height: 22,
+            opacity: recommendedApplied ? 0.55 : 1,
+          }}
+          onClick={() => setRecommendedOpen(true)}
+          title={
+            recommendedApplied
+              ? 'Recommended setup already applied. Click to review or re-apply.'
+              : 'One-click install: subscribes a curated skill set sized for the seven agent roles.'
+          }
+        >
+          {recommendedApplied ? (
+            <>
+              <Icon name="check" size={11} /> Recommended applied
+            </>
+          ) : (
+            <>
+              <Icon name="templates" size={11} /> Recommended setup
+            </>
+          )}
+        </button>
         <button
           className="tb-btn"
           style={{ height: 22 }}
@@ -108,7 +228,19 @@ export function MarketplaceScreen({
             your shell.
           </div>
         )}
-        {mp.sources.length === 0 ? (
+        {viewTab === 'agents' ? (
+          <AgentSkillsView
+            subscriptions={mp.subscriptions}
+            sources={mp.sources}
+            bundlesBySource={mp.bundlesBySource}
+            listBundleSkills={mp.listBundleSkills}
+            readSkill={mp.readSkill}
+            resolveLoadout={mp.resolveLoadout}
+            fireCounts={mp.fireCounts}
+            reloadFireCounts={mp.reloadFireCounts}
+            setSkills={mp.setSkills}
+          />
+        ) : mp.sources.length === 0 ? (
           <div className="inline-empty" style={{ padding: 24 }}>
             No marketplace sources configured. The default
             <code> alirezarezvani/claude-skills </code>
@@ -142,12 +274,6 @@ export function MarketplaceScreen({
               onMoveScope={(bundleId, to) =>
                 void mp.moveScope(source.id, bundleId, to)
               }
-              onListSkills={(bundleId) =>
-                mp.listBundleSkills(source.id, bundleId)
-              }
-              onSetSkills={(bundleId, scope, skills) =>
-                void mp.setSkills(source.id, bundleId, scope, skills)
-              }
               onToggleEnabled={() =>
                 void mp.setSourceEnabled(source.id, !source.enabled)
               }
@@ -168,6 +294,1187 @@ export function MarketplaceScreen({
           }}
         />
       )}
+      {recommendedOpen && (
+        <RecommendedSetupModal
+          alreadyApplied={recommendedApplied}
+          bundles={MARKETPLACE_RECOMMENDED_DEFAULTS.bundles}
+          onCancel={() => setRecommendedOpen(false)}
+          onApply={applyRecommended}
+        />
+      )}
+    </div>
+  );
+}
+
+function RecommendedSetupModal({
+  alreadyApplied,
+  bundles,
+  onCancel,
+  onApply,
+}: {
+  alreadyApplied: boolean;
+  bundles: typeof MARKETPLACE_RECOMMENDED_DEFAULTS.bundles;
+  onCancel: () => void;
+  onApply: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 560 }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>Recommended setup</b>
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onCancel} title="Cancel">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div className="modal-body">
+          <p style={{ marginTop: 0, color: 'var(--muted)', fontSize: 12 }}>
+            One-click install of a per-role skill stack. Subscribes
+            globally so the picks apply to every project. Each agent
+            role gets its own curated list — Claude&apos;s description
+            matcher routes inside that role&apos;s set. Re-running
+            replaces any existing selection for these bundles.
+          </p>
+          {bundles.map((b) => (
+            <div key={b.bundleId} style={{ marginTop: 10 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  marginBottom: 6,
+                  color: 'var(--text)',
+                }}
+              >
+                <code>{b.bundleId}</code>
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '70px 1fr',
+                  rowGap: 4,
+                  columnGap: 8,
+                  fontSize: 10,
+                }}
+              >
+                {Object.entries(b.skillsByRole).map(([role, list]) => (
+                  <div
+                    key={role}
+                    style={{ display: 'contents' }}
+                  >
+                    <code
+                      style={{
+                        color: 'var(--muted)',
+                        background: 'transparent',
+                        padding: 0,
+                        textAlign: 'right',
+                      }}
+                    >
+                      {role}
+                    </code>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 4,
+                      }}
+                    >
+                      {list.length === 0 ? (
+                        <span
+                          style={{ color: 'var(--muted-2)', fontSize: 10 }}
+                        >
+                          (none)
+                        </span>
+                      ) : (
+                        list.map((s) => (
+                          <code
+                            key={s}
+                            style={{
+                              fontSize: 10,
+                              padding: '2px 6px',
+                              background: 'var(--sub-2)',
+                              borderRadius: 3,
+                              color: 'var(--text-2)',
+                            }}
+                          >
+                            {s}
+                          </code>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {alreadyApplied && (
+            <div
+              className="inline-empty"
+              style={{ padding: 10, marginTop: 12, fontSize: 11 }}
+            >
+              Already applied. Re-running will re-baseline the skill
+              selection (useful after upstream changes).
+            </div>
+          )}
+        </div>
+        <div
+          className="modal-foot"
+          style={{
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+            padding: 12,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button className="tb-btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            className="tb-btn primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onApply();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? 'Applying…' : alreadyApplied ? 'Re-apply' : 'Apply'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────── Agent skills view ───────────────────────────
+
+const AGENT_ROLES: ReadonlyArray<{ id: string; label: string; hint: string }> = [
+  { id: 'director', label: 'Director', hint: 'Plans + supervises agents' },
+  { id: 'pm', label: 'PM', hint: 'Decomposes tasks; read-only' },
+  { id: 'researcher', label: 'Researcher', hint: 'Reads, web-fetches, summarises' },
+  { id: 'coder', label: 'Coder', hint: 'Writes + edits code, runs tests' },
+  { id: 'qa', label: 'QA', hint: 'Writes tests, finds regressions' },
+  { id: 'devops', label: 'DevOps', hint: 'Builds, deploys, CI' },
+  { id: 'security', label: 'Security', hint: 'Audits, threat-models' },
+];
+
+/**
+ * Compute the effective skill list for `role` from a subscription's
+ * current selectedSkills column. Mirrors marketplace.ts skillsForRole
+ * exactly — kept in sync because the renderer can't import main code.
+ * Returns null for "all skills in the bundle"; an empty array for
+ * "none"; or the explicit list.
+ */
+function effectiveSkillsForRole(
+  sub: MarketplaceSubscriptionView,
+  role: string,
+): string[] | null {
+  if (sub.selectedSkills === null) return null;
+  if (Array.isArray(sub.selectedSkills)) return sub.selectedSkills;
+  return sub.selectedSkills[role] ?? [];
+}
+
+/**
+ * Build the next selectedSkills value for a subscription after the user
+ * toggles a single (role, skillId) cell. Always returns the per-role
+ * map form — once the user opens the agent-centric editor and changes
+ * anything, the subscription gets pinned to per-role mode so future
+ * edits don't accidentally fan out to other roles.
+ */
+function toggleSkillForRole(
+  sub: MarketplaceSubscriptionView,
+  role: string,
+  skillId: string,
+  allSkillIds: string[],
+): Record<string, string[]> {
+  // 1. Normalize current state into a per-role map.
+  const map: Record<string, string[]> = {};
+  for (const r of AGENT_ROLES.map((x) => x.id)) {
+    const effective = effectiveSkillsForRole(sub, r);
+    if (effective === null) {
+      // "All skills" — materialize as the full bundle list so the
+      // user's first toggle removes one skill, not all of them.
+      map[r] = [...allSkillIds];
+    } else {
+      map[r] = [...effective];
+    }
+  }
+  // 2. Toggle skillId for the target role.
+  const idx = map[role].indexOf(skillId);
+  if (idx >= 0) {
+    map[role].splice(idx, 1);
+  } else {
+    map[role].push(skillId);
+  }
+  return map;
+}
+
+function AgentSkillsView({
+  subscriptions,
+  sources,
+  bundlesBySource,
+  listBundleSkills,
+  readSkill,
+  resolveLoadout,
+  fireCounts,
+  reloadFireCounts,
+  setSkills,
+}: {
+  subscriptions: MarketplaceSubscriptionView[];
+  sources: MarketplaceSourceView[];
+  bundlesBySource: Record<string, MarketplaceBundleView[]>;
+  listBundleSkills: (
+    sourceId: string,
+    bundleId: string,
+  ) => Promise<MarketplaceBundleSkillView[]>;
+  readSkill: (
+    sourceId: string,
+    bundleId: string,
+    skillId: string,
+  ) => Promise<string | null>;
+  resolveLoadout: (role: string) => Promise<MarketplaceLoadoutReport>;
+  fireCounts: MarketplaceSkillFireCount[];
+  reloadFireCounts: () => Promise<void>;
+  setSkills: (
+    sourceId: string,
+    bundleId: string,
+    scope: 'global' | 'project',
+    skills: MarketplaceSelectedSkills,
+  ) => Promise<void>;
+}) {
+  // Build a lookup so each checkbox can flag its (role, source, bundle,
+  // skill) fire count in O(1). Key shape mirrors the table's PK.
+  const fireCountByKey = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const fc of fireCounts) {
+      const key = `${fc.role}\x00${fc.sourceId}\x00${fc.bundleId}\x00${fc.skillId}`;
+      m.set(key, fc.count);
+    }
+    return m;
+  }, [fireCounts]);
+  // Preview state — single modal shared across every checkbox. Stored
+  // here (rather than per-checkbox) so opening one closes any other.
+  const [previewTarget, setPreviewTarget] = useState<{
+    sourceId: string;
+    bundleId: string;
+    skill: MarketplaceBundleSkillView;
+  } | null>(null);
+  // Loadout modal target — null means "no modal open"; otherwise the
+  // role whose dry-run is being shown.
+  const [loadoutRole, setLoadoutRole] = useState<string | null>(null);
+  const enabledSourceIds = useMemo(
+    () => new Set(sources.filter((s) => s.enabled).map((s) => s.id)),
+    [sources],
+  );
+  const visibleSubs = useMemo(
+    () => subscriptions.filter((s) => enabledSourceIds.has(s.sourceId)),
+    [subscriptions, enabledSourceIds],
+  );
+
+  // Lazy bundle-skill cache. Keyed as `${sourceId}\x00${bundleId}` so
+  // a single sub can look up its full skill catalogue once and reuse
+  // it across all seven role columns.
+  const [skillsCache, setSkillsCache] = useState<
+    Record<string, MarketplaceBundleSkillView[]>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const next = { ...skillsCache };
+      let added = false;
+      for (const sub of visibleSubs) {
+        const key = `${sub.sourceId}\x00${sub.bundleId}`;
+        if (next[key]) continue;
+        const list = await listBundleSkills(sub.sourceId, sub.bundleId);
+        if (cancelled) return;
+        next[key] = list;
+        added = true;
+      }
+      if (!cancelled && added) setSkillsCache(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // skillsCache deliberately excluded — adding it would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleSubs, listBundleSkills]);
+
+  if (visibleSubs.length === 0) {
+    return (
+      <div className="inline-empty" style={{ padding: 24 }}>
+        No bundle subscriptions yet. Switch to <strong>Browse bundles</strong>
+        {' '}and install one (or hit <strong>Recommended setup</strong> for a
+        one-click default).
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 8,
+          margin: '0 0 12px 0',
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            color: 'var(--muted)',
+            fontSize: 12,
+            flex: 1,
+          }}
+        >
+          Configure which skills each agent role loads from your subscribed
+          bundles. Toggling any cell switches that subscription to per-role
+          mode — future edits stay scoped to the role you&apos;re editing.
+          Numbers next to skill names show how many turns have fired that
+          skill in this project.
+        </p>
+        <button
+          className="tb-btn"
+          style={{ height: 20, fontSize: 10 }}
+          onClick={() => void reloadFireCounts()}
+          title="Re-fetch the per-skill fire counts from disk."
+        >
+          refresh counts
+        </button>
+      </div>
+      {AGENT_ROLES.map((role) => {
+        const subsForRole = visibleSubs.filter(
+          (sub) => sub.roles === null || sub.roles.includes(role.id),
+        );
+        return (
+          <RoleSkillCard
+            key={role.id}
+            roleId={role.id}
+            roleLabel={role.label}
+            roleHint={role.hint}
+            subs={subsForRole}
+            bundlesBySource={bundlesBySource}
+            skillsCache={skillsCache}
+            fireCountByKey={fireCountByKey}
+            onToggle={async (sub, skillId, allSkillIds) => {
+              const next = toggleSkillForRole(
+                sub,
+                role.id,
+                skillId,
+                allSkillIds,
+              );
+              await setSkills(sub.sourceId, sub.bundleId, sub.scope, next);
+            }}
+            onPreview={(sub, skill) =>
+              setPreviewTarget({
+                sourceId: sub.sourceId,
+                bundleId: sub.bundleId,
+                skill,
+              })
+            }
+            onShowLoadout={() => setLoadoutRole(role.id)}
+          />
+        );
+      })}
+      {previewTarget && (
+        <SkillPreviewModal
+          sourceId={previewTarget.sourceId}
+          bundleId={previewTarget.bundleId}
+          skill={previewTarget.skill}
+          readSkill={readSkill}
+          onClose={() => setPreviewTarget(null)}
+        />
+      )}
+      {loadoutRole && (
+        <LoadoutModal
+          role={loadoutRole}
+          resolveLoadout={resolveLoadout}
+          onClose={() => setLoadoutRole(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function RoleSkillCard({
+  roleId,
+  roleLabel,
+  roleHint,
+  subs,
+  bundlesBySource,
+  skillsCache,
+  fireCountByKey,
+  onToggle,
+  onPreview,
+  onShowLoadout,
+}: {
+  roleId: string;
+  roleLabel: string;
+  roleHint: string;
+  subs: MarketplaceSubscriptionView[];
+  bundlesBySource: Record<string, MarketplaceBundleView[]>;
+  skillsCache: Record<string, MarketplaceBundleSkillView[]>;
+  fireCountByKey: Map<string, number>;
+  onToggle: (
+    sub: MarketplaceSubscriptionView,
+    skillId: string,
+    allSkillIds: string[],
+  ) => void;
+  onPreview: (
+    sub: MarketplaceSubscriptionView,
+    skill: MarketplaceBundleSkillView,
+  ) => void;
+  onShowLoadout: () => void;
+}) {
+  return (
+    <section
+      className="settings-section"
+      style={{ marginBottom: 12, padding: 12 }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        <strong style={{ fontSize: 13 }}>{roleLabel}</strong>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{roleHint}</span>
+        <span className="spacer" />
+        <button
+          className="tb-btn"
+          style={{ height: 20, fontSize: 10 }}
+          onClick={onShowLoadout}
+          title="Show what a fresh agent of this role would actually receive at spawn time — the resolved --plugin-dir paths, skills, and a rough context-budget estimate."
+        >
+          show loadout
+        </button>
+      </div>
+      {subs.length === 0 ? (
+        <div style={{ fontSize: 11, color: 'var(--muted-2)' }}>
+          No bundles bound to this role. (Bundles default to all-roles; if
+          this role is empty, check the bundle&apos;s role chips in
+          Browse bundles.)
+        </div>
+      ) : (
+        subs.map((sub) => {
+          const cacheKey = `${sub.sourceId}\x00${sub.bundleId}`;
+          const allSkills = skillsCache[cacheKey];
+          const bundle = (bundlesBySource[sub.sourceId] ?? []).find(
+            (b) => b.id === sub.bundleId,
+          );
+          const effective = effectiveSkillsForRole(sub, roleId);
+          // null → checked = all; empty array → checked = none;
+          // list → checked = list.
+          const isAll = effective === null;
+          const checkedSet = new Set<string>(effective ?? []);
+          return (
+            <div
+              key={cacheKey}
+              style={{
+                marginTop: 6,
+                padding: '8px 10px',
+                background: 'var(--sub)',
+                borderRadius: 4,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  marginBottom: 6,
+                  fontSize: 11,
+                }}
+              >
+                <code>{sub.bundleId}</code>
+                <span style={{ color: 'var(--muted-2)' }}>·</span>
+                <span style={{ color: 'var(--muted)' }}>
+                  {sub.scope === 'global' ? 'global' : 'project-scoped'}
+                </span>
+                {bundle?.version && (
+                  <>
+                    <span style={{ color: 'var(--muted-2)' }}>·</span>
+                    <span style={{ color: 'var(--muted)' }}>
+                      v{bundle.version}
+                    </span>
+                  </>
+                )}
+              </div>
+              {allSkills === undefined ? (
+                <div style={{ fontSize: 11, color: 'var(--muted-2)' }}>
+                  Loading skills…
+                </div>
+              ) : allSkills.length === 0 ? (
+                <div style={{ fontSize: 11, color: 'var(--muted-2)' }}>
+                  This bundle has no skills.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns:
+                      'repeat(auto-fill, minmax(200px, 1fr))',
+                    gap: 4,
+                  }}
+                >
+                  {allSkills.map((s) => {
+                    const checked = isAll || checkedSet.has(s.id);
+                    const allSkillIds = allSkills.map((x) => x.id);
+                    const fireKey = `${roleId}\x00${sub.sourceId}\x00${sub.bundleId}\x00${s.id}`;
+                    const fires = fireCountByKey.get(fireKey) ?? 0;
+                    // Dim chip: skill is checked but has never fired.
+                    // Useful prune signal — the user enabled it but
+                    // the auto-loader never picked it for any task.
+                    const looksUnused = checked && fires === 0;
+                    return (
+                      <div
+                        key={s.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          fontSize: 11,
+                          color: checked ? 'var(--text)' : 'var(--muted-2)',
+                          padding: '2px 4px',
+                          borderRadius: 3,
+                        }}
+                      >
+                        <label
+                          title={s.description ?? s.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            cursor: 'pointer',
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              onToggle(sub, s.id, allSkillIds)
+                            }
+                            style={{ margin: 0 }}
+                          />
+                          <span
+                            style={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {s.name ?? s.id}
+                          </span>
+                        </label>
+                        {fires > 0 ? (
+                          <span
+                            title={`Fired ${fires} time${fires === 1 ? '' : 's'} for ${roleLabel} in this project`}
+                            style={{
+                              fontSize: 9,
+                              padding: '1px 5px',
+                              borderRadius: 8,
+                              background: 'var(--sub-2)',
+                              color: 'var(--text-2)',
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            {fires}×
+                          </span>
+                        ) : looksUnused ? (
+                          <span
+                            title="Enabled but never fired in this project — candidate for trimming."
+                            style={{
+                              fontSize: 9,
+                              padding: '1px 5px',
+                              borderRadius: 8,
+                              background: 'transparent',
+                              border: '1px dashed var(--border)',
+                              color: 'var(--muted-2)',
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            0×
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          onClick={() => onPreview(sub, s)}
+                          title={`Show the SKILL.md for ${s.id}`}
+                          style={{
+                            padding: 2,
+                            color: 'var(--muted)',
+                            background: 'transparent',
+                            border: 0,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Icon name="file" size={11} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </section>
+  );
+}
+
+// ─────────────────────────── Conflict detector ───────────────────────────
+
+/**
+ * Words too common to carry signal in skill descriptions. Tuned by
+ * scanning the engineering-team bundle — most skills mention "code",
+ * "review", "agent", "use", "task". Keeping those would inflate
+ * similarity scores meaninglessly.
+ */
+const CONFLICT_STOPWORDS = new Set([
+  'a', 'an', 'the', 'of', 'for', 'with', 'and', 'or', 'to', 'in', 'on',
+  'at', 'by', 'as', 'from', 'is', 'are', 'be', 'this', 'that', 'it',
+  'its', 'can', 'will', 'should', 'must', 'use', 'using', 'used', 'uses',
+  'run', 'runs', 'runs', 'task', 'tasks', 'agent', 'agents', 'when',
+  'where', 'what', 'which', 'how', 'who', 'why', 'do', 'does', 'done',
+  'has', 'have', 'had', 'not', 'no', 'yes', 'all', 'any', 'some',
+  'each', 'every', 'such', 'than', 'then', 'over', 'into', 'out',
+  'so', 'if', 'but', 'about', 'after', 'before', 'between', 'while',
+  'their', 'they', 'them', 'these', 'those', 'one', 'two', 'three',
+]);
+
+function conflictTokens(description: string): Set<string> {
+  const out = new Set<string>();
+  for (const word of description.toLowerCase().split(/\W+/)) {
+    if (word.length < 3) continue;
+    if (CONFLICT_STOPWORDS.has(word)) continue;
+    out.add(word);
+  }
+  return out;
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const t of a) if (b.has(t)) intersection += 1;
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+interface SkillConflict {
+  a: MarketplaceBundleSkillView;
+  b: MarketplaceBundleSkillView;
+  similarity: number;
+}
+
+/**
+ * Find pairs of skills whose descriptions overlap enough that the
+ * auto-loader is likely to pick ambiguously between them. Threshold
+ * chosen empirically: 0.35 catches obvious siblings (code-reviewer ↔
+ * adversarial-reviewer) without flooding the UI with weak-signal
+ * pairs. Skills with no description never conflict (tokens set is
+ * empty → similarity 0).
+ */
+function findSkillConflicts(
+  skills: MarketplaceBundleSkillView[],
+  threshold = 0.35,
+): SkillConflict[] {
+  const tokensFor = skills.map((s) => conflictTokens(s.description ?? ''));
+  const out: SkillConflict[] = [];
+  for (let i = 0; i < skills.length; i++) {
+    for (let j = i + 1; j < skills.length; j++) {
+      if (skills[i].id === skills[j].id) continue;
+      const sim = jaccardSimilarity(tokensFor[i], tokensFor[j]);
+      if (sim >= threshold) {
+        out.push({ a: skills[i], b: skills[j], similarity: sim });
+      }
+    }
+  }
+  return out.sort((x, y) => y.similarity - x.similarity);
+}
+
+function LoadoutModal({
+  role,
+  resolveLoadout,
+  onClose,
+}: {
+  role: string;
+  resolveLoadout: (role: string) => Promise<MarketplaceLoadoutReport>;
+  onClose: () => void;
+}) {
+  const [report, setReport] = useState<MarketplaceLoadoutReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void resolveLoadout(role)
+      .then((r) => {
+        if (!cancelled) setReport(r);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveLoadout, role]);
+
+  const roleLabel =
+    AGENT_ROLES.find((r) => r.id === role)?.label ?? role;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 720,
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>{roleLabel} loadout</b>
+            <span
+              style={{
+                marginLeft: 8,
+                color: 'var(--muted)',
+                fontSize: 11,
+                fontWeight: 400,
+              }}
+            >
+              dry-run — what a fresh <code>{role}</code> spawn would receive
+            </span>
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onClose} title="Close">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div
+          className="modal-body"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            padding: 12,
+          }}
+        >
+          {report === null && !error && (
+            <div className="inline-empty" style={{ padding: 18 }}>
+              Resolving…
+            </div>
+          )}
+          {error && (
+            <div className="form-error">Failed to resolve loadout: {error}</div>
+          )}
+          {report && (
+            <>
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: 10,
+                  background: 'var(--sub-2)',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}
+              >
+                <div>
+                  <strong>{report.totalSkills}</strong>{' '}
+                  {report.totalSkills === 1 ? 'skill' : 'skills'} across{' '}
+                  <strong>{report.entries.length}</strong>{' '}
+                  {report.entries.length === 1 ? 'bundle' : 'bundles'}.
+                </div>
+                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 4 }}>
+                  ~{report.approxFrontmatterChars.toLocaleString()} chars
+                  of skill-frontmatter added to the agent&apos;s system
+                  prompt. Full <code>SKILL.md</code> bodies only load
+                  on-demand when a skill triggers.
+                </div>
+              </div>
+              {report.entries.length === 0 ? (
+                <div className="inline-empty" style={{ padding: 18 }}>
+                  No skills load for this role. Agents will spawn with only
+                  their base toolset.
+                </div>
+              ) : (
+                report.entries.map((entry) => (
+                  <div
+                    key={`${entry.sourceId}\x00${entry.bundleId}`}
+                    style={{
+                      marginBottom: 10,
+                      padding: 10,
+                      background: 'var(--sub)',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'baseline',
+                        gap: 6,
+                        marginBottom: 4,
+                        fontSize: 12,
+                      }}
+                    >
+                      <code>{entry.bundleId}</code>
+                      <span style={{ color: 'var(--muted-2)' }}>·</span>
+                      <span style={{ color: 'var(--muted)', fontSize: 11 }}>
+                        {entry.scope}
+                      </span>
+                      <span style={{ color: 'var(--muted-2)' }}>·</span>
+                      <span style={{ color: 'var(--muted)', fontSize: 11 }}>
+                        {entry.skills.length}{' '}
+                        {entry.skills.length === 1 ? 'skill' : 'skills'}
+                      </span>
+                    </div>
+                    {entry.pluginDir && (
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: 'var(--muted-2)',
+                          marginBottom: 6,
+                          fontFamily:
+                            '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace',
+                          wordBreak: 'break-all',
+                        }}
+                        title={entry.pluginDir}
+                      >
+                        --plugin-dir {entry.pluginDir}
+                      </div>
+                    )}
+                    {entry.warning && (
+                      <div
+                        className="form-error"
+                        style={{
+                          fontSize: 11,
+                          marginBottom: 6,
+                          padding: '4px 8px',
+                        }}
+                      >
+                        ⚠ {entry.warning}
+                      </div>
+                    )}
+                    {entry.skills.length > 0 && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: 4,
+                        }}
+                      >
+                        {entry.skills.map((s) => (
+                          <code
+                            key={s.id}
+                            title={s.description ?? s.id}
+                            style={{
+                              fontSize: 10,
+                              padding: '2px 6px',
+                              background: 'var(--sub-2)',
+                              borderRadius: 3,
+                              color: 'var(--text-2)',
+                            }}
+                          >
+                            {s.id}
+                          </code>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+              <LoadoutConflicts report={report} />
+            </>
+          )}
+        </div>
+        <div
+          className="modal-foot"
+          style={{
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+            padding: 12,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button className="tb-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LoadoutConflicts({
+  report,
+}: {
+  report: MarketplaceLoadoutReport;
+}) {
+  // Flatten the role's loaded skills across every bundle and look for
+  // description-similarity pairs.
+  const conflicts = useMemo(() => {
+    const all: MarketplaceBundleSkillView[] = [];
+    for (const entry of report.entries) {
+      all.push(...entry.skills);
+    }
+    return findSkillConflicts(all);
+  }, [report]);
+
+  if (conflicts.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        padding: 12,
+        background: 'var(--sub-2)',
+        borderRadius: 4,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          marginBottom: 4,
+          color: 'var(--text)',
+        }}
+      >
+        Potential conflicts ({conflicts.length})
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--muted)',
+          marginBottom: 8,
+          lineHeight: 1.5,
+        }}
+      >
+        These skill pairs have overlapping descriptions — the auto-loader
+        may pick ambiguously between them. Consider disabling one for
+        this role if you find tasks routing to the wrong one.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {conflicts.map((c, i) => (
+          <div
+            key={`${c.a.id}\x00${c.b.id}`}
+            style={{
+              padding: 8,
+              background: 'var(--sub)',
+              borderRadius: 3,
+              fontSize: 11,
+              lineHeight: 1.5,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                marginBottom: 4,
+              }}
+            >
+              <code style={{ fontSize: 11 }}>{c.a.id}</code>
+              <span style={{ color: 'var(--muted-2)' }}>↔</span>
+              <code style={{ fontSize: 11 }}>{c.b.id}</code>
+              <span className="spacer" />
+              <span
+                style={{
+                  fontSize: 9,
+                  padding: '1px 5px',
+                  borderRadius: 8,
+                  background: 'var(--sub-2)',
+                  color: 'var(--muted)',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+                title={`Jaccard similarity of description tokens: ${c.similarity.toFixed(2)}`}
+              >
+                {Math.round(c.similarity * 100)}%
+              </span>
+            </div>
+            {c.a.description && (
+              <div style={{ color: 'var(--muted)', fontSize: 10 }}>
+                <code style={{ fontSize: 10 }}>{c.a.id}</code> · {c.a.description}
+              </div>
+            )}
+            {c.b.description && (
+              <div
+                style={{ color: 'var(--muted)', fontSize: 10, marginTop: 2 }}
+              >
+                <code style={{ fontSize: 10 }}>{c.b.id}</code> · {c.b.description}
+              </div>
+            )}
+            {/* Suppress noisy keys to keep React happy on this loop. */}
+            {i < 0 && null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Strip the YAML frontmatter block from a SKILL.md (everything between
+ * the leading `---` and the next `---` on its own line). The modal's
+ * header already surfaces name + description, so re-rendering the raw
+ * YAML in the body would be redundant. If the file doesn't start with
+ * `---`, returns the input unchanged.
+ */
+function stripFrontmatter(raw: string): string {
+  if (!raw.startsWith('---')) return raw;
+  // Look for the closing `---` on its own line (with optional
+  // leading/trailing whitespace, tolerating CRLF).
+  const end = raw.search(/\r?\n---\s*(\r?\n|$)/);
+  if (end < 0) return raw;
+  const afterClose = raw.indexOf('\n', end + 1);
+  if (afterClose < 0) return '';
+  return raw.slice(afterClose + 1).replace(/^\s+/, '');
+}
+
+function SkillPreviewModal({
+  sourceId,
+  bundleId,
+  skill,
+  readSkill,
+  onClose,
+}: {
+  sourceId: string;
+  bundleId: string;
+  skill: MarketplaceBundleSkillView;
+  readSkill: (
+    sourceId: string,
+    bundleId: string,
+    skillId: string,
+  ) => Promise<string | null>;
+  onClose: () => void;
+}) {
+  const [content, setContent] = useState<string | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readSkill(sourceId, bundleId, skill.id)
+      .then((raw) => {
+        if (cancelled) return;
+        setContent(raw);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [readSkill, sourceId, bundleId, skill.id]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: 760,
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        <div className="modal-head">
+          <span className="title">
+            <b>{skill.name ?? skill.id}</b>
+            <span
+              style={{
+                marginLeft: 8,
+                color: 'var(--muted)',
+                fontSize: 11,
+                fontWeight: 400,
+              }}
+            >
+              <code>{bundleId}/{skill.id}</code>
+            </span>
+          </span>
+          <span className="spacer" />
+          <button className="icon-btn" onClick={onClose} title="Close">
+            <Icon name="x" size={11} />
+          </button>
+        </div>
+        <div
+          className="modal-body"
+          style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12 }}
+        >
+          {skill.description && (
+            <p
+              style={{
+                margin: '0 0 12px 0',
+                color: 'var(--muted)',
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              {skill.description}
+            </p>
+          )}
+          {content === undefined && !error && (
+            <div className="inline-empty" style={{ padding: 18 }}>
+              Loading SKILL.md…
+            </div>
+          )}
+          {error && (
+            <div className="form-error">
+              Failed to read SKILL.md: {error}
+            </div>
+          )}
+          {content === null && !error && (
+            <div className="inline-empty" style={{ padding: 18 }}>
+              No SKILL.md found on disk. The source may not be synced
+              yet, or the skill was removed upstream — refresh the
+              source from Browse bundles and try again.
+            </div>
+          )}
+          {typeof content === 'string' && (
+            <div className="md-body">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {stripFrontmatter(content)}
+              </ReactMarkdown>
+            </div>
+          )}
+        </div>
+        <div
+          className="modal-foot"
+          style={{
+            display: 'flex',
+            gap: 8,
+            justifyContent: 'flex-end',
+            padding: 12,
+            borderTop: '1px solid var(--border)',
+          }}
+        >
+          <button className="tb-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -299,8 +1606,6 @@ function SourceSection({
   onAckUpdate,
   onSetRoles,
   onMoveScope,
-  onListSkills,
-  onSetSkills,
   onToggleEnabled,
   onGetChangelog,
 }: {
@@ -319,12 +1624,6 @@ function SourceSection({
     roles: string[] | null,
   ) => void;
   onMoveScope: (bundleId: string, to: 'global' | 'project') => void;
-  onListSkills: (bundleId: string) => Promise<MarketplaceBundleSkillView[]>;
-  onSetSkills: (
-    bundleId: string,
-    scope: 'global' | 'project',
-    skills: string[] | null,
-  ) => void;
   onToggleEnabled: () => void;
   onGetChangelog: (
     fromVersion: string | null,
@@ -612,10 +1911,6 @@ function SourceSection({
                     onSetRoles(b.id, scope, roles)
                   }
                   onMoveScope={(to) => onMoveScope(b.id, to)}
-                  onListSkills={() => onListSkills(b.id)}
-                  onSetSkills={(scope, skills) =>
-                    onSetSkills(b.id, scope, skills)
-                  }
                   onGetChangelog={(fromV, toV) =>
                     onGetChangelog(fromV, toV)
                   }
@@ -656,8 +1951,6 @@ function BundleCard({
   onAckUpdate,
   onSetRoles,
   onMoveScope,
-  onListSkills,
-  onSetSkills,
   onGetChangelog,
 }: {
   bundle: MarketplaceBundleView;
@@ -671,11 +1964,6 @@ function BundleCard({
     roles: string[] | null,
   ) => void;
   onMoveScope: (to: 'global' | 'project') => void;
-  onListSkills: () => Promise<MarketplaceBundleSkillView[]>;
-  onSetSkills: (
-    scope: 'global' | 'project',
-    skills: string[] | null,
-  ) => void;
   onGetChangelog: (
     fromVersion: string | null,
     toVersion: string,
@@ -685,7 +1973,50 @@ function BundleCard({
   const scope: 'global' | 'project' = subscription?.scope ?? 'global';
   const roles = subscription?.roles ?? null;
   const selectedSkills = subscription?.selectedSkills ?? null;
-  const [skillsPickerOpen, setSkillsPickerOpen] = useState(false);
+  // Derived view for the small "N selected" chip on the bundle card.
+  // Three cases:
+  //  - null:        "all" (whole bundle loads)
+  //  - flat array:  "N selected" (or "none" if empty)
+  //  - per-role:    "per-role" (the legacy Pick modal can't edit this
+  //                 shape — direct the user to the Agent skills view
+  //                 by disabling Pick when this case is in play)
+  const skillsSummary: {
+    label: string;
+    title: string;
+    perRole: boolean;
+  } = (() => {
+    if (selectedSkills === null) {
+      return {
+        label: 'all',
+        title: 'All skills in this bundle are loaded',
+        perRole: false,
+      };
+    }
+    if (Array.isArray(selectedSkills)) {
+      if (selectedSkills.length === 0) {
+        return {
+          label: 'none selected',
+          title: 'No skills from this bundle are loaded',
+          perRole: false,
+        };
+      }
+      return {
+        label: `${selectedSkills.length} selected`,
+        title: `${selectedSkills.length} of the bundle's skills are loaded for every enabled role`,
+        perRole: false,
+      };
+    }
+    // Per-role map
+    const roleCount = Object.keys(selectedSkills).filter(
+      (r) => (selectedSkills[r] ?? []).length > 0,
+    ).length;
+    return {
+      label: `per-role · ${roleCount} role${roleCount === 1 ? '' : 's'}`,
+      title:
+        'Per-role skill picks active. Use the Agent skills view (top of Marketplace) to edit.',
+      perRole: true,
+    };
+  })();
   const [changelogOpen, setChangelogOpen] = useState(false);
 
   // A chip is "on" when roles is null (all-roles legacy default) or
@@ -902,27 +2233,17 @@ function BundleCard({
             </span>
             <span
               style={{ fontSize: 11, color: 'var(--muted)' }}
-              title={
-                selectedSkills === null
-                  ? 'All skills in this bundle are loaded'
-                  : `${selectedSkills.length} of the bundle's skills are loaded`
-              }
+              title={skillsSummary.title}
             >
-              {selectedSkills === null
-                ? 'all'
-                : selectedSkills.length === 0
-                  ? 'none selected'
-                  : `${selectedSkills.length} selected`}
+              {skillsSummary.label}
             </span>
             <span className="spacer" />
-            <button
-              className="tb-btn"
-              style={{ height: 18, fontSize: 10, padding: '0 6px' }}
-              onClick={() => setSkillsPickerOpen(true)}
-              title="Pick which skills inside this bundle to load"
+            <span
+              style={{ fontSize: 10, color: 'var(--muted-2)' }}
+              title="Edit which skills load for each role in the Agent skills tab."
             >
-              pick
-            </button>
+              edit in Agent skills
+            </span>
           </div>
         </div>
       )}
@@ -997,18 +2318,6 @@ function BundleCard({
           </>
         )}
       </div>
-      {skillsPickerOpen && (
-        <SkillPickerModal
-          bundle={bundle}
-          selected={selectedSkills}
-          onClose={() => setSkillsPickerOpen(false)}
-          onLoad={onListSkills}
-          onSave={(next) => {
-            onSetSkills(scope, next);
-            setSkillsPickerOpen(false);
-          }}
-        />
-      )}
       {changelogOpen && subscription && (
         <ChangelogModal
           bundle={bundle}
@@ -1177,257 +2486,3 @@ function ChangelogModal({
   );
 }
 
-function SkillPickerModal({
-  bundle,
-  selected,
-  onClose,
-  onLoad,
-  onSave,
-}: {
-  bundle: MarketplaceBundleView;
-  selected: string[] | null;
-  onClose: () => void;
-  onLoad: () => Promise<MarketplaceBundleSkillView[]>;
-  onSave: (skills: string[] | null) => void;
-}) {
-  const [skills, setSkills] = useState<MarketplaceBundleSkillView[] | null>(
-    null,
-  );
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState('');
-
-  // Load skills once on mount; initialize the picked-set from the
-  // existing selection. null selection → start with everything picked
-  // (since current behaviour = "all skills loaded").
-  useEffect(() => {
-    let cancelled = false;
-    void onLoad()
-      .then((list) => {
-        if (cancelled) return;
-        setSkills(list);
-        if (selected === null) {
-          setPicked(new Set(list.map((s) => s.id)));
-        } else {
-          setPicked(new Set(selected));
-        }
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [onLoad, selected]);
-
-  const filteredSkills = useMemo(() => {
-    if (!skills) return [];
-    const q = filter.trim().toLowerCase();
-    if (!q) return skills;
-    return skills.filter(
-      (s) =>
-        s.id.toLowerCase().includes(q) ||
-        (s.name ?? '').toLowerCase().includes(q) ||
-        (s.description ?? '').toLowerCase().includes(q),
-    );
-  }, [skills, filter]);
-
-  const toggle = (id: string) => {
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const selectAll = () => {
-    if (!skills) return;
-    setPicked(new Set(skills.map((s) => s.id)));
-  };
-  const clearAll = () => setPicked(new Set());
-
-  const save = () => {
-    if (!skills) return;
-    // If the user picked all skills, store `null` (= "all skills,
-    // current behaviour") rather than the explicit full list. That
-    // way the wire shape stays compact and we don't have to update
-    // the stored selection every time the bundle gains a new skill
-    // upstream.
-    const allSelected =
-      picked.size === skills.length &&
-      skills.every((s) => picked.has(s.id));
-    onSave(allSelected ? null : Array.from(picked).sort());
-  };
-
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 640, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}
-      >
-        <div className="modal-head">
-          <span className="title">
-            <b>Pick skills · {bundle.id}</b>
-          </span>
-          <span className="spacer" />
-          <button className="icon-btn" onClick={onClose} title="Cancel">
-            <Icon name="x" size={11} />
-          </button>
-        </div>
-        <div
-          className="modal-body"
-          style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}
-        >
-          {skills === null && !loadError && (
-            <div className="inline-empty" style={{ padding: 18 }}>
-              Loading skills…
-            </div>
-          )}
-          {loadError && (
-            <div className="form-error">Failed to load skills: {loadError}</div>
-          )}
-          {skills !== null && skills.length === 0 && (
-            <div className="inline-empty" style={{ padding: 18 }}>
-              No skills found in this bundle on disk. Has it been
-              synced yet?
-            </div>
-          )}
-          {skills !== null && skills.length > 0 && (
-            <>
-              <div style={{ marginBottom: 8 }}>
-                <input
-                  className="text-input"
-                  placeholder={`Search ${skills.length} skills…`}
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  style={{ height: 26 }}
-                />
-              </div>
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
-                }}
-              >
-                {filteredSkills.map((s) => {
-                  const on = picked.has(s.id);
-                  return (
-                    <label
-                      key={s.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: 8,
-                        padding: '6px 8px',
-                        borderRadius: 4,
-                        cursor: 'pointer',
-                        background: on
-                          ? 'rgba(74,222,128,0.06)'
-                          : 'transparent',
-                        border: '1px solid var(--border)',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() => toggle(s.id)}
-                        style={{ marginTop: 2 }}
-                      />
-                      <div
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 2,
-                        }}
-                      >
-                        <div style={{ fontSize: 12 }}>
-                          <code style={{ background: 'transparent', padding: 0 }}>
-                            {s.id}
-                          </code>
-                          {s.name && s.name !== s.id && (
-                            <span
-                              style={{
-                                marginLeft: 6,
-                                color: 'var(--muted)',
-                                fontSize: 11,
-                              }}
-                            >
-                              · {s.name}
-                            </span>
-                          )}
-                        </div>
-                        {s.description && (
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: 'var(--muted)',
-                              lineHeight: 1.4,
-                            }}
-                          >
-                            {s.description}
-                          </div>
-                        )}
-                      </div>
-                    </label>
-                  );
-                })}
-                {filteredSkills.length === 0 && (
-                  <div
-                    className="inline-empty"
-                    style={{ padding: 12, marginTop: 4 }}
-                  >
-                    No skills match the filter.
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            gap: 8,
-            alignItems: 'center',
-            padding: 12,
-            borderTop: '1px solid var(--border)',
-          }}
-        >
-          <button
-            className="tb-btn"
-            style={{ height: 22, fontSize: 11 }}
-            onClick={selectAll}
-            disabled={!skills || skills.length === 0}
-          >
-            Select all
-          </button>
-          <button
-            className="tb-btn"
-            style={{ height: 22, fontSize: 11 }}
-            onClick={clearAll}
-            disabled={!skills || skills.length === 0}
-          >
-            Clear
-          </button>
-          <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>
-            {skills
-              ? `${picked.size} of ${skills.length} selected`
-              : ''}
-          </span>
-          <span className="spacer" />
-          <button className="tb-btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="tb-btn primary" onClick={save} disabled={!skills}>
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}

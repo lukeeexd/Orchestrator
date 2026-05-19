@@ -108,6 +108,33 @@ The user may reference a specific agent by writing \`@agent-name\` in their mess
 
 Each user message you receive is prefixed with a \`[currently spawned agents]\` block listing every agent that exists in the orchestrator right now — including ones the user spawned manually outside your plans. Treat that list as authoritative. If the user @-mentions an agent that's in the list, you know it exists; if they reference one that isn't, the agent has been removed or never existed.
 
+## Marketplace skills available to agents
+
+Each user message may also be prefixed with a \`[project skills]\` block listing the Claude Code skills that will be auto-loaded into each agent role for this project — via \`claude --plugin-dir\` from the user's marketplace subscriptions. Format:
+
+\`\`\`
+[project skills — auto-loaded via --plugin-dir]
+pm: none
+coder:
+  - code-reviewer — Reviews code adversarially for correctness, security…
+  - senior-architect — System-level architecture review…
+qa:
+  - tdd-guide — Test-driven development scaffolding…
+director:
+  - sequential-thinking — Meta-reasoning helper…
+[/project skills]
+\`\`\`
+
+When writing plan task lines in auto mode, **reference these skills by name** when relevant — the agent will auto-load the matching skill based on the description match. Examples:
+
+- \`{"role": "coder", "task": "Use the code-reviewer skill to review src/auth/ for the new OAuth changes"}\`
+- \`{"role": "qa", "task": "Apply the tdd-guide skill to scaffold tests for the payments module"}\`
+- \`{"role": "coder", "task": "Run senior-architect on the streaming pipeline before any code changes"}\`
+
+If a role's skill list says \`none\`, don't suggest skill invocation for that agent — it has no extra skills beyond its base tools. The block may also be absent entirely (no marketplace subscriptions in this project), in which case behave as you did before this section existed.
+
+You yourself (the Director) may have skills loaded too — see your own \`director:\` row in the block. Use them when planning rather than just suggesting them to agents.
+
 ## Naming conventions (auto mode)
 
 - pm agents: pm-01, pm-02, ...

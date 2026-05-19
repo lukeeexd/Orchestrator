@@ -56,6 +56,9 @@ export const IpcChannels = {
   MarketplaceRemoveSource: 'marketplace:removeSource',
   MarketplaceSetSourceEnabled: 'marketplace:setSourceEnabled',
   MarketplaceListBundleSkills: 'marketplace:listBundleSkills',
+  MarketplaceReadSkill: 'marketplace:readSkill',
+  MarketplaceResolveLoadout: 'marketplace:resolveLoadout',
+  MarketplaceListFireCounts: 'marketplace:listFireCounts',
   MarketplaceSetSkills: 'marketplace:setSkills',
   MarketplaceGetChangelog: 'marketplace:getChangelog',
   MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
@@ -165,6 +168,70 @@ export const MARKETPLACE_GLOBAL_SCOPE_ID = '__global__';
  */
 export const MARKETPLACE_DEFAULT_SOURCE_ID = 'alirezarezvani/claude-skills';
 
+/**
+ * Curated "Recommended setup" — what the Marketplace screen's one-click
+ * Apply button installs. Subscribes the default source's
+ * `engineering-team` bundle globally with a per-role skill map: each
+ * agent role gets a tight, role-specific skill list. Claude's
+ * description-matching auto-loader handles per-task routing within the
+ * narrowed set.
+ *
+ * The skill list is deliberately tight, not exhaustive. Loading every
+ * skill in the bundle bloats every spawn's available-skill list and
+ * confuses the auto-loader. Tune via the Agent skills view if you
+ * want a different mix.
+ */
+export interface MarketplaceRecommendedBundle {
+  bundleId: string;
+  /**
+   * Roles to bind the bundle to. `null` = every agent role can load
+   * skills from this bundle (assuming they appear in `skillsByRole`).
+   * Roles missing from `skillsByRole` get no skills from this bundle
+   * even if they're allowed via `roles`.
+   */
+  roles: string[] | null;
+  /**
+   * Per-role skill map. Keys are agent role ids (pm, researcher,
+   * coder, qa, devops, security, director); values are the skill ids
+   * to load for that role. Missing keys = no skills from this bundle
+   * for that role.
+   */
+  skillsByRole: Record<string, string[]>;
+}
+
+export const MARKETPLACE_RECOMMENDED_DEFAULTS: {
+  sourceId: string;
+  bundles: MarketplaceRecommendedBundle[];
+} = {
+  sourceId: MARKETPLACE_DEFAULT_SOURCE_ID,
+  bundles: [
+    {
+      bundleId: 'engineering-team',
+      roles: null,
+      skillsByRole: {
+        pm: ['senior-architect', 'epic-design'],
+        researcher: ['tech-stack-evaluator'],
+        coder: [
+          'code-reviewer',
+          'tdd-guide',
+          'senior-architect',
+          'senior-prompt-engineer',
+        ],
+        qa: ['adversarial-reviewer', 'senior-qa', 'tdd-guide'],
+        devops: ['senior-devops', 'incident-response'],
+        security: [
+          'senior-security',
+          'senior-secops',
+          'adversarial-reviewer',
+          'cloud-security',
+          'threat-detection',
+        ],
+        director: ['senior-architect', 'epic-design'],
+      },
+    },
+  ],
+};
+
 /** Renderer-shaped view of one skill_sources row. */
 export interface MarketplaceSourceView {
   id: string;
@@ -191,6 +258,24 @@ export interface MarketplaceBundleView {
   keywords?: string[];
 }
 
+/**
+ * Per-skill enablement on a subscription. Three shapes:
+ *
+ * - `null` — load every skill in the bundle for every enabled role
+ *   (default at install).
+ * - `string[]` (flat / legacy) — load these skills for every enabled
+ *   role. Preserves the pre-v19 "Pick" flow and any older rows.
+ * - `Record<role, string[]>` (per-role) — coder, qa, director, etc.
+ *   each get their own skill list. Roles missing from the map
+ *   contribute no skills from this bundle. The runner materializes a
+ *   per-role synthetic plugin dir on spawn so different roles see
+ *   different SKILL.md files even when the source bundle is shared.
+ */
+export type MarketplaceSelectedSkills =
+  | null
+  | string[]
+  | Record<string, string[]>;
+
 /** Renderer-shaped view of a project's subscribed bundle. */
 export interface MarketplaceSubscriptionView {
   /** Either a real project UUID or MARKETPLACE_GLOBAL_SCOPE_ID. */
@@ -208,14 +293,7 @@ export interface MarketplaceSubscriptionView {
    * as a "no agents" hint.
    */
   roles: string[] | null;
-  /**
-   * Per-skill enablement within the bundle. `null` = all skills (the
-   * whole bundle loads, default at install). Otherwise a list of
-   * skill ids — the runner materializes a synthetic plugin dir with
-   * only these skills. Empty array = no skills (degenerate; the
-   * runner skips --plugin-dir for this subscription entirely).
-   */
-  selectedSkills: string[] | null;
+  selectedSkills: MarketplaceSelectedSkills;
   /** Derived from projectId — 'global' for the sentinel, 'project' otherwise. */
   scope: 'global' | 'project';
 }
@@ -235,6 +313,42 @@ export interface MarketplaceChangelogEntry {
   version: string;
   date?: string;
   body: string;
+}
+
+/**
+ * One bundle's contribution to a role's resolved spawn-time loadout.
+ * Mirrors marketplace.LoadoutEntry; lives here so the renderer types
+ * don't cross into main.
+ */
+export interface MarketplaceLoadoutEntry {
+  sourceId: string;
+  bundleId: string;
+  scope: 'global' | 'project';
+  pluginDir: string | null;
+  skills: MarketplaceBundleSkillView[];
+  warning?: string;
+}
+
+export interface MarketplaceLoadoutReport {
+  role: string;
+  entries: MarketplaceLoadoutEntry[];
+  totalSkills: number;
+  approxFrontmatterChars: number;
+}
+
+/**
+ * Telemetry row for a single skill in a project — how many times the
+ * runner attributed a tool_use to it. Surfaced in Agent skills as
+ * "fired Nx" chips so the user can spot dead skills.
+ */
+export interface MarketplaceSkillFireCount {
+  projectId: string;
+  role: string;
+  sourceId: string;
+  bundleId: string;
+  skillId: string;
+  count: number;
+  lastFiredAt: number;
 }
 
 export interface AgentEventAgentPayload {
@@ -518,15 +632,46 @@ export interface OrchestratorApi {
     bundleId: string,
   ) => Promise<MarketplaceBundleSkillView[]>;
   /**
-   * Set the per-skill subset for a subscription. Pass `null` for "all
-   * skills" (default). An array of skill ids narrows to just those.
-   * An empty array makes the subscription a no-op until reset.
+   * Read the full SKILL.md text for a specific skill inside a bundle.
+   * Returns `null` if the bundle's source hasn't been synced, the
+   * skill subdir is missing, or the SKILL.md file isn't there.
+   */
+  readMarketplaceSkill: (
+    sourceId: string,
+    bundleId: string,
+    skillId: string,
+  ) => Promise<string | null>;
+  /**
+   * Resolve the dry-run loadout for a role in a project — what
+   * --plugin-dir paths + skills a fresh spawn would receive, without
+   * actually spawning.
+   */
+  resolveMarketplaceLoadout: (
+    projectId: string,
+    role: string,
+  ) => Promise<MarketplaceLoadoutReport>;
+  /**
+   * Fetch every fire-count row for a project (across all roles).
+   * Renderer groups them client-side to decorate Agent skills chips.
+   */
+  listMarketplaceFireCounts: (
+    projectId: string,
+  ) => Promise<MarketplaceSkillFireCount[]>;
+  /**
+   * Set the per-skill subset for a subscription. Three forms:
+   *   - `null` — all skills load for every enabled role (default).
+   *   - `string[]` — these skills load for every enabled role (legacy
+   *     flat form; still used by the Pick modal).
+   *   - `Record<role, string[]>` — per-role skill picks. Each agent
+   *     role gets its own list.
+   * An empty array (or empty values inside the map) makes that role's
+   * contribution from this subscription a no-op until reset.
    */
   setMarketplaceBundleSkills: (
     projectId: string,
     sourceId: string,
     bundleId: string,
-    skills: string[] | null,
+    skills: MarketplaceSelectedSkills,
   ) => Promise<{ ok: true }>;
   /**
    * Return CHANGELOG.md entries from a source between two versions.

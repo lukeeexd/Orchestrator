@@ -301,6 +301,29 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 19,
+    up: (db) => {
+      // Skill usage telemetry. Each row is a (project, role, source,
+      // bundle, skill) tuple with a fire count + last-fired timestamp.
+      // Bumped by the agent runner when a spawned agent's tool_use
+      // events touch a known skill's directory. Surfaced in the
+      // Agent skills view as "fired Nx" chips so the user can spot
+      // skills they've enabled but never use, and prune them.
+      db.exec(`
+        CREATE TABLE skill_fire_counts (
+          project_id TEXT NOT NULL,
+          role TEXT NOT NULL,
+          source_id TEXT NOT NULL,
+          bundle_id TEXT NOT NULL,
+          skill_id TEXT NOT NULL,
+          count INTEGER NOT NULL DEFAULT 0,
+          last_fired_at INTEGER NOT NULL,
+          PRIMARY KEY (project_id, role, source_id, bundle_id, skill_id)
+        );
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

@@ -682,6 +682,25 @@ export function recordSourceSync(
   scheduleSave();
 }
 
+/**
+ * Skill-level enablement for a subscription. Three shapes:
+ *
+ * - `null` — load every skill in the bundle for every enabled role.
+ *   Default at subscribe time; cheapest path at the runner.
+ * - `string[]` (flat) — load these specific skills for every enabled
+ *   role. Pre-v19 form; preserved so existing rows / the legacy "Pick"
+ *   modal still work without migration.
+ * - `Record<role, string[]>` (per-role) — each enabled role gets its
+ *   own skill list. Lets a single bundle subscription wire different
+ *   skills to coder vs qa vs director, etc. Missing role keys mean
+ *   "no skills from this bundle for that role" — explicit empty array
+ *   has the same effect.
+ */
+export type SelectedSkills =
+  | null
+  | string[]
+  | Record<string, string[]>;
+
 export interface ProjectSubscriptionRow {
   projectId: string;
   sourceId: string;
@@ -695,14 +714,7 @@ export interface ProjectSubscriptionRow {
    * --plugin-dir.
    */
   roles: string[] | null;
-  /**
-   * Skill-level enablement within the bundle. `null` (the default
-   * at subscribe time) means "all skills in the bundle". Otherwise
-   * a list of skill ids (subdir names containing SKILL.md). When
-   * set, the runner builds a synthetic plugin dir containing only
-   * the listed skills and passes that to --plugin-dir.
-   */
-  selectedSkills: string[] | null;
+  selectedSkills: SelectedSkills;
 }
 
 /**
@@ -734,9 +746,69 @@ function parseRoles(raw: unknown): string[] | null {
   }
 }
 
-/** Same shape as parseRoles — selected_skills is a JSON-encoded string[] or null. */
-function parseSelectedSkills(raw: unknown): string[] | null {
-  return parseRoles(raw);
+/**
+ * Parse the JSON-encoded selected_skills column. Accepts the legacy
+ * `string[]` form (skills apply to every enabled role) and the per-role
+ * `Record<role, string[]>` form (each role gets its own list). Returns
+ * `null` on malformed / empty input so the runner falls back to
+ * "all skills".
+ */
+function parseSelectedSkills(raw: unknown): SelectedSkills {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (Array.isArray(parsed)) {
+    const out: string[] = [];
+    for (const item of parsed) {
+      if (typeof item === 'string' && item.length > 0) out.push(item);
+    }
+    return out;
+  }
+  if (parsed && typeof parsed === 'object') {
+    const map: Record<string, string[]> = {};
+    for (const [role, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!Array.isArray(value)) continue;
+      const list: string[] = [];
+      for (const item of value) {
+        if (typeof item === 'string' && item.length > 0) list.push(item);
+      }
+      map[role] = list;
+    }
+    return map;
+  }
+  return null;
+}
+
+/**
+ * Resolve a subscription's effective skill list for a specific role.
+ *
+ * - `null` means "every skill in the bundle" (caller skips the subset
+ *   step and passes the bundle dir directly to --plugin-dir).
+ * - `[]` means "no skills from this bundle for this role" (caller skips
+ *   the --plugin-dir entirely).
+ * - A non-empty array means "materialize a subset with exactly these
+ *   skills" — caller copies them into a synthetic plugin dir.
+ *
+ * Backwards-compat: a legacy `string[]` selectedSkills column applies
+ * its list to every role uniformly, matching pre-v19 behaviour.
+ */
+function skillsForRole(
+  sub: ProjectSubscriptionRow,
+  role: string,
+): string[] | null {
+  if (sub.selectedSkills === null) return null;
+  if (Array.isArray(sub.selectedSkills)) {
+    // Legacy flat form: same skills for every enabled role.
+    return sub.selectedSkills;
+  }
+  // Per-role map: a missing key is equivalent to an explicit empty
+  // array. Both mean "this role doesn't load anything from this
+  // bundle".
+  return sub.selectedSkills[role] ?? [];
 }
 
 export function listSubscriptions(
@@ -807,19 +879,26 @@ export function unsubscribeBundle(
 
 /**
  * Set which skills inside a bundle the subscription should load.
- * Pass `null` for "all skills in the bundle" (default at subscribe
- * time, same as pre-v18 behaviour). An empty array means "none" —
- * the bundle is subscribed but no skills make it through to claude,
- * useful only as a transient state while the user picks via the UI.
+ *
+ * Three forms accepted, mirroring the column shape:
+ * - `null` — load every skill for every role (cheapest path).
+ * - `string[]` — load these specific skills for every enabled role
+ *   (legacy flat form; kept for the Pick modal and older callers).
+ * - `Record<role, string[]>` — per-role skill picks. Roles missing
+ *   from the map get no skills from this bundle.
+ *
+ * An empty array (`[]`) in either form means "no skills" — useful as
+ * a transient state while the user picks; the runner skips passing
+ * --plugin-dir for that role entirely.
  */
 export function setSubscriptionSkills(
   projectId: string,
   sourceId: string,
   bundleId: string,
-  skills: string[] | null,
+  skills: SelectedSkills,
 ): void {
   const db = getDb();
-  const value = skills ? JSON.stringify(skills) : null;
+  const value = skills === null ? null : JSON.stringify(skills);
   const stmt = db.prepare(
     `UPDATE project_subscribed_bundles
      SET selected_skills = ?
@@ -849,13 +928,19 @@ export function listBundleSkills(
   if (!bundle) return [];
   const bundleDir = bundlePluginDir(sourceId, bundle);
   if (!fs.existsSync(bundleDir)) return [];
-  const entries = fs.readdirSync(bundleDir, { withFileTypes: true });
+  // Claude Code's canonical plugin layout puts skills under
+  // `<bundle>/skills/<name>/SKILL.md`. Some older bundles drop them
+  // at the bundle root (`<bundle>/<name>/SKILL.md`) — fall back to
+  // that if no `skills/` directory exists.
+  const skillsSubdir = path.join(bundleDir, 'skills');
+  const walkRoot = fs.existsSync(skillsSubdir) ? skillsSubdir : bundleDir;
+  const entries = fs.readdirSync(walkRoot, { withFileTypes: true });
   const out: BundleSkillInfo[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     // Skip the plugin metadata dir + any hidden dirs.
     if (entry.name.startsWith('.')) continue;
-    const skillFile = path.join(bundleDir, entry.name, 'SKILL.md');
+    const skillFile = path.join(walkRoot, entry.name, 'SKILL.md');
     if (!fs.existsSync(skillFile)) continue;
     let head: { name?: string; description?: string } = {};
     try {
@@ -868,6 +953,39 @@ export function listBundleSkills(
   }
   out.sort((a, b) => a.id.localeCompare(b.id));
   return out;
+}
+
+/**
+ * Read the full text of a skill's SKILL.md, by `(sourceId, bundleId,
+ * skillId)`. Honours the same canonical-vs-legacy layout split as
+ * listBundleSkills — `<bundle>/skills/<id>/SKILL.md` first, falling
+ * back to `<bundle>/<id>/SKILL.md` for older marketplaces.
+ *
+ * Returns `null` when the bundle, the skill subdir, or the SKILL.md
+ * file is missing on disk. Callers (the preview modal) show a "not
+ * synced yet?" hint in that case.
+ */
+export function readSkillContent(
+  sourceId: string,
+  bundleId: string,
+  skillId: string,
+): string | null {
+  const bundle = findBundle(sourceId, bundleId);
+  if (!bundle) return null;
+  const bundleDir = bundlePluginDir(sourceId, bundle);
+  if (!fs.existsSync(bundleDir)) return null;
+  const candidates = [
+    path.join(bundleDir, 'skills', skillId, 'SKILL.md'),
+    path.join(bundleDir, skillId, 'SKILL.md'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
+    } catch {
+      // try the next layout
+    }
+  }
+  return null;
 }
 
 /**
@@ -917,6 +1035,7 @@ function parseSkillFrontmatter(raw: string): {
  */
 function materializeSubset(
   scope: string,
+  role: string,
   sourceId: string,
   bundleId: string,
   skills: string[],
@@ -931,9 +1050,12 @@ function materializeSubset(
     'skill-marketplaces',
     '.subsets',
   );
+  // Role goes in the dir name so per-role subset selections don't
+  // clobber each other — coder + qa each get a separate plugin dir
+  // with their own SKILL.md set.
   const subsetDir = path.join(
     subsetRoot,
-    `${sanitizeId(scope)}--${sanitizeId(sourceId)}--${sanitizeId(bundleId)}`,
+    `${sanitizeId(scope)}--${sanitizeId(role)}--${sanitizeId(sourceId)}--${sanitizeId(bundleId)}`,
   );
   if (fs.existsSync(subsetDir)) {
     fs.rmSync(subsetDir, { recursive: true, force: true });
@@ -948,48 +1070,155 @@ function materializeSubset(
   if (fs.existsSync(metaSrc)) {
     fs.cpSync(metaSrc, metaDest, { recursive: true });
   }
+  // Mirror the source layout: skills live under `<bundle>/skills/`
+  // in the canonical Claude Code plugin spec; the legacy fallback is
+  // `<bundle>/<skill>` at the root. Match whichever the source uses
+  // so Claude's auto-loader still finds them in the subset.
+  const skillsSubdir = path.join(bundleDir, 'skills');
+  const sourceLayoutIsNested = fs.existsSync(skillsSubdir);
+  const srcRoot = sourceLayoutIsNested ? skillsSubdir : bundleDir;
+  const destRoot = sourceLayoutIsNested
+    ? path.join(subsetDir, 'skills')
+    : subsetDir;
+  if (sourceLayoutIsNested) fs.mkdirSync(destRoot, { recursive: true });
   // Copy each chosen skill subdir, ignoring ones that don't exist
   // (e.g. user picked them when an older sync had the file but the
   // upstream removed it).
   for (const skillId of skills) {
-    const skillSrc = path.join(bundleDir, skillId);
+    const skillSrc = path.join(srcRoot, skillId);
     if (!fs.existsSync(skillSrc)) continue;
-    const skillDest = path.join(subsetDir, skillId);
+    const skillDest = path.join(destRoot, skillId);
     fs.cpSync(skillSrc, skillDest, { recursive: true });
   }
   return subsetDir;
 }
 
 /**
- * Resolve a subscription to its on-disk --plugin-dir argument.
- * Subscriptions with no selectedSkills return the bundle's original
- * cache path (cheapest); subscriptions with a selection materialize a
- * synthetic subset dir. Used by the runner so each spawn site doesn't
- * need to know about the subset machinery.
+ * Computes "which skills will each agent role have access to" for a
+ * given project. Used by the Director: each turn ships with a
+ * `[project skills]` block built from this, so the Director can name
+ * specific skills in plan task lines instead of guessing.
+ *
+ * Mirrors pluginDirsForProject's resolution rules:
+ * - Subscriptions at the project scope + at the global sentinel.
+ * - Project subs win on (sourceId, bundleId) collisions.
+ * - Disabled sources are skipped.
+ * - Per-role chips filter which roles see each bundle.
+ * - selectedSkills narrows to a subset when set; null = all skills.
+ *
+ * 'director' is treated as a pseudo-role alongside the AgentRole keys
+ * since Director spawns also load plugin-dirs.
+ */
+export function availableSkillsByRole(
+  projectId: string,
+): Record<string, BundleSkillInfo[]> {
+  const allRoles = [
+    'pm',
+    'researcher',
+    'coder',
+    'qa',
+    'devops',
+    'security',
+    'director',
+  ];
+  const projectSubs = listSubscriptions(projectId);
+  const globalSubs = listSubscriptions(MARKETPLACE_GLOBAL_SCOPE_ID);
+  // Project first so it wins the (source, bundle) dedupe — matches
+  // the runner's pluginDirsForProject order.
+  const seen = new Set<string>();
+  const deduped: ProjectSubscriptionRow[] = [];
+  for (const s of [...projectSubs, ...globalSubs]) {
+    const key = `${s.sourceId}\x00${s.bundleId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(s);
+  }
+  const enabledSourceIds = new Set(
+    listSources()
+      .filter((s) => s.enabled)
+      .map((s) => s.id),
+  );
+
+  // Pre-cache bundle skill lists since multiple roles may share a
+  // bundle — listBundleSkills walks the dir + parses frontmatter and
+  // we don't want to repeat that work per role per bundle.
+  const bundleCache = new Map<string, BundleSkillInfo[]>();
+  const skillsFor = (
+    sub: ProjectSubscriptionRow,
+    role: string,
+  ): BundleSkillInfo[] => {
+    const key = `${sub.sourceId}\x00${sub.bundleId}`;
+    let all = bundleCache.get(key);
+    if (!all) {
+      all = listBundleSkills(sub.sourceId, sub.bundleId);
+      bundleCache.set(key, all);
+    }
+    const selected = skillsForRole(sub, role);
+    if (selected === null) return all;
+    if (selected.length === 0) return [];
+    const wanted = new Set(selected);
+    return all.filter((s) => wanted.has(s.id));
+  };
+
+  const out: Record<string, BundleSkillInfo[]> = {};
+  for (const role of allRoles) {
+    const skills: BundleSkillInfo[] = [];
+    for (const sub of deduped) {
+      if (!enabledSourceIds.has(sub.sourceId)) continue;
+      if (sub.roles !== null && !sub.roles.includes(role)) continue;
+      skills.push(...skillsFor(sub, role));
+    }
+    // Dedupe by skill id in case multiple bundles ship the same name
+    // (rare but defensive). Keep first occurrence.
+    const dedupedSkills: BundleSkillInfo[] = [];
+    const skillSeen = new Set<string>();
+    for (const s of skills) {
+      if (skillSeen.has(s.id)) continue;
+      skillSeen.add(s.id);
+      dedupedSkills.push(s);
+    }
+    out[role] = dedupedSkills;
+  }
+  return out;
+}
+
+/**
+ * Resolve a subscription to its on-disk --plugin-dir argument for a
+ * specific role. Per-role resolution because the same subscription may
+ * surface different skills to coder vs qa vs director (when the
+ * subscription uses the per-role map form of selectedSkills).
+ *
+ * Returns:
+ * - the bundle's full cache path when this role takes all skills
+ *   (cheapest — no materialization).
+ * - a synthetic subset dir when this role takes a curated list.
+ * - null when the bundle/role contributes no skills (skip the
+ *   --plugin-dir entirely).
  */
 function pluginDirForSubscription(
   sub: ProjectSubscriptionRow,
+  role: string,
 ): string | null {
   const bundle = findBundle(sub.sourceId, sub.bundleId);
   if (!bundle) return null;
-  if (!sub.selectedSkills || sub.selectedSkills.length === 0) {
-    // null = all skills (load the whole bundle). Empty array would
-    // mean "no skills" which renders the subscription a no-op; skip
-    // entirely so we don't pass a --plugin-dir for an empty subset.
-    if (sub.selectedSkills && sub.selectedSkills.length === 0) return null;
+  const selected = skillsForRole(sub, role);
+  if (selected === null) {
+    // All skills — pass the bundle dir straight through.
     const dir = bundlePluginDir(sub.sourceId, bundle);
     return fs.existsSync(dir) ? dir : null;
   }
+  if (selected.length === 0) return null;
   try {
     return materializeSubset(
       sub.projectId,
+      role,
       sub.sourceId,
       sub.bundleId,
-      sub.selectedSkills,
+      selected,
     );
   } catch (e) {
     console.error(
-      `[marketplace] materializeSubset failed for ${sub.sourceId}/${sub.bundleId}:`,
+      `[marketplace] materializeSubset failed for ${sub.sourceId}/${sub.bundleId} role=${role}:`,
       e instanceof Error ? e.message : e,
     );
     return null;
@@ -1089,11 +1318,252 @@ export function pluginDirsForProject(
     if (s.roles !== null && !s.roles.includes(role)) continue;
     // pluginDirForSubscription handles the all-skills vs subset
     // routing — returns either the original bundle dir or a
-    // freshly-materialized synthetic subset dir.
-    const dir = pluginDirForSubscription(s);
+    // freshly-materialized synthetic subset dir for this specific
+    // role.
+    const dir = pluginDirForSubscription(s, role);
     if (dir) out.push(dir);
   }
   return out;
+}
+
+/**
+ * One bundle's contribution to a role's spawn-time loadout, as
+ * reported by `resolveLoadout`. Used by the dry-run UI to show the
+ * user "this is exactly what a fresh <role> spawn would receive,
+ * without actually spawning anything".
+ */
+export interface LoadoutEntry {
+  sourceId: string;
+  bundleId: string;
+  /** Where the subscription lives — 'project' wins over 'global' on (source, bundle) collisions. */
+  scope: 'global' | 'project';
+  /** The resolved --plugin-dir path. `null` when the bundle isn't on disk or otherwise failed to materialize. */
+  pluginDir: string | null;
+  /** Skills this role will actually see from this bundle. */
+  skills: BundleSkillInfo[];
+  /** When set, the runtime path is broken in some recoverable way (e.g. source not synced, skill removed upstream). */
+  warning?: string;
+}
+
+export interface LoadoutReport {
+  role: string;
+  entries: LoadoutEntry[];
+  /** Sum of skill counts across all entries — what the agent sees as "available skills". */
+  totalSkills: number;
+  /**
+   * Rough estimate of the bytes added to the agent's system prompt by
+   * exposing these skill descriptions (frontmatter only — the actual
+   * SKILL.md body only loads on-demand when a skill triggers). Used by
+   * the UI as a context-budget heads-up.
+   */
+  approxFrontmatterChars: number;
+}
+
+/**
+ * Compute the loadout a fresh agent of `role` would receive in
+ * `projectId` right now, without spawning anything. Mirrors
+ * `pluginDirsForProject`'s resolution rules (subscription dedupe,
+ * enabled-source filter, role chips, per-role skill picks,
+ * materialization) but returns rich data the UI can render as a
+ * dry-run report.
+ */
+export function resolveLoadout(
+  projectId: string,
+  role: string,
+): LoadoutReport {
+  const subs = [
+    ...listSubscriptions(projectId),
+    ...listSubscriptions(MARKETPLACE_GLOBAL_SCOPE_ID),
+  ];
+  const enabledSourceIds = new Set(
+    listSources()
+      .filter((s) => s.enabled)
+      .map((s) => s.id),
+  );
+  const entries: LoadoutEntry[] = [];
+  const seen = new Set<string>();
+  for (const s of subs) {
+    if (!enabledSourceIds.has(s.sourceId)) continue;
+    const key = `${s.sourceId}\x00${s.bundleId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (s.roles !== null && !s.roles.includes(role)) continue;
+
+    const bundleAllSkills = listBundleSkills(s.sourceId, s.bundleId);
+    const selected = skillsForRole(s, role);
+
+    let effectiveSkills: BundleSkillInfo[];
+    if (selected === null) {
+      effectiveSkills = bundleAllSkills;
+    } else if (selected.length === 0) {
+      // Per-role map explicitly excludes this role — skip the entry
+      // rather than report an empty bundle. Matches what the runner
+      // does (no --plugin-dir at all for this combo).
+      continue;
+    } else {
+      const wanted = new Set(selected);
+      effectiveSkills = bundleAllSkills.filter((sk) => wanted.has(sk.id));
+    }
+
+    const pluginDir = pluginDirForSubscription(s, role);
+    let warning: string | undefined;
+    if (!pluginDir) {
+      warning =
+        'Bundle directory not found on disk — source may not be synced, or upstream removed it.';
+    } else if (effectiveSkills.length < (selected?.length ?? 0)) {
+      // Some picked skills couldn't be found on disk (renamed /
+      // removed upstream since the user selected them).
+      const missing = (selected ?? []).filter(
+        (id) => !effectiveSkills.find((sk) => sk.id === id),
+      );
+      warning =
+        missing.length === 1
+          ? `Picked skill "${missing[0]}" is missing on disk.`
+          : `${missing.length} picked skills are missing on disk (${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '…' : ''}).`;
+    }
+
+    entries.push({
+      sourceId: s.sourceId,
+      bundleId: s.bundleId,
+      scope:
+        s.projectId === MARKETPLACE_GLOBAL_SCOPE_ID ? 'global' : 'project',
+      pluginDir,
+      skills: effectiveSkills,
+      warning,
+    });
+  }
+
+  const totalSkills = entries.reduce((n, e) => n + e.skills.length, 0);
+  // ~20 chars per skill for "- <name>: " framing + 0..160 chars per
+  // description (descriptions are usually short, capped by SKILL.md
+  // convention). Rough but useful — the user wants order-of-magnitude.
+  const approxFrontmatterChars = entries.reduce(
+    (n, e) =>
+      n +
+      e.skills.reduce(
+        (m, sk) =>
+          m + 20 + (sk.name?.length ?? 0) + (sk.description?.length ?? 0),
+        0,
+      ),
+    0,
+  );
+
+  return { role, entries, totalSkills, approxFrontmatterChars };
+}
+
+// ─────────────────────────── Skill fire telemetry ───────────────────────────
+
+export interface SkillFireCount {
+  projectId: string;
+  role: string;
+  sourceId: string;
+  bundleId: string;
+  skillId: string;
+  count: number;
+  lastFiredAt: number;
+}
+
+/**
+ * Increment the fire counter for a skill. Idempotent: each call adds
+ * one. The agent runner calls this when it detects an event that
+ * almost certainly came from a skill activation (tool_use Read on a
+ * SKILL.md, or any tool path falling under a skill's dir).
+ */
+export function bumpSkillFire(
+  projectId: string,
+  role: string,
+  sourceId: string,
+  bundleId: string,
+  skillId: string,
+): void {
+  const db = getDb();
+  const now = Date.now();
+  const stmt = db.prepare(
+    `INSERT INTO skill_fire_counts
+       (project_id, role, source_id, bundle_id, skill_id, count, last_fired_at)
+     VALUES (?, ?, ?, ?, ?, 1, ?)
+     ON CONFLICT(project_id, role, source_id, bundle_id, skill_id)
+     DO UPDATE SET count = count + 1, last_fired_at = excluded.last_fired_at`,
+  );
+  stmt.run([projectId, role, sourceId, bundleId, skillId, now]);
+  stmt.free();
+  scheduleSave();
+}
+
+/**
+ * Read every fire count row for a project (across all roles). The UI
+ * groups these client-side by (role, sourceId, bundleId, skillId) when
+ * decorating the Agent skills checkboxes.
+ */
+export function getSkillFireCounts(projectId: string): SkillFireCount[] {
+  const db = getDb();
+  const stmt = db.prepare(
+    `SELECT project_id, role, source_id, bundle_id, skill_id, count, last_fired_at
+     FROM skill_fire_counts
+     WHERE project_id = ?
+     ORDER BY count DESC, last_fired_at DESC`,
+  );
+  stmt.bind([projectId]);
+  const out: SkillFireCount[] = [];
+  while (stmt.step()) {
+    const row = stmt.get();
+    out.push({
+      projectId: asStr(row[0]),
+      role: asStr(row[1]),
+      sourceId: asStr(row[2]),
+      bundleId: asStr(row[3]),
+      skillId: asStr(row[4]),
+      count: asInt(row[5]),
+      lastFiredAt: asInt(row[6]),
+    });
+  }
+  stmt.free();
+  return out;
+}
+
+/**
+ * Given a path argument from a tool_use event + a precomputed loadout
+ * for the spawning role, return which (sourceId, bundleId, skillId) it
+ * belongs to — or `null` if the path doesn't fall inside any of the
+ * loadout's skill directories.
+ *
+ * Match rule: the path string contains
+ *   `<entry.pluginDir>/skills/<skillId>`
+ * (with either forward or backward slashes, since claude on Windows
+ * can produce either). Both the bundle's pluginDir and its skill
+ * subdir need to appear so we don't mis-attribute fires from random
+ * "skills/" segments elsewhere in the user's filesystem.
+ */
+export function attributePathToSkill(
+  pathArg: string,
+  loadout: LoadoutReport,
+): { sourceId: string; bundleId: string; skillId: string } | null {
+  if (!pathArg) return null;
+  // Normalize both the candidate path and the loadout paths to forward
+  // slashes for the comparison. We don't mutate either — just compare.
+  const normalized = pathArg.replace(/\\/g, '/');
+  for (const entry of loadout.entries) {
+    if (!entry.pluginDir) continue;
+    const dirNorm = entry.pluginDir.replace(/\\/g, '/');
+    // Prefer the canonical layout (`<pluginDir>/skills/<id>`) but
+    // tolerate the legacy "skill at bundle root" layout too — same
+    // fallback that listBundleSkills uses.
+    for (const sk of entry.skills) {
+      const canonical = `${dirNorm}/skills/${sk.id}`;
+      const legacy = `${dirNorm}/${sk.id}`;
+      if (
+        normalized.startsWith(canonical) ||
+        normalized.startsWith(legacy)
+      ) {
+        return {
+          sourceId: entry.sourceId,
+          bundleId: entry.bundleId,
+          skillId: sk.id,
+        };
+      }
+    }
+  }
+  return null;
 }
 
 /**

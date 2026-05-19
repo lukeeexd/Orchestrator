@@ -14,8 +14,8 @@ This file is the source of truth for what the project is, where it stands, and w
 
 | Field | Value |
 |---|---|
-| Current focus | **Post-v1 cadence — roughly one minor every couple of days.** v0.8.0 ships the Skill Marketplace + MCP + cross-provider stack. Next: dogfood + Phase-3 polish backlog. |
-| Latest release | **v0.8.0** (Skill Marketplace, MCP, cross-provider) |
+| Current focus | **Post-v1 cadence — roughly one minor every couple of days.** v0.9.0 deepens the Skill Marketplace: per-role skill picks, agent-centric editor, content preview (rendered markdown), dry-run loadouts, usage telemetry, conflict detector. Director is skill-aware. Next: local custom skill source (the one backlog item not yet shipped) + dogfood. |
+| Latest release | **v0.9.0** (Skill Marketplace deepening — per-role picks, Agent skills tab, content preview, loadout dry-run, usage telemetry, conflict detector, skill-aware Director) |
 | Last updated | 2026-05-19 |
 | Repo | `github.com/lukeeexd/Orchestrator` (**public** as of 2026-05-17). Branches: `main` (release), `dev` (working). |
 
@@ -155,7 +155,7 @@ Things that landed partially or are explicitly tabled. New sessions can pick fro
 - [x] Code signing deferred — SmartScreen warning is acceptable for self-install
 - [x] Dogfood + tag v0.1.0 on main — shipped 2026-05-15. Post-v1 cadence picked up from there; see "Post-v1 highlights" below for what landed v0.2 – v0.6.
 
-## Post-v1 highlights (v0.2 → v0.8)
+## Post-v1 highlights (v0.2 → v0.9)
 
 Bundled here because the cadence ran roughly one minor every couple of days and the per-release detail lives in the curated annotated-tag bodies on GitHub.
 
@@ -173,6 +173,7 @@ Bundled here because the cadence ran roughly one minor every couple of days and 
 - **Going public.** Personal identifiers scrubbed from history; repo flipped public on 2026-05-17.
 - **v0.7.0 — Multimodal attachments.** Images (paste / drag-drop / pick) and PDFs ride as Anthropic vision / document content blocks via `claude --input-format stream-json`. Director→agent attachment forwarding so the coder sees the same screenshot the Director saw. Picker filter, drag-drop for text + PDF, image thumbnails in chip rows.
 - **v0.8.0 — Skill Marketplace + MCP + cross-provider.** New rail item for installing Claude Code skill bundles from GitHub-hosted marketplaces (default: `alirezarezvani/claude-skills`). Hybrid global/project scope; per-role + per-skill granularity; "Add source" supports any GitHub repo with a `.claude-plugin/marketplace.json`. Per-project MCP server config with curated presets (GitHub, Brave/Tavily/Exa/DuckDuckGo, Sequential Thinking, etc). Cross-provider: per-agent provider override, `directorProvider` lets the Director run on a different CLI than the agents, mixed-provider plans where the Director picks claude or codex per plan row. Tools tab "skills" renamed to "prompts" to disambiguate from Marketplace skills.
+- **v0.9.0 — Skill Marketplace deepening.** Big follow-up pass on the marketplace work, all driven by dogfooding the v0.8 baseline. Director is now skill-aware — each turn ships with a `[project skills]` block listing what's loaded per role so the Director can name skills explicitly in plan rows. Recommended setup one-click installs a curated per-role default. Per-role skill picks (`selected_skills` evolves to `Record<role, string[]>` — a single subscription can wire `code-reviewer` to coder, `adversarial-reviewer` to qa, etc., without fanning out to other roles). New **Agent skills** tab in the Marketplace pane is the canonical edit surface; the legacy per-bundle Pick modal was removed once it became redundant. Skill content preview renders the actual SKILL.md as proper markdown (react-markdown + remark-gfm; a reusable `.md-body` CSS scope landed for future markdown sites). Dry-run loadout per role — "show loadout" button reports the resolved `--plugin-dir` paths, skill ids, and a frontmatter-context-cost estimate without spawning. Skill usage telemetry — DB migration v19 adds `skill_fire_counts`; the runner attributes tool-use events to specific skills (path match against the loadout, per-turn dedupe) and the UI shows `Nx` chips next to each skill plus a dashed `0×` ghost for never-fired-but-checked skills. Description-overlap conflict detector — pairs above ~0.35 Jaccard similarity show up in the loadout modal so the user can spot sibling skills competing for the same auto-loader trigger.
 
 ## Hardest unknowns (spike when their milestone arrives)
 
