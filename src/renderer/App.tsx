@@ -221,37 +221,26 @@ export function App() {
   }, [projects]);
 
   useEffect(() => {
-    const offAgent = window.api.onAgent(({ projectId }) => {
-      setAgentCountByProject((prev) => {
-        // Recompute from scratch by polling the registry would be expensive;
-        // approximate by bumping/decrementing based on the running flag.
-        const before = prev[projectId] ?? 0;
-        const wasActive = before > 0 ? before : 0;
-        // We don't know the previous status here, so just refresh from API.
-        void window.api.listAgents(projectId).then((list) => {
-          const count = list.filter(
-            (a) => a.status === 'running' || a.status === 'waiting',
-          ).length;
-          setAgentCountByProject((p) => ({ ...p, [projectId]: count }));
-        });
-        return { ...prev, [projectId]: wasActive };
+    // H9: pull the IPC call out of the setState updater. React's
+    // setState updater must be pure — StrictMode invokes it twice
+    // in dev, which means a listAgents call lived in there was
+    // firing twice per event in development.
+    const refreshCount = (projectId: string): void => {
+      void window.api.listAgents(projectId).then((list) => {
+        const count = list.filter(
+          (a) => a.status === 'running' || a.status === 'waiting',
+        ).length;
+        setAgentCountByProject((p) => ({ ...p, [projectId]: count }));
       });
+    };
+    const offAgent = window.api.onAgent(({ projectId }) => {
+      refreshCount(projectId);
     });
     const offPatch = window.api.onPatch(({ projectId }) => {
-      void window.api.listAgents(projectId).then((list) => {
-        const count = list.filter(
-          (a) => a.status === 'running' || a.status === 'waiting',
-        ).length;
-        setAgentCountByProject((p) => ({ ...p, [projectId]: count }));
-      });
+      refreshCount(projectId);
     });
     const offRemove = window.api.onAgentRemove(({ projectId }) => {
-      void window.api.listAgents(projectId).then((list) => {
-        const count = list.filter(
-          (a) => a.status === 'running' || a.status === 'waiting',
-        ).length;
-        setAgentCountByProject((p) => ({ ...p, [projectId]: count }));
-      });
+      refreshCount(projectId);
     });
     return () => {
       offAgent();
@@ -262,6 +251,14 @@ export function App() {
 
   const handledPlans = useRef<Set<string>>(new Set());
   const handledRedirects = useRef<Set<string>>(new Set());
+  // M10: drop the dedupe sets on project switch. They tracked
+  // message ids local to the previous project and grew unbounded
+  // otherwise — every session-long active project accumulated one
+  // entry per plan/redirect Director ever emitted.
+  useEffect(() => {
+    handledPlans.current = new Set();
+    handledRedirects.current = new Set();
+  }, [activeProjectId]);
 
   const spawnPlan = async (
     msg: DirectorMessage,
@@ -354,6 +351,24 @@ export function App() {
   // bit still controls downstream orchestration — Director-issued
   // redirects fire automatically here, and once you click Spawn the
   // backend sequences the agents itself.
+  // M10: when mode flips manual → auto, mark every redirect that
+  // already existed as handled BEFORE the auto-fire effect runs.
+  // Without this, flipping to auto burst-fires every pending
+  // redirect at once with no user warning. The user opted into
+  // auto for *future* turns; the manual-mode backlog should stay
+  // manual.
+  const prevModeRef = useRef(mode);
+  useEffect(() => {
+    if (prevModeRef.current !== 'auto' && mode === 'auto') {
+      for (const msg of messages) {
+        if (msg.redirect && !msg.redirectFired) {
+          handledRedirects.current.add(msg.id);
+        }
+      }
+    }
+    prevModeRef.current = mode;
+  }, [mode, messages]);
+
   useEffect(() => {
     if (mode !== 'auto' || !activeProjectId) return;
     void (async () => {

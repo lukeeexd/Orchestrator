@@ -72,7 +72,30 @@ export function AgentsPane({
           ))}
         </div>
       ) : (
-        <div className="agents-list">
+        // H11: role="list" + per-row listitem + arrow-key navigation
+        // turns the agents pane into a proper a11y list. The
+        // keyboard handler advances selection up/down within the
+        // list; Enter expands the focused row.
+        <div
+          className="agents-list"
+          role="list"
+          onKeyDown={(e) => {
+            if (agents.length === 0) return;
+            const idx = agents.findIndex((a) => a.id === selectedId);
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              const next = agents[Math.min(idx + 1, agents.length - 1)];
+              if (next) onSelect(next.id);
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              const prev = agents[Math.max(idx - 1, 0)];
+              if (prev) onSelect(prev.id);
+            } else if (e.key === 'Enter' && idx >= 0) {
+              e.preventDefault();
+              onToggle(agents[idx].id);
+            }
+          }}
+        >
           {agents.map((a) => (
             <AgentRow
               key={a.id}

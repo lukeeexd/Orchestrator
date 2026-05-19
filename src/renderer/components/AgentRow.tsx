@@ -32,7 +32,16 @@ export function AgentRow({
 }: Props) {
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
   return (
-    <div className={'agent' + (selected ? ' selected' : '')}>
+    // H11: each row is a tabbable listitem so the AgentsPane's
+    // arrow-key handler can move focus through the list and Enter
+    // toggles expansion.
+    <div
+      className={'agent' + (selected ? ' selected' : '')}
+      role="listitem"
+      tabIndex={selected ? 0 : -1}
+      aria-selected={selected}
+      aria-label={`${agent.roleLabel} ${agent.name} — ${agent.statusLabel}`}
+    >
       <div className="agent-head" onClick={onSelect}>
         <button
           className="chev"
@@ -102,7 +111,11 @@ export function AgentRow({
         <div className="agent-log">
           <div className="log-divider" />
           {agent.log.map((l, i) => (
-            <LogLineRow key={i} line={l} />
+            // M11: composite key — ts+kind+index stays stable when
+            // appending (the common case) AND remains unique enough
+            // for the rare paginated prepend scroll. Bare index keyed
+            // off paginated content broke the memo on every batch.
+            <LogLineRow key={`${l.ts}-${l.kind}-${i}`} line={l} />
           ))}
         </div>
       )}

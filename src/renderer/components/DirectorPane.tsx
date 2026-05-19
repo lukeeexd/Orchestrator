@@ -320,9 +320,16 @@ function Chat({
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
 }) {
   const tailRef = useRef<HTMLDivElement | null>(null);
+  // M11: also pin to bottom when an existing message's body
+  // grows (streaming Director response). messages.length doesn't
+  // change as tokens append to the live message, so the previous
+  // dep array let the streaming text run off-screen.
+  const tailSignature = messages
+    .map((m) => m.id + ':' + (m.body?.length ?? 0))
+    .join('|');
   useEffect(() => {
     tailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length]);
+  }, [tailSignature]);
 
   return (
     <div className="chat">

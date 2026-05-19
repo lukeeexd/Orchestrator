@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Provider } from '../../shared/types';
 import { Icon } from './Icon';
+import { Modal } from './Modal';
 
 interface ProviderInfo {
   binName: string;
@@ -71,73 +72,74 @@ export function CliMissingGate({
     };
   }, [provider, onResolved]);
 
+  // Blocking gate — no onClose. Modal still gets focus trap +
+  // dialog role + restored focus so a sighted-keyboard user
+  // doesn't tab out into the (visually hidden, but DOM-present)
+  // main app behind it.
   return (
-    <div className="modal-backdrop">
-      <div className="modal" style={{ maxWidth: 520 }}>
-        <div className="modal-head">
-          <span className="title">
-            <b>{info.productName} CLI not found</b>
-          </span>
+    <Modal title={<b>{info.productName} CLI not found</b>}>
+      <p style={{ margin: 0, color: 'var(--text)', fontSize: 13 }}>
+        This project&apos;s runtime is <strong>{provider}</strong> —
+        Orchestrator shells out to the{' '}
+        <code>{info.binName}</code> command, which isn&apos;t on your
+        PATH right now.
+      </p>
+      <p style={{ margin: 0, color: 'var(--muted)', fontSize: 12 }}>
+        Install {info.productName}, then leave this window open —
+        it&apos;ll detect the CLI within a few seconds and unlock
+        itself.
+      </p>
+      <div
+        className="field"
+        style={{
+          padding: 12,
+          background: 'var(--sub)',
+          border: '1px solid var(--border)',
+          borderRadius: 6,
+          fontFamily: 'var(--font-mono)',
+          fontSize: 12,
+        }}
+      >
+        <div style={{ color: 'var(--muted)', marginBottom: 6 }}>
+          Quick install:
         </div>
-        <div className="modal-body" style={{ gap: 12 }}>
-          <p style={{ margin: 0, color: 'var(--text)', fontSize: 13 }}>
-            This project&apos;s runtime is <strong>{provider}</strong> —
-            Orchestrator shells out to the{' '}
-            <code>{info.binName}</code> command, which isn&apos;t on your
-            PATH right now.
-          </p>
-          <p style={{ margin: 0, color: 'var(--muted)', fontSize: 12 }}>
-            Install {info.productName}, then leave this window open —
-            it&apos;ll detect the CLI within a few seconds and unlock
-            itself.
-          </p>
-          <div
-            className="field"
-            style={{
-              padding: 12,
-              background: 'var(--sub)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              fontFamily: 'var(--font-mono)',
-              fontSize: 12,
-            }}
-          >
-            <div style={{ color: 'var(--muted)', marginBottom: 6 }}>
-              Quick install:
-            </div>
-            <div>{info.installCommand}</div>
-            <div
-              style={{
-                color: 'var(--muted-2)',
-                marginTop: 8,
-                fontSize: 11,
-              }}
-            >
-              or visit <code>{info.installUrl}</code> for the official
-              installer.
-            </div>
-          </div>
-          {version && (
-            <div
-              style={{
-                padding: 8,
-                background: 'rgba(74, 222, 128, 0.08)',
-                border: '1px solid rgba(74, 222, 128, 0.3)',
-                borderRadius: 6,
-                color: 'var(--accent)',
-                fontSize: 12,
-              }}
-            >
-              <Icon name="check" size={11} /> Detected: <code>{version}</code>
-            </div>
-          )}
-        </div>
-        <div className="modal-foot">
-          <span className="meta" style={{ color: 'var(--muted)' }}>
-            {checking ? 'Checking…' : 'Auto-rechecks every 5s'}
-          </span>
+        <div>{info.installCommand}</div>
+        <div
+          style={{
+            color: 'var(--muted-2)',
+            marginTop: 8,
+            fontSize: 11,
+          }}
+        >
+          or visit <code>{info.installUrl}</code> for the official
+          installer.
         </div>
       </div>
-    </div>
+      {version && (
+        <div
+          style={{
+            padding: 8,
+            background: 'rgba(74, 222, 128, 0.08)',
+            border: '1px solid rgba(74, 222, 128, 0.3)',
+            borderRadius: 6,
+            color: 'var(--accent)',
+            fontSize: 12,
+          }}
+        >
+          <Icon name="check" size={11} /> Detected: <code>{version}</code>
+        </div>
+      )}
+      <span
+        className="meta"
+        style={{
+          color: 'var(--muted)',
+          marginTop: 8,
+          fontSize: 12,
+          alignSelf: 'flex-start',
+        }}
+      >
+        {checking ? 'Checking…' : 'Auto-rechecks every 5s'}
+      </span>
+    </Modal>
   );
 }

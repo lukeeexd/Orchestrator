@@ -125,7 +125,11 @@ export function AgentStreamPanel({
             {isRunning ? 'Awaiting first response…' : 'No log entries.'}
           </div>
         ) : (
-          agent.log.map((line, i) => <StreamLine key={i} line={line} />)
+          // M11: composite key so a memoised StreamLine survives
+          // re-renders driven by sibling log appends.
+          agent.log.map((line, i) => (
+            <StreamLine key={`${line.ts}-${line.kind}-${i}`} line={line} />
+          ))
         )}
         {isRunning && (
           <span className="log-cursor" aria-hidden="true">
