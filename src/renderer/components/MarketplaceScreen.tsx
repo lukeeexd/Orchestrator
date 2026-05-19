@@ -7,6 +7,7 @@ import type {
   MarketplaceChangelogEntry,
   MarketplaceLoadoutReport,
   MarketplaceSelectedSkills,
+  MarketplaceSkillFireCount,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
@@ -235,6 +236,8 @@ export function MarketplaceScreen({
             listBundleSkills={mp.listBundleSkills}
             readSkill={mp.readSkill}
             resolveLoadout={mp.resolveLoadout}
+            fireCounts={mp.fireCounts}
+            reloadFireCounts={mp.reloadFireCounts}
             setSkills={mp.setSkills}
           />
         ) : mp.sources.length === 0 ? (
@@ -523,6 +526,8 @@ function AgentSkillsView({
   listBundleSkills,
   readSkill,
   resolveLoadout,
+  fireCounts,
+  reloadFireCounts,
   setSkills,
 }: {
   subscriptions: MarketplaceSubscriptionView[];
@@ -538,6 +543,8 @@ function AgentSkillsView({
     skillId: string,
   ) => Promise<string | null>;
   resolveLoadout: (role: string) => Promise<MarketplaceLoadoutReport>;
+  fireCounts: MarketplaceSkillFireCount[];
+  reloadFireCounts: () => Promise<void>;
   setSkills: (
     sourceId: string,
     bundleId: string,
@@ -545,6 +552,16 @@ function AgentSkillsView({
     skills: MarketplaceSelectedSkills,
   ) => Promise<void>;
 }) {
+  // Build a lookup so each checkbox can flag its (role, source, bundle,
+  // skill) fire count in O(1). Key shape mirrors the table's PK.
+  const fireCountByKey = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const fc of fireCounts) {
+      const key = `${fc.role}\x00${fc.sourceId}\x00${fc.bundleId}\x00${fc.skillId}`;
+      m.set(key, fc.count);
+    }
+    return m;
+  }, [fireCounts]);
   // Preview state — single modal shared across every checkbox. Stored
   // here (rather than per-checkbox) so opening one closes any other.
   const [previewTarget, setPreviewTarget] = useState<{
@@ -605,17 +622,37 @@ function AgentSkillsView({
 
   return (
     <div>
-      <p
+      <div
         style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 8,
           margin: '0 0 12px 0',
-          color: 'var(--muted)',
-          fontSize: 12,
         }}
       >
-        Configure which skills each agent role loads from your subscribed
-        bundles. Toggling any cell switches that subscription to per-role
-        mode — future edits stay scoped to the role you&apos;re editing.
-      </p>
+        <p
+          style={{
+            margin: 0,
+            color: 'var(--muted)',
+            fontSize: 12,
+            flex: 1,
+          }}
+        >
+          Configure which skills each agent role loads from your subscribed
+          bundles. Toggling any cell switches that subscription to per-role
+          mode — future edits stay scoped to the role you&apos;re editing.
+          Numbers next to skill names show how many turns have fired that
+          skill in this project.
+        </p>
+        <button
+          className="tb-btn"
+          style={{ height: 20, fontSize: 10 }}
+          onClick={() => void reloadFireCounts()}
+          title="Re-fetch the per-skill fire counts from disk."
+        >
+          refresh counts
+        </button>
+      </div>
       {AGENT_ROLES.map((role) => {
         const subsForRole = visibleSubs.filter(
           (sub) => sub.roles === null || sub.roles.includes(role.id),
@@ -629,6 +666,7 @@ function AgentSkillsView({
             subs={subsForRole}
             bundlesBySource={bundlesBySource}
             skillsCache={skillsCache}
+            fireCountByKey={fireCountByKey}
             onToggle={async (sub, skillId, allSkillIds) => {
               const next = toggleSkillForRole(
                 sub,
@@ -676,6 +714,7 @@ function RoleSkillCard({
   subs,
   bundlesBySource,
   skillsCache,
+  fireCountByKey,
   onToggle,
   onPreview,
   onShowLoadout,
@@ -686,6 +725,7 @@ function RoleSkillCard({
   subs: MarketplaceSubscriptionView[];
   bundlesBySource: Record<string, MarketplaceBundleView[]>;
   skillsCache: Record<string, MarketplaceBundleSkillView[]>;
+  fireCountByKey: Map<string, number>;
   onToggle: (
     sub: MarketplaceSubscriptionView,
     skillId: string,
@@ -793,6 +833,12 @@ function RoleSkillCard({
                   {allSkills.map((s) => {
                     const checked = isAll || checkedSet.has(s.id);
                     const allSkillIds = allSkills.map((x) => x.id);
+                    const fireKey = `${roleId}\x00${sub.sourceId}\x00${sub.bundleId}\x00${s.id}`;
+                    const fires = fireCountByKey.get(fireKey) ?? 0;
+                    // Dim chip: skill is checked but has never fired.
+                    // Useful prune signal — the user enabled it but
+                    // the auto-loader never picked it for any task.
+                    const looksUnused = checked && fires === 0;
                     return (
                       <div
                         key={s.id}
@@ -835,6 +881,36 @@ function RoleSkillCard({
                             {s.name ?? s.id}
                           </span>
                         </label>
+                        {fires > 0 ? (
+                          <span
+                            title={`Fired ${fires} time${fires === 1 ? '' : 's'} for ${roleLabel} in this project`}
+                            style={{
+                              fontSize: 9,
+                              padding: '1px 5px',
+                              borderRadius: 8,
+                              background: 'var(--sub-2)',
+                              color: 'var(--text-2)',
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            {fires}×
+                          </span>
+                        ) : looksUnused ? (
+                          <span
+                            title="Enabled but never fired in this project — candidate for trimming."
+                            style={{
+                              fontSize: 9,
+                              padding: '1px 5px',
+                              borderRadius: 8,
+                              background: 'transparent',
+                              border: '1px dashed var(--border)',
+                              color: 'var(--muted-2)',
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            0×
+                          </span>
+                        ) : null}
                         <button
                           type="button"
                           className="icon-btn"

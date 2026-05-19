@@ -974,6 +974,15 @@ export function registerIpcHandlers(): void {
   );
 
   ipcMain.handle(
+    IpcChannels.MarketplaceListFireCounts,
+    (
+      _event,
+      projectId: string,
+    ): marketplace.SkillFireCount[] =>
+      marketplace.getSkillFireCounts(projectId),
+  );
+
+  ipcMain.handle(
     IpcChannels.MarketplaceSetSkills,
     (
       _event,

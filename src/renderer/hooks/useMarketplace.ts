@@ -5,6 +5,7 @@ import type {
   MarketplaceChangelogEntry,
   MarketplaceLoadoutReport,
   MarketplaceSelectedSkills,
+  MarketplaceSkillFireCount,
   MarketplaceSourceView,
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
@@ -85,6 +86,10 @@ interface UseMarketplaceResult {
    * load" without burning an actual spawn.
    */
   resolveLoadout: (role: string) => Promise<MarketplaceLoadoutReport>;
+  /** Live per-skill fire-count snapshot for the active project. */
+  fireCounts: MarketplaceSkillFireCount[];
+  /** Pull a fresh fire-count snapshot from main. */
+  reloadFireCounts: () => Promise<void>;
   /**
    * Set the per-skill picks on a subscription. Pass `null` for "all
    * skills in the bundle", a flat `string[]` for "these skills for
@@ -323,6 +328,21 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     [projectId],
   );
 
+  const [fireCounts, setFireCounts] = useState<MarketplaceSkillFireCount[]>(
+    [],
+  );
+  const reloadFireCounts = useCallback(async () => {
+    if (!projectId) {
+      setFireCounts([]);
+      return;
+    }
+    const rows = await window.api.listMarketplaceFireCounts(projectId);
+    setFireCounts(rows);
+  }, [projectId]);
+  useEffect(() => {
+    void reloadFireCounts();
+  }, [reloadFireCounts]);
+
   const getChangelog = useCallback(
     async (
       sourceId: string,
@@ -444,6 +464,8 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     listBundleSkills,
     readSkill,
     resolveLoadout,
+    fireCounts,
+    reloadFireCounts,
     setSkills,
     getChangelog,
     reload,

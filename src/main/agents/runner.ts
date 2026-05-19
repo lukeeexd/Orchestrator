@@ -25,7 +25,13 @@ import * as director from '../director/runner';
 import * as persistence from '../persistence';
 import { prepareAttachments } from '../attachments';
 import { getMcpConfigPath, getProject } from '../projects';
-import { pluginDirsForProject } from '../marketplace';
+import {
+  attributePathToSkill,
+  bumpSkillFire,
+  pluginDirsForProject,
+  resolveLoadout,
+  type LoadoutReport,
+} from '../marketplace';
 import { effectiveSkill } from '../skills';
 
 /**
@@ -771,6 +777,109 @@ function startElapsedTimer(
   return elapsedTimer;
 }
 
+function safeResolveLoadout(
+  projectId: string,
+  role: string,
+): LoadoutReport | null {
+  try {
+    return resolveLoadout(projectId, role);
+  } catch {
+    // Don't let telemetry errors crash the run — telemetry is a
+    // nice-to-have. The runner already emits its own diagnostic note
+    // for the actual plugin-dir load right before consumeQuery.
+    return null;
+  }
+}
+
+/**
+ * Detect skill activations in an assistant event and bump per-skill
+ * fire counters. Used by `consumeQuery` to power the Agent skills
+ * usage-telemetry chips.
+ *
+ * Two signals it watches for:
+ *   1. A `Skill` (or `skill`) tool_use whose input names a known
+ *      skill id (`skill`, `name`, or `skill_name` fields).
+ *   2. A path-bearing tool_use (Read/Glob/Bash/Edit/Write/etc.) whose
+ *      input contains a string falling inside one of the loaded
+ *      skill directories.
+ *
+ * Per-turn dedupe: if the same skill is referenced by multiple
+ * tool_use blocks in a single assistant message (e.g. a Read of
+ * SKILL.md followed by Reads of its reference files), it only bumps
+ * once. Otherwise a single activation can show up as 3-4 fires and
+ * skew the "actually used" signal.
+ */
+function detectAndBumpSkillFires(
+  ev: unknown,
+  loadout: LoadoutReport,
+  projectId: string,
+  role: string,
+): void {
+  if (!ev || typeof ev !== 'object') return;
+  const message = (ev as { message?: { content?: unknown[] } }).message;
+  const blocks = message?.content;
+  if (!Array.isArray(blocks)) return;
+
+  const firedThisTurn = new Set<string>();
+  for (const raw of blocks) {
+    if (!raw || typeof raw !== 'object') continue;
+    const block = raw as { type?: string; name?: string; input?: unknown };
+    if (block.type !== 'tool_use' || typeof block.name !== 'string') continue;
+    const matched = findSkillFromToolUse(block.name, block.input, loadout);
+    if (!matched) continue;
+    const key = `${matched.sourceId}\x00${matched.bundleId}\x00${matched.skillId}`;
+    if (firedThisTurn.has(key)) continue;
+    firedThisTurn.add(key);
+    bumpSkillFire(
+      projectId,
+      role,
+      matched.sourceId,
+      matched.bundleId,
+      matched.skillId,
+    );
+  }
+}
+
+function findSkillFromToolUse(
+  toolName: string,
+  input: unknown,
+  loadout: LoadoutReport,
+): { sourceId: string; bundleId: string; skillId: string } | null {
+  if (!input || typeof input !== 'object') return null;
+  const obj = input as Record<string, unknown>;
+
+  // Special-case the Skill tool. Field names vary across CLI versions;
+  // accept any of the common ones.
+  if (toolName === 'Skill' || toolName === 'skill') {
+    const candidate =
+      (typeof obj.skill === 'string' && obj.skill) ||
+      (typeof obj.name === 'string' && obj.name) ||
+      (typeof obj.skill_name === 'string' && obj.skill_name) ||
+      null;
+    if (candidate) {
+      for (const entry of loadout.entries) {
+        const sk = entry.skills.find((s) => s.id === candidate);
+        if (sk) {
+          return {
+            sourceId: entry.sourceId,
+            bundleId: entry.bundleId,
+            skillId: sk.id,
+          };
+        }
+      }
+    }
+  }
+
+  // General: scan string inputs for a path that resolves under a
+  // skill directory in the loadout.
+  for (const value of Object.values(obj)) {
+    if (typeof value !== 'string') continue;
+    const matched = attributePathToSkill(value, loadout);
+    if (matched) return matched;
+  }
+  return null;
+}
+
 async function consumeQuery(
   agentId: string,
   q: AsyncIterable<unknown>,
@@ -787,6 +896,16 @@ async function consumeQuery(
   let runInput = 0;
   let runOutput = 0;
   let turn = 0;
+
+  // Resolve the loadout once per consumeQuery for skill-fire
+  // attribution. Codex spawns can't load --plugin-dirs at all, so
+  // skip the resolution for those provider types — saves a cheap
+  // call but mostly keeps the intent clear: telemetry is a claude-
+  // only signal.
+  const fireLoadout: LoadoutReport | null =
+    entry0.agent.provider === 'claude'
+      ? safeResolveLoadout(entry0.agent.projectId, entry0.agent.role)
+      : null;
 
   for await (const event of q) {
     if (controller.signal.aborted) break;
@@ -808,6 +927,17 @@ async function consumeQuery(
       if (entry) entry.agent.log.push(line);
       persistence.appendLogLine(agentId, line);
       sinks.onLog(agentId, line);
+    }
+
+    // Skill-fire telemetry — assistant events carry tool_use blocks
+    // that signal which skills the agent actually consulted.
+    if (fireLoadout && ev.type === 'assistant') {
+      detectAndBumpSkillFires(
+        ev,
+        fireLoadout,
+        entry0.agent.projectId,
+        entry0.agent.role,
+      );
     }
 
     if (ev.type === 'assistant') {

@@ -58,6 +58,7 @@ export const IpcChannels = {
   MarketplaceListBundleSkills: 'marketplace:listBundleSkills',
   MarketplaceReadSkill: 'marketplace:readSkill',
   MarketplaceResolveLoadout: 'marketplace:resolveLoadout',
+  MarketplaceListFireCounts: 'marketplace:listFireCounts',
   MarketplaceSetSkills: 'marketplace:setSkills',
   MarketplaceGetChangelog: 'marketplace:getChangelog',
   MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
@@ -333,6 +334,21 @@ export interface MarketplaceLoadoutReport {
   entries: MarketplaceLoadoutEntry[];
   totalSkills: number;
   approxFrontmatterChars: number;
+}
+
+/**
+ * Telemetry row for a single skill in a project — how many times the
+ * runner attributed a tool_use to it. Surfaced in Agent skills as
+ * "fired Nx" chips so the user can spot dead skills.
+ */
+export interface MarketplaceSkillFireCount {
+  projectId: string;
+  role: string;
+  sourceId: string;
+  bundleId: string;
+  skillId: string;
+  count: number;
+  lastFiredAt: number;
 }
 
 export interface AgentEventAgentPayload {
@@ -634,6 +650,13 @@ export interface OrchestratorApi {
     projectId: string,
     role: string,
   ) => Promise<MarketplaceLoadoutReport>;
+  /**
+   * Fetch every fire-count row for a project (across all roles).
+   * Renderer groups them client-side to decorate Agent skills chips.
+   */
+  listMarketplaceFireCounts: (
+    projectId: string,
+  ) => Promise<MarketplaceSkillFireCount[]>;
   /**
    * Set the per-skill subset for a subscription. Three forms:
    *   - `null` — all skills load for every enabled role (default).
