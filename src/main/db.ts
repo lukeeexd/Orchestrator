@@ -381,29 +381,78 @@ export function getDb(): Database {
  * Debounced disk flush. sql.js mutates an in-memory DB; export+writeFile
  * serialises everything. 1s window batches bursts of writes (e.g. log
  * lines arriving rapidly during a run).
+ *
+ * H6: the write side is now async (fs.promises.writeFile) so a 50–100
+ * MB DB write doesn't block the main thread while N agents are
+ * streaming. `dbInstance.export()` is still a synchronous big-buffer
+ * copy — eliminating that would require moving the DB into a
+ * worker_threads worker, which is a much bigger refactor (every
+ * persistence call would need to round-trip via postMessage). Async
+ * write closes most of the renderer-jank surface.
+ *
+ * Save coalescing: if a flush lands while a previous one is still
+ * in flight, mark pending and re-schedule when the current one
+ * settles. Avoids overlapping export+write pairs.
  */
+let savePromise: Promise<void> | null = null;
+let pendingFlush = false;
+
 export function scheduleSave(): void {
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    saveDb();
+    void saveDb();
   }, 1000);
 }
 
-export function saveDb(): void {
+export async function saveDb(): Promise<void> {
   if (!dbInstance || !dbPath) return;
-  const data = dbInstance.export();
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  fs.writeFileSync(dbPath, data);
+  if (savePromise) {
+    // A flush is already in flight. Defer our work to after it
+    // settles by setting the pending flag — the in-flight chain
+    // will requeue itself when it sees the flag.
+    pendingFlush = true;
+    return savePromise;
+  }
+  const run = async (): Promise<void> => {
+    try {
+      do {
+        pendingFlush = false;
+        if (!dbInstance || !dbPath) return;
+        const data = dbInstance.export();
+        fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+        await fs.promises.writeFile(dbPath, data);
+      } while (pendingFlush);
+    } finally {
+      savePromise = null;
+    }
+  };
+  savePromise = run();
+  return savePromise;
 }
 
+/**
+ * Synchronous final flush + close. Called from Electron's
+ * before-quit handler, which doesn't await — so we go back to
+ * writeFileSync here to make sure the bytes hit disk before the
+ * process exits. The async saveDb path is only for the runtime
+ * debounced flushes during the session.
+ */
 export function closeDb(): void {
   if (!dbInstance) return;
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
-  saveDb();
+  if (dbPath) {
+    try {
+      const data = dbInstance.export();
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+      fs.writeFileSync(dbPath, data);
+    } catch {
+      // best-effort on quit — surface only if it bites in practice
+    }
+  }
   dbInstance.close();
   dbInstance = null;
 }

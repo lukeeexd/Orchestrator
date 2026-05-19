@@ -783,27 +783,58 @@ export function registerIpcHandlers(): void {
 
       void (async () => {
         for (let i = 1; i < req.rows.length; i++) {
+          // H1: per-iteration try/catch + project-still-exists guard.
+          // Without these, a single spawn rejection killed the whole
+          // remaining plan with no user-visible signal, and a project
+          // deleted mid-plan would still attempt to spawn into it.
+          if (!getProject(req.projectId)) {
+            director.notifySystem(
+              req.projectId,
+              `Plan cancelled: project no longer exists. ${
+                req.rows.length - i
+              } row${req.rows.length - i === 1 ? '' : 's'} not spawned.`,
+            );
+            return;
+          }
           const prev = spawned[spawned.length - 1];
-          if (prev) await awaitCompletion(prev.id);
+          if (prev) {
+            try {
+              await awaitCompletion(prev.id);
+            } catch {
+              /* awaitCompletion never rejects (the tracker swallows),
+                 but be defensive in case that changes */
+            }
+          }
           const row = req.rows[i];
-          const r = await spawnAgent(
-            {
-              projectId: req.projectId,
-              role: row.role,
-              task: row.task,
-              workspace: req.workspace,
-              spawnedBy: 'director',
-              ...directorOverrides,
-              ...(row.provider ? { provider: row.provider } : {}),
-              ...(planAttachments ? { attachments: planAttachments } : {}),
-            },
-            agentSinks,
-          );
-          const e = registry.get(r.agentId);
-          spawned.push({
-            id: r.agentId,
-            name: e?.agent.name ?? row.name,
-          });
+          try {
+            const r = await spawnAgent(
+              {
+                projectId: req.projectId,
+                role: row.role,
+                task: row.task,
+                workspace: validatedWorkspace,
+                spawnedBy: 'director',
+                ...directorOverrides,
+                ...(row.provider ? { provider: row.provider } : {}),
+                ...(planAttachments ? { attachments: planAttachments } : {}),
+              },
+              agentSinks,
+            );
+            const e = registry.get(r.agentId);
+            spawned.push({
+              id: r.agentId,
+              name: e?.agent.name ?? row.name,
+            });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            director.notifySystem(
+              req.projectId,
+              `Plan row ${i + 1} (${row.role} — ${row.name}) failed to spawn: ${msg}. Stopping remaining ${
+                req.rows.length - i - 1
+              } row${req.rows.length - i - 1 === 1 ? '' : 's'}.`,
+            );
+            return;
+          }
         }
       })();
 

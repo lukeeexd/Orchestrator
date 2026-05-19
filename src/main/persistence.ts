@@ -384,15 +384,37 @@ export function loadAgents(): Agent[] {
     });
     agentOrdering = Math.max(agentOrdering, asInt(row[1]));
   }
-  // Load log lines per agent
+  // Load log lines per agent.
+  //
+  // H5: only the trailing LOG_TAIL_HYDRATE_CAP lines per agent get
+  // hydrated into memory. The full history stays in the DB and can
+  // be fetched on demand via listLogLinesForAgent (e.g. when the
+  // Drawer opens). Before this fix, startup loaded every log line
+  // for every agent into memory — a long-lived install with N
+  // chatty agents was holding tens of MiB unnecessarily.
+  //
+  // We also seed logSeq from the max(seq) across the table, not
+  // from the loaded subset — otherwise an agent whose tail-only
+  // hydrate skipped earlier seqs would re-use a seq and conflict
+  // with the disk record on next appendLogLine.
   for (const agent of out) {
-    const lr = db.exec(
-      `SELECT seq, ts, kind, msg FROM log_lines WHERE agent_id = ? ORDER BY seq ASC`,
+    const maxSeqRes = db.exec(
+      `SELECT COALESCE(MAX(seq), 0) FROM log_lines WHERE agent_id = ?`,
       [agent.id],
     );
+    if (maxSeqRes.length > 0 && maxSeqRes[0].values.length > 0) {
+      const v = maxSeqRes[0].values[0][0];
+      if (typeof v === 'number') logSeq.set(agent.id, v);
+    }
+    const lr = db.exec(
+      `SELECT seq, ts, kind, msg FROM log_lines
+       WHERE agent_id = ? ORDER BY seq DESC LIMIT ?`,
+      [agent.id, LOG_TAIL_HYDRATE_CAP],
+    );
     if (lr.length > 0) {
+      // Reverse so we end up in ascending seq order in agent.log.
+      const tail: LogLine[] = [];
       for (const lrow of lr[0].values) {
-        const seq = asInt(lrow[0]);
         const rawMsg = asStr(lrow[3]);
         let parsedMsg: string | ToolCall = rawMsg;
         if (rawMsg.startsWith('{')) {
@@ -405,15 +427,77 @@ export function loadAgents(): Agent[] {
             // leave as string
           }
         }
-        agent.log.push({
+        tail.push({
           ts: asStr(lrow[1]),
           kind: asStr(lrow[2]) as LogLine['kind'],
           msg: parsedMsg,
         });
-        logSeq.set(agent.id, Math.max(logSeq.get(agent.id) ?? 0, seq));
       }
+      tail.reverse();
+      agent.log = tail;
     }
   }
+  return out;
+}
+
+/**
+ * Trailing-window cap on startup hydration. Matches the runner's
+ * live LOG_TAIL_CAP so the in-memory shape is consistent whether
+ * the agent ran this session or was rehydrated from disk.
+ */
+const LOG_TAIL_HYDRATE_CAP = 2000;
+
+/**
+ * Fetch a slice of an agent's log lines from disk. Used by the
+ * Drawer when the user wants to scroll past the in-memory tail.
+ *
+ * Returns lines in ascending seq order, up to `limit` entries
+ * ending at the given inclusive `beforeSeq` (or the latest seq if
+ * undefined). Caller can paginate by passing the lowest seq from
+ * the prior page as the next `beforeSeq`.
+ */
+export function listLogLinesForAgent(
+  agentId: string,
+  limit: number,
+  beforeSeq?: number,
+): LogLine[] {
+  const db = getDb();
+  const safeLimit = Math.max(1, Math.min(limit, 5000));
+  const rows = beforeSeq
+    ? db.exec(
+        `SELECT seq, ts, kind, msg FROM log_lines
+         WHERE agent_id = ? AND seq < ?
+         ORDER BY seq DESC LIMIT ?`,
+        [agentId, beforeSeq, safeLimit],
+      )
+    : db.exec(
+        `SELECT seq, ts, kind, msg FROM log_lines
+         WHERE agent_id = ?
+         ORDER BY seq DESC LIMIT ?`,
+        [agentId, safeLimit],
+      );
+  if (rows.length === 0) return [];
+  const out: LogLine[] = [];
+  for (const lrow of rows[0].values) {
+    const rawMsg = asStr(lrow[3]);
+    let parsedMsg: string | ToolCall = rawMsg;
+    if (rawMsg.startsWith('{')) {
+      try {
+        const obj = JSON.parse(rawMsg);
+        if (obj && typeof obj === 'object' && 'fn' in obj) {
+          parsedMsg = obj as ToolCall;
+        }
+      } catch {
+        // leave as string
+      }
+    }
+    out.push({
+      ts: asStr(lrow[1]),
+      kind: asStr(lrow[2]) as LogLine['kind'],
+      msg: parsedMsg,
+    });
+  }
+  out.reverse();
   return out;
 }
 

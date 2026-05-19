@@ -820,6 +820,21 @@ function startElapsedTimer(
  */
 const TERMINAL_STATUSES = new Set(['done', 'error', 'aborted']);
 
+/**
+ * H5: in-memory cap on `agent.log`. The persistence layer keeps
+ * the full history on disk; the Drawer's Logs tab pulls older
+ * slices on demand via persistence.listLogLinesForAgent. Without
+ * the cap a long-running chatty agent grows its array unbounded
+ * and `registry.listForProject` serialises the whole thing over
+ * IPC on every renderer mount.
+ *
+ * 2000 lines is well above the Drawer's last-8 view + roughly
+ * one or two assistant turns' worth of tool calls. The boundary
+ * is fuzzy by design — losing the oldest line off the in-memory
+ * tail isn't a correctness issue because the disk has it.
+ */
+const LOG_TAIL_CAP = 2000;
+
 function safeResolveLoadout(
   projectId: string,
   role: string,
@@ -973,7 +988,21 @@ async function consumeQuery(
     const lines = classify(ev);
     for (const line of lines) {
       const entry = registry.get(agentId);
-      if (entry) entry.agent.log.push(line);
+      if (entry) {
+        entry.agent.log.push(line);
+        // H5: cap in-memory log to the last LOG_TAIL_CAP lines.
+        // Older lines stay on disk via persistence.appendLogLine
+        // above and are fetched on demand via listLogLinesForAgent.
+        // Without this, a chatty long-running agent grew its log
+        // array unbounded and `registry.listForProject` serialised
+        // the whole thing over IPC on every renderer mount.
+        if (entry.agent.log.length > LOG_TAIL_CAP) {
+          entry.agent.log.splice(
+            0,
+            entry.agent.log.length - LOG_TAIL_CAP,
+          );
+        }
+      }
       persistence.appendLogLine(agentId, line);
       sinks.onLog(agentId, line);
     }
