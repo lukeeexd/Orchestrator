@@ -939,6 +939,76 @@ function RoleSkillCard({
   );
 }
 
+// ─────────────────────────── Conflict detector ───────────────────────────
+
+/**
+ * Words too common to carry signal in skill descriptions. Tuned by
+ * scanning the engineering-team bundle — most skills mention "code",
+ * "review", "agent", "use", "task". Keeping those would inflate
+ * similarity scores meaninglessly.
+ */
+const CONFLICT_STOPWORDS = new Set([
+  'a', 'an', 'the', 'of', 'for', 'with', 'and', 'or', 'to', 'in', 'on',
+  'at', 'by', 'as', 'from', 'is', 'are', 'be', 'this', 'that', 'it',
+  'its', 'can', 'will', 'should', 'must', 'use', 'using', 'used', 'uses',
+  'run', 'runs', 'runs', 'task', 'tasks', 'agent', 'agents', 'when',
+  'where', 'what', 'which', 'how', 'who', 'why', 'do', 'does', 'done',
+  'has', 'have', 'had', 'not', 'no', 'yes', 'all', 'any', 'some',
+  'each', 'every', 'such', 'than', 'then', 'over', 'into', 'out',
+  'so', 'if', 'but', 'about', 'after', 'before', 'between', 'while',
+  'their', 'they', 'them', 'these', 'those', 'one', 'two', 'three',
+]);
+
+function conflictTokens(description: string): Set<string> {
+  const out = new Set<string>();
+  for (const word of description.toLowerCase().split(/\W+/)) {
+    if (word.length < 3) continue;
+    if (CONFLICT_STOPWORDS.has(word)) continue;
+    out.add(word);
+  }
+  return out;
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const t of a) if (b.has(t)) intersection += 1;
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+interface SkillConflict {
+  a: MarketplaceBundleSkillView;
+  b: MarketplaceBundleSkillView;
+  similarity: number;
+}
+
+/**
+ * Find pairs of skills whose descriptions overlap enough that the
+ * auto-loader is likely to pick ambiguously between them. Threshold
+ * chosen empirically: 0.35 catches obvious siblings (code-reviewer ↔
+ * adversarial-reviewer) without flooding the UI with weak-signal
+ * pairs. Skills with no description never conflict (tokens set is
+ * empty → similarity 0).
+ */
+function findSkillConflicts(
+  skills: MarketplaceBundleSkillView[],
+  threshold = 0.35,
+): SkillConflict[] {
+  const tokensFor = skills.map((s) => conflictTokens(s.description ?? ''));
+  const out: SkillConflict[] = [];
+  for (let i = 0; i < skills.length; i++) {
+    for (let j = i + 1; j < skills.length; j++) {
+      if (skills[i].id === skills[j].id) continue;
+      const sim = jaccardSimilarity(tokensFor[i], tokensFor[j]);
+      if (sim >= threshold) {
+        out.push({ a: skills[i], b: skills[j], similarity: sim });
+      }
+    }
+  }
+  return out.sort((x, y) => y.similarity - x.similarity);
+}
+
 function LoadoutModal({
   role,
   resolveLoadout,
@@ -1134,6 +1204,7 @@ function LoadoutModal({
                   </div>
                 ))
               )}
+              <LoadoutConflicts report={report} />
             </>
           )}
         </div>
@@ -1151,6 +1222,113 @@ function LoadoutModal({
             Close
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function LoadoutConflicts({
+  report,
+}: {
+  report: MarketplaceLoadoutReport;
+}) {
+  // Flatten the role's loaded skills across every bundle and look for
+  // description-similarity pairs.
+  const conflicts = useMemo(() => {
+    const all: MarketplaceBundleSkillView[] = [];
+    for (const entry of report.entries) {
+      all.push(...entry.skills);
+    }
+    return findSkillConflicts(all);
+  }, [report]);
+
+  if (conflicts.length === 0) return null;
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        padding: 12,
+        background: 'var(--sub-2)',
+        borderRadius: 4,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          marginBottom: 4,
+          color: 'var(--text)',
+        }}
+      >
+        Potential conflicts ({conflicts.length})
+      </div>
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--muted)',
+          marginBottom: 8,
+          lineHeight: 1.5,
+        }}
+      >
+        These skill pairs have overlapping descriptions — the auto-loader
+        may pick ambiguously between them. Consider disabling one for
+        this role if you find tasks routing to the wrong one.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {conflicts.map((c, i) => (
+          <div
+            key={`${c.a.id}\x00${c.b.id}`}
+            style={{
+              padding: 8,
+              background: 'var(--sub)',
+              borderRadius: 3,
+              fontSize: 11,
+              lineHeight: 1.5,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                marginBottom: 4,
+              }}
+            >
+              <code style={{ fontSize: 11 }}>{c.a.id}</code>
+              <span style={{ color: 'var(--muted-2)' }}>↔</span>
+              <code style={{ fontSize: 11 }}>{c.b.id}</code>
+              <span className="spacer" />
+              <span
+                style={{
+                  fontSize: 9,
+                  padding: '1px 5px',
+                  borderRadius: 8,
+                  background: 'var(--sub-2)',
+                  color: 'var(--muted)',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+                title={`Jaccard similarity of description tokens: ${c.similarity.toFixed(2)}`}
+              >
+                {Math.round(c.similarity * 100)}%
+              </span>
+            </div>
+            {c.a.description && (
+              <div style={{ color: 'var(--muted)', fontSize: 10 }}>
+                <code style={{ fontSize: 10 }}>{c.a.id}</code> · {c.a.description}
+              </div>
+            )}
+            {c.b.description && (
+              <div
+                style={{ color: 'var(--muted)', fontSize: 10, marginTop: 2 }}
+              >
+                <code style={{ fontSize: 10 }}>{c.b.id}</code> · {c.b.description}
+              </div>
+            )}
+            {/* Suppress noisy keys to keep React happy on this loop. */}
+            {i < 0 && null}
+          </div>
+        ))}
       </div>
     </div>
   );
