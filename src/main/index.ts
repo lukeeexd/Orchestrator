@@ -37,7 +37,31 @@ const createWindow = (): void => {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // M1: lock down the renderer surface.
+      //   - sandbox: chromium renderer sandbox on top of the
+      //     contextIsolation barrier. Limits what a compromised
+      //     renderer can do even before it tries to bypass the
+      //     preload bridge.
+      //   - webSecurity / allowRunningInsecureContent: defaults are
+      //     already secure, but pinning them stops a future
+      //     accidental override from quietly opening a hole.
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
     },
+  });
+
+  // M1: deny window.open and refuse to navigate the main window
+  // away from the local app URL. Without these, a click on a
+  // file:// link in any rendered agent output could navigate the
+  // window to that path. Errors → log + ignore; we don't show
+  // anything in-app because legitimate code never trips this.
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event, url) => {
+    const allowed =
+      MAIN_WINDOW_VITE_DEV_SERVER_URL &&
+      url.startsWith(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    if (!allowed) event.preventDefault();
   });
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {

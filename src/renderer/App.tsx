@@ -205,15 +205,24 @@ export function App() {
   useEffect(() => {
     let mounted = true;
     void (async () => {
+      // L3: parallel fan-out. The serial await chain made tab-badge
+      // hydration scale linearly with project count, which actually
+      // showed up as a flicker on cold launch once a handful of
+      // projects existed.
+      const results = await Promise.all(
+        projects.map((p) =>
+          window.api.listAgents(p.id).then((list) => ({
+            id: p.id,
+            count: list.filter(
+              (a) => a.status === 'running' || a.status === 'waiting',
+            ).length,
+          })),
+        ),
+      );
+      if (!mounted) return;
       const counts: Record<string, number> = {};
-      for (const p of projects) {
-        const list = await window.api.listAgents(p.id);
-        if (!mounted) return;
-        counts[p.id] = list.filter(
-          (a) => a.status === 'running' || a.status === 'waiting',
-        ).length;
-      }
-      if (mounted) setAgentCountByProject(counts);
+      for (const r of results) counts[r.id] = r.count;
+      setAgentCountByProject(counts);
     })();
     return () => {
       mounted = false;

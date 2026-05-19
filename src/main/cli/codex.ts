@@ -219,10 +219,14 @@ async function* parseAndNormalize(
 
       try {
         const ev = JSON.parse(raw) as Record<string, unknown>;
-        // Diagnostic: log every raw event so we can see what codex
-        // actually emitted when the user reports "(empty response)".
-        // Visible in the dev console / terminal that started npm start.
-        console.error('[codex raw]', JSON.stringify(ev));
+        // M9: log every raw codex event only when DEBUG_CODEX_RAW
+        // is set. Previously this fired unconditionally and the
+        // assistant messages + any pasted user content accumulated
+        // in production user log files. Off by default; flip the
+        // env var when investigating "(empty response)" reports.
+        if (process.env.DEBUG_CODEX_RAW) {
+          console.error('[codex raw]', JSON.stringify(ev));
+        }
         const translated = translate(ev, {
           sessionId: () => sessionId,
           setSessionId: (id) => {
