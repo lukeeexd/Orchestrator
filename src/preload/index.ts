@@ -337,6 +337,10 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
       import('../shared/types').SpendSummary
     >,
+  getSpendRecommendations: () =>
+    ipcRenderer.invoke(IpcChannels.SpendRecommendations) as Promise<
+      import('../shared/types').SpendRecommendation[]
+    >,
   listHistory: () =>
     ipcRenderer.invoke(IpcChannels.HistoryList) as Promise<
       import('../shared/types').HistoryRow[]

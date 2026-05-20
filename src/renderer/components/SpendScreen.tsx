@@ -4,10 +4,19 @@ import type {
   SpendAgentRow,
   SpendBucket,
   SpendDayBucket,
+  SpendRecommendation,
   SpendSummary,
 } from '../../shared/types';
 import { ROLE_TINT, STATUS_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
+
+/** Subset of RailScreen ids the Spend recommendations panel can deep-link to. */
+type SpendDeepLink = 'settings' | 'marketplace' | 'tools' | 'history';
+
+interface Props {
+  /** Switch to another rail in response to a recommendation card. */
+  onDeepLink?: (rail: SpendDeepLink) => void;
+}
 
 function fmt$(n: number): string {
   if (n === 0) return '$0.00';
@@ -30,15 +39,25 @@ function fmtRelTime(ts: number): string {
   return new Date(ts).toLocaleDateString();
 }
 
-export function SpendScreen() {
+export function SpendScreen({ onDeepLink }: Props) {
   const [data, setData] = useState<SpendSummary | null>(null);
+  const [recommendations, setRecommendations] = useState<
+    SpendRecommendation[]
+  >([]);
   const [reloading, setReloading] = useState(false);
 
   const load = async () => {
     setReloading(true);
     try {
-      const next = await window.api.getSpendSummary();
-      setData(next);
+      // Two reads in parallel — both are cheap (one agents-table scan,
+      // one rule eval over the same data) so we don't gate the screen
+      // on the rec call.
+      const [summary, recs] = await Promise.all([
+        window.api.getSpendSummary(),
+        window.api.getSpendRecommendations(),
+      ]);
+      setData(summary);
+      setRecommendations(recs);
     } finally {
       setReloading(false);
     }
@@ -108,6 +127,28 @@ export function SpendScreen() {
             />
           </div>
         </section>
+
+        {recommendations.length > 0 && (
+          <section className="settings-section">
+            <h3 className="settings-h">Recommendations</h3>
+            <p className="settings-help">
+              Rule-based nudges over the data above. Each card disappears once
+              the underlying condition resolves (e.g. unsubscribing an idle
+              bundle, or letting a week pass without an expensive single agent).
+            </p>
+            <div
+              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+            >
+              {recommendations.map((rec) => (
+                <RecommendationCard
+                  key={rec.id}
+                  rec={rec}
+                  onDeepLink={onDeepLink}
+                />
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="settings-section">
           <h3 className="settings-h">Daily cost · last 30 days</h3>
@@ -369,6 +410,61 @@ function TopAgentsTable({ rows }: { rows: SpendAgentRow[] }) {
           <span className="spend-cell-num">{fmtRelTime(a.startedAt)}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function RecommendationCard({
+  rec,
+  onDeepLink,
+}: {
+  rec: SpendRecommendation;
+  onDeepLink?: (rail: SpendDeepLink) => void;
+}) {
+  const tint = rec.severity === 'warn' ? 'var(--waiting)' : 'var(--accent)';
+  const deepLinkLabel: Record<SpendDeepLink, string> = {
+    settings: 'Open Settings',
+    marketplace: 'Open Marketplace',
+    tools: 'Open Tools',
+    history: 'Open Runs',
+  };
+  return (
+    <div
+      style={{
+        border: '1px solid var(--border)',
+        borderLeft: `3px solid ${tint}`,
+        borderRadius: 4,
+        background: 'var(--sub-1)',
+        padding: '8px 12px',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontSize: 12,
+          fontWeight: 600,
+          marginBottom: 4,
+        }}
+      >
+        <span style={{ color: tint }}>{rec.severity === 'warn' ? '!' : 'i'}</span>
+        <span>{rec.title}</span>
+        <span className="spacer" style={{ flex: 1 }} />
+        {rec.deepLink && onDeepLink && (
+          <button
+            className="tb-btn"
+            onClick={() => onDeepLink(rec.deepLink as SpendDeepLink)}
+            style={{ height: 20, fontSize: 11 }}
+            title={`Switch to the ${rec.deepLink} rail`}
+          >
+            {deepLinkLabel[rec.deepLink]}
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.4 }}>
+        {rec.body}
+      </div>
     </div>
   );
 }

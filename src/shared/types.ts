@@ -319,3 +319,23 @@ export interface SpendSummary {
   /** Top 20 most expensive agents, all-time. */
   topAgents: SpendAgentRow[];
 }
+
+/**
+ * One rule-based recommendation surfaced on the Spend screen.
+ * Recomputed every time the user opens the rail; no persistent
+ * "dismissed" state in v1 (the underlying conditions resolving is the
+ * dismiss signal — e.g. unsubscribing the idle bundle removes the
+ * card on next load).
+ */
+export interface SpendRecommendation {
+  /** Stable id — used as a React key and as a hook for future dismiss state. */
+  id: string;
+  /** Visual weight: 'info' for FYI, 'warn' for "you probably want to look at this". */
+  severity: 'info' | 'warn';
+  /** One-line headline shown in the card. */
+  title: string;
+  /** Two-or-three-sentence explanation + suggested action. */
+  body: string;
+  /** Optional rail item id to deep-link to (history / marketplace / settings / tools). */
+  deepLink?: 'settings' | 'marketplace' | 'tools' | 'history';
+}

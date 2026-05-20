@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { IpcChannels } from '../../shared/ipc';
 import { getSpendSummary } from '../spend';
+import { getSpendRecommendations } from '../spendRecommendations';
 import { listHistory } from '../history';
 import { listSlashCommands } from '../commands';
 import { listSkills, writeSkill } from '../skills';
@@ -16,6 +17,12 @@ export function registerMiscHandlers(): void {
   ipcMain.handle(
     IpcChannels.SpendGet,
     (): import('../../shared/types').SpendSummary => getSpendSummary(),
+  );
+
+  ipcMain.handle(
+    IpcChannels.SpendRecommendations,
+    (): import('../../shared/types').SpendRecommendation[] =>
+      getSpendRecommendations(),
   );
 
   ipcMain.handle(

@@ -72,6 +72,7 @@ export const IpcChannels = {
   AppCliStatusByProvider: 'app:cliStatusByProvider',
   AppOpenUsage: 'app:openUsage',
   SpendGet: 'spend:get',
+  SpendRecommendations: 'spend:recommendations',
   HistoryList: 'history:list',
   CommandsList: 'commands:list',
   SkillsList: 'skills:list',
@@ -785,6 +786,10 @@ export interface OrchestratorApi {
   ) => Promise<{ available: boolean; version: string | null }>;
   openClaudeUsage: () => Promise<{ ok: boolean }>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
+  /** Rule-based cost / loadout recommendations recomputed each call. */
+  getSpendRecommendations: () => Promise<
+    import('./types').SpendRecommendation[]
+  >;
   listHistory: () => Promise<import('./types').HistoryRow[]>;
   listSlashCommands: (
     projectId: string | null,

@@ -588,7 +588,7 @@ export function App() {
             directorProvider={activeProject ? directorProvider : null}
           />
         ) : active === 'cost' ? (
-          <SpendScreen />
+          <SpendScreen onDeepLink={(rail) => setActive(rail)} />
         ) : active === 'history' ? (
           <HistoryScreen
             projects={projects}
