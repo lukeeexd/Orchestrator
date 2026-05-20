@@ -224,9 +224,15 @@ higher creativity.
   workspace, credential-store access). Red/yellow/green per skill before
   user confirms. Default source skips the check.
 
-- **P8.** `[ ]` **Focused-fix quick spawn** — skip Director for the
-  single-file-bugfix case. File picker + 3-line task + budget override
-  → one coder agent with file pinned and strict allow-list.
+- **P8.** `[x]` **Focused-fix quick spawn** — shipped 2026-05-20 (`cd09cff`).
+  "Focused fix" button on AgentsPane next to "New agent" opens a tight
+  modal: native file picker (reuses AttachmentPick so the file is
+  allow-listed), 3-line task textarea, optional budget. Spawns a coder
+  with the file as an attachment + a constraint-preamble task prompt
+  (edit only this file, no shell beyond `git diff`, stop once done).
+  v1 enforces scope at the prompt level — runner-level per-spawn
+  allow-list override is P8.1 if the soft constraint stops being
+  enough.
 
 - **P9.** `[ ]` **MCP server builder wizard** — scaffold a new MCP server
   in workspace (TS or Python), auto-register in `.mcp.json`. Pairs with
