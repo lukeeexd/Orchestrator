@@ -28,6 +28,8 @@ import { ToolsScreen } from './components/ToolsScreen';
 import { MarketplaceScreen } from './components/MarketplaceScreen';
 import { SpendScreen } from './components/SpendScreen';
 import { HistoryScreen } from './components/HistoryScreen';
+import { TemplatesScreen } from './components/TemplatesScreen';
+import { SaveTemplateDialog } from './components/SaveTemplateDialog';
 import { CliMissingGate } from './components/CliMissingGate';
 import type { BuiltinAction } from '../shared/builtinCommands';
 import {
@@ -70,7 +72,17 @@ export function App() {
     false,
   );
   const [showNewProject, setShowNewProject] = useState(false);
+  // Rows captured when the user clicks "Save as template" on a PlanCard.
+  // Set → SaveTemplateDialog opens; null → closed.
+  const [saveTemplateRows, setSaveTemplateRows] = useState<PlanRow[] | null>(
+    null,
+  );
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // P2 — onboarding banner state. `needed` reflects the result of the
+  // hasWorkspaceMd probe + the per-project dismiss flag in localStorage;
+  // `busy` covers the round-trip while the template spawn is in flight.
+  const [onboardingNeeded, setOnboardingNeeded] = useState(false);
+  const [onboardingBusy, setOnboardingBusy] = useState(false);
   const [agentCountByProject, setAgentCountByProject] = useState<
     Record<string, number>
   >({});
@@ -205,15 +217,24 @@ export function App() {
   useEffect(() => {
     let mounted = true;
     void (async () => {
+      // L3: parallel fan-out. The serial await chain made tab-badge
+      // hydration scale linearly with project count, which actually
+      // showed up as a flicker on cold launch once a handful of
+      // projects existed.
+      const results = await Promise.all(
+        projects.map((p) =>
+          window.api.listAgents(p.id).then((list) => ({
+            id: p.id,
+            count: list.filter(
+              (a) => a.status === 'running' || a.status === 'waiting',
+            ).length,
+          })),
+        ),
+      );
+      if (!mounted) return;
       const counts: Record<string, number> = {};
-      for (const p of projects) {
-        const list = await window.api.listAgents(p.id);
-        if (!mounted) return;
-        counts[p.id] = list.filter(
-          (a) => a.status === 'running' || a.status === 'waiting',
-        ).length;
-      }
-      if (mounted) setAgentCountByProject(counts);
+      for (const r of results) counts[r.id] = r.count;
+      setAgentCountByProject(counts);
     })();
     return () => {
       mounted = false;
@@ -221,37 +242,26 @@ export function App() {
   }, [projects]);
 
   useEffect(() => {
-    const offAgent = window.api.onAgent(({ projectId }) => {
-      setAgentCountByProject((prev) => {
-        // Recompute from scratch by polling the registry would be expensive;
-        // approximate by bumping/decrementing based on the running flag.
-        const before = prev[projectId] ?? 0;
-        const wasActive = before > 0 ? before : 0;
-        // We don't know the previous status here, so just refresh from API.
-        void window.api.listAgents(projectId).then((list) => {
-          const count = list.filter(
-            (a) => a.status === 'running' || a.status === 'waiting',
-          ).length;
-          setAgentCountByProject((p) => ({ ...p, [projectId]: count }));
-        });
-        return { ...prev, [projectId]: wasActive };
+    // H9: pull the IPC call out of the setState updater. React's
+    // setState updater must be pure — StrictMode invokes it twice
+    // in dev, which means a listAgents call lived in there was
+    // firing twice per event in development.
+    const refreshCount = (projectId: string): void => {
+      void window.api.listAgents(projectId).then((list) => {
+        const count = list.filter(
+          (a) => a.status === 'running' || a.status === 'waiting',
+        ).length;
+        setAgentCountByProject((p) => ({ ...p, [projectId]: count }));
       });
+    };
+    const offAgent = window.api.onAgent(({ projectId }) => {
+      refreshCount(projectId);
     });
     const offPatch = window.api.onPatch(({ projectId }) => {
-      void window.api.listAgents(projectId).then((list) => {
-        const count = list.filter(
-          (a) => a.status === 'running' || a.status === 'waiting',
-        ).length;
-        setAgentCountByProject((p) => ({ ...p, [projectId]: count }));
-      });
+      refreshCount(projectId);
     });
     const offRemove = window.api.onAgentRemove(({ projectId }) => {
-      void window.api.listAgents(projectId).then((list) => {
-        const count = list.filter(
-          (a) => a.status === 'running' || a.status === 'waiting',
-        ).length;
-        setAgentCountByProject((p) => ({ ...p, [projectId]: count }));
-      });
+      refreshCount(projectId);
     });
     return () => {
       offAgent();
@@ -262,6 +272,84 @@ export function App() {
 
   const handledPlans = useRef<Set<string>>(new Set());
   const handledRedirects = useRef<Set<string>>(new Set());
+  // M10: drop the dedupe sets on project switch. They tracked
+  // message ids local to the previous project and grew unbounded
+  // otherwise — every session-long active project accumulated one
+  // entry per plan/redirect Director ever emitted.
+  useEffect(() => {
+    handledPlans.current = new Set();
+    handledRedirects.current = new Set();
+  }, [activeProjectId]);
+
+  // P2 — recompute the onboarding banner state whenever the active
+  // project or its workspace changes. Two reasons to NOT show:
+  //   1. user dismissed the banner for this project (localStorage flag)
+  //   2. WORKSPACE.md already exists in the workspace (main-side check)
+  // Both run in parallel; we only flip needed=true when both checks
+  // come back negative.
+  useEffect(() => {
+    let cancelled = false;
+    setOnboardingNeeded(false);
+    if (!activeProjectId || !workspace) return;
+    const dismissed = (() => {
+      try {
+        return (
+          localStorage.getItem(
+            `orchestrator.onboardingDismissed.${activeProjectId}`,
+          ) === '1'
+        );
+      } catch {
+        return false;
+      }
+    })();
+    if (dismissed) return;
+    void window.api.hasWorkspaceMd(workspace).then((has) => {
+      if (cancelled) return;
+      if (!has) setOnboardingNeeded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId, workspace]);
+
+  const runOnboarding = async () => {
+    if (!activeProjectId) return;
+    setOnboardingBusy(true);
+    try {
+      const res = await window.api.useTemplate(
+        activeProjectId,
+        'builtin-codebase-onboarding',
+      );
+      if (res.ok) {
+        // The synthetic Director message lands via the broadcast; the
+        // PlanCard renders inside the chat. Hide the banner — the
+        // user has acknowledged it, and if WORKSPACE.md ends up not
+        // being produced (Director-paused, agent failed, etc) the
+        // banner re-shows next project open.
+        setOnboardingNeeded(false);
+        // Switch the rail to agents so the user sees the spawned
+        // researcher rather than staying on whichever rail prompted
+        // this. Director chat is where the plan card lives, so the
+        // user might also want that — leaving rail unchanged so the
+        // user keeps context.
+      }
+    } finally {
+      setOnboardingBusy(false);
+    }
+  };
+
+  const skipOnboarding = () => {
+    if (!activeProjectId) return;
+    try {
+      localStorage.setItem(
+        `orchestrator.onboardingDismissed.${activeProjectId}`,
+        '1',
+      );
+    } catch {
+      /* private window / quota — banner returns next session, fine */
+    }
+    setOnboardingNeeded(false);
+  };
 
   const spawnPlan = async (
     msg: DirectorMessage,
@@ -354,6 +442,24 @@ export function App() {
   // bit still controls downstream orchestration — Director-issued
   // redirects fire automatically here, and once you click Spawn the
   // backend sequences the agents itself.
+  // M10: when mode flips manual → auto, mark every redirect that
+  // already existed as handled BEFORE the auto-fire effect runs.
+  // Without this, flipping to auto burst-fires every pending
+  // redirect at once with no user warning. The user opted into
+  // auto for *future* turns; the manual-mode backlog should stay
+  // manual.
+  const prevModeRef = useRef(mode);
+  useEffect(() => {
+    if (prevModeRef.current !== 'auto' && mode === 'auto') {
+      for (const msg of messages) {
+        if (msg.redirect && !msg.redirectFired) {
+          handledRedirects.current.add(msg.id);
+        }
+      }
+    }
+    prevModeRef.current = mode;
+  }, [mode, messages]);
+
   useEffect(() => {
     if (mode !== 'auto' || !activeProjectId) return;
     void (async () => {
@@ -454,6 +560,7 @@ export function App() {
               }}
               onSend={send}
               onSpawnPlan={spawnPlan}
+              onSaveAsTemplate={(rows) => setSaveTemplateRows(rows)}
               onWipe={async () => {
                 if (activeProjectId)
                   await window.api.wipeDirector(activeProjectId);
@@ -511,6 +618,15 @@ export function App() {
               spawning={spawning}
               viewMode={viewMode}
               provider={activeProject?.provider ?? 'claude'}
+              onboardingBanner={
+                onboardingNeeded
+                  ? {
+                      busy: onboardingBusy,
+                      onRun: () => void runOnboarding(),
+                      onSkip: skipOnboarding,
+                    }
+                  : undefined
+              }
               setSpawning={setSpawning}
               onSelect={setSelectedId}
               onToggle={toggle}
@@ -556,7 +672,7 @@ export function App() {
             directorProvider={activeProject ? directorProvider : null}
           />
         ) : active === 'cost' ? (
-          <SpendScreen />
+          <SpendScreen onDeepLink={(rail) => setActive(rail)} />
         ) : active === 'history' ? (
           <HistoryScreen
             projects={projects}
@@ -567,6 +683,11 @@ export function App() {
               setSelectedId(agentId);
               setActive('agents');
             }}
+          />
+        ) : active === 'templates' ? (
+          <TemplatesScreen
+            projectId={activeProjectId}
+            onTemplateUsed={() => setActive('agents')}
           />
         ) : (
           <PlaceholderScreen
@@ -606,6 +727,24 @@ export function App() {
             setShowNewProject(false);
           }}
           onCancel={() => setShowNewProject(false)}
+        />
+      )}
+      {saveTemplateRows && (
+        <SaveTemplateDialog
+          rows={saveTemplateRows}
+          mode={mode}
+          onCancel={() => setSaveTemplateRows(null)}
+          onSave={async (input) => {
+            const created = await window.api.createTemplate({
+              name: input.name,
+              description: input.description,
+              mode: input.mode,
+              tags: input.tags,
+              rows: saveTemplateRows,
+            });
+            setSaveTemplateRows(null);
+            return created;
+          }}
         />
       )}
       {confirmDeleteId &&

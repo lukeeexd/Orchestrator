@@ -175,7 +175,12 @@ const api: OrchestratorApi = {
       IpcChannels.ProjectSetMcpConfig,
       id,
       config,
-    ) as Promise<{ ok: boolean; error?: string }>,
+    ) as Promise<{ ok: boolean; error?: string; commands?: string[] }>,
+  previewMcpConfigCommands: (config) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectPreviewMcpConfigCommands,
+      config,
+    ) as Promise<{ commands: string[] }>,
 
   // ─────────────────────────── Marketplace ───────────────────────────
   listMarketplaceSources: () =>
@@ -280,6 +285,11 @@ const api: OrchestratorApi = {
       IpcChannels.MarketplaceListFireCounts,
       projectId,
     ) as Promise<import('../shared/ipc').MarketplaceSkillFireCount[]>,
+  getMarketplaceLoadoutInsights: (projectId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceGetLoadoutInsights,
+      projectId,
+    ) as Promise<import('../shared/types').LoadoutInsight[]>,
   setMarketplaceBundleSkills: (projectId, sourceId, bundleId, skills) =>
     ipcRenderer.invoke(
       IpcChannels.MarketplaceSetSkills,
@@ -321,11 +331,6 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.AppShowSettingsFile) as Promise<{
       ok: boolean;
     }>,
-  getClaudeCliStatus: () =>
-    ipcRenderer.invoke(IpcChannels.AppCliStatus) as Promise<{
-      available: boolean;
-      version: string | null;
-    }>,
   getCliStatus: (provider) =>
     ipcRenderer.invoke(
       IpcChannels.AppCliStatusByProvider,
@@ -333,9 +338,18 @@ const api: OrchestratorApi = {
     ) as Promise<{ available: boolean; version: string | null }>,
   openClaudeUsage: () =>
     ipcRenderer.invoke(IpcChannels.AppOpenUsage) as Promise<{ ok: boolean }>,
+  hasWorkspaceMd: (workspace) =>
+    ipcRenderer.invoke(
+      IpcChannels.AppHasWorkspaceMd,
+      workspace,
+    ) as Promise<boolean>,
   getSpendSummary: () =>
     ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
       import('../shared/types').SpendSummary
+    >,
+  getSpendRecommendations: () =>
+    ipcRenderer.invoke(IpcChannels.SpendRecommendations) as Promise<
+      import('../shared/types').SpendRecommendation[]
     >,
   listHistory: () =>
     ipcRenderer.invoke(IpcChannels.HistoryList) as Promise<
@@ -358,6 +372,30 @@ const api: OrchestratorApi = {
     ) as Promise<{
       ok: boolean;
       entry?: import('../shared/ipc').SkillEntry;
+      error?: string;
+    }>,
+
+  listTemplates: () =>
+    ipcRenderer.invoke(IpcChannels.TemplatesList) as Promise<
+      import('../shared/types').Template[]
+    >,
+  createTemplate: (input) =>
+    ipcRenderer.invoke(IpcChannels.TemplatesCreate, input) as Promise<
+      import('../shared/types').Template
+    >,
+  updateTemplate: (id, patch) =>
+    ipcRenderer.invoke(IpcChannels.TemplatesUpdate, id, patch) as Promise<{
+      ok: boolean;
+      template?: import('../shared/types').Template;
+    }>,
+  deleteTemplate: (id) =>
+    ipcRenderer.invoke(IpcChannels.TemplatesDelete, id) as Promise<{
+      ok: boolean;
+    }>,
+  useTemplate: (projectId, templateId) =>
+    ipcRenderer.invoke(IpcChannels.TemplatesUse, projectId, templateId) as Promise<{
+      ok: boolean;
+      message?: import('../shared/types').DirectorMessage;
       error?: string;
     }>,
 

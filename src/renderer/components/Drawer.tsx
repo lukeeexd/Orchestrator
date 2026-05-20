@@ -1,24 +1,14 @@
 import { useState } from 'react';
 import type {
   Agent,
-  AgentRole,
   EffortLevel,
   Provider,
 } from '../../shared/types';
-import { ROLES } from '../../shared/roles';
+import { ROLES, ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { LogLineRow } from './LogLineRow';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
-
-const ROLE_TINT: Record<AgentRole, string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
 
 const CONTEXT_CAP_DEFAULT = 200_000;
 const CONTEXT_CAP_1M = 1_000_000;
@@ -106,7 +96,30 @@ export function Drawer({
       <DrawerCollapseBar onToggle={onToggleCollapsed} />
       <Header agent={agent} provider={provider} onAbort={() => onAbort(agent.id)} />
 
-      <div className="tabs">
+      {/* H11: tablist + arrow-key nav per the MarketplaceScreen
+          pattern. Previously these were <div onClick> with no
+          keyboard handling and no role/aria-selected for AT users. */}
+      <div
+        className="tabs"
+        role="tablist"
+        onKeyDown={(e) => {
+          const tabIds: TabId[] = ['logs', 'tools', 'memory', 'context', 'config'];
+          const idx = tabIds.indexOf(tab);
+          if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            setTab(tabIds[(idx + 1) % tabIds.length]);
+          } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            setTab(tabIds[(idx - 1 + tabIds.length) % tabIds.length]);
+          } else if (e.key === 'Home') {
+            e.preventDefault();
+            setTab(tabIds[0]);
+          } else if (e.key === 'End') {
+            e.preventDefault();
+            setTab(tabIds[tabIds.length - 1]);
+          }
+        }}
+      >
         <TabHead id="logs" label="Logs" count={agent.log.length} active={tab} onSelect={setTab} />
         <TabHead id="tools" label="Tools" count={toolCount} active={tab} onSelect={setTab} />
         <TabHead id="memory" label="Memory" count={0} active={tab} onSelect={setTab} />
@@ -448,14 +461,19 @@ function TabHead({
   active: TabId;
   onSelect: (id: TabId) => void;
 }) {
+  const isActive = active === id;
   return (
-    <div
-      className={'tab' + (active === id ? ' active' : '')}
+    <button
+      type="button"
+      className={'tab' + (isActive ? ' active' : '')}
       onClick={() => onSelect(id)}
+      role="tab"
+      aria-selected={isActive}
+      tabIndex={isActive ? 0 : -1}
     >
       {label}
       {count != null && <span className="count">{count}</span>}
-    </div>
+    </button>
   );
 }
 
@@ -490,7 +508,8 @@ function LogsTab({ agent }: { agent: Agent }) {
             }}
           >
             {tail.map((l, i) => (
-              <LogLineRow key={i} line={l} />
+              // M11: composite key — see AgentRow for rationale.
+              <LogLineRow key={`${l.ts}-${l.kind}-${i}`} line={l} />
             ))}
           </div>
         ) : (

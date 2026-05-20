@@ -15,8 +15,9 @@ import {
   MARKETPLACE_DEFAULT_SOURCE_ID,
   MARKETPLACE_RECOMMENDED_DEFAULTS,
 } from '../../shared/ipc';
-import type { Provider } from '../../shared/types';
+import type { LoadoutInsight, Provider } from '../../shared/types';
 import { Icon } from './Icon';
+import { Modal } from './Modal';
 import { useMarketplace } from '../hooks/useMarketplace';
 
 interface Props {
@@ -228,6 +229,31 @@ export function MarketplaceScreen({
             your shell.
           </div>
         )}
+        {mp.loadoutInsights.length > 0 && (
+          <section
+            className="settings-section"
+            style={{ marginBottom: 12 }}
+          >
+            <h3 className="settings-h">Skill insights</h3>
+            <p className="settings-help">
+              Rule-based nudges over the bundles you have subscribed plus the
+              skill-fire telemetry from your runs. Each card disappears once
+              the underlying state changes (e.g. once you've pruned the idle
+              skills, the bundle stops triggering the rule).
+            </p>
+            <div
+              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+            >
+              {mp.loadoutInsights.map((rec) => (
+                <LoadoutInsightCard
+                  key={rec.id}
+                  insight={rec}
+                  onReload={mp.reloadInsights}
+                />
+              ))}
+            </div>
+          </section>
+        )}
         {viewTab === 'agents' ? (
           <AgentSkillsView
             subscriptions={mp.subscriptions}
@@ -319,22 +345,32 @@ function RecommendedSetupModal({
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div
-        className="modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 560 }}
-      >
-        <div className="modal-head">
-          <span className="title">
-            <b>Recommended setup</b>
-          </span>
-          <span className="spacer" />
-          <button className="icon-btn" onClick={onCancel} title="Cancel">
-            <Icon name="x" size={11} />
+    <Modal
+      title={<b>Recommended setup</b>}
+      onClose={busy ? undefined : onCancel}
+      maxWidth={560}
+      footer={
+        <>
+          <button className="tb-btn" onClick={onCancel} disabled={busy}>
+            Cancel
           </button>
-        </div>
-        <div className="modal-body">
+          <button
+            className="tb-btn primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onApply();
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? 'Applying…' : alreadyApplied ? 'Re-apply' : 'Apply'}
+          </button>
+        </>
+      }
+    >
           <p style={{ marginTop: 0, color: 'var(--muted)', fontSize: 12 }}>
             One-click install of a per-role skill stack. Subscribes
             globally so the picks apply to every project. Each agent
@@ -422,43 +458,19 @@ function RecommendedSetupModal({
               selection (useful after upstream changes).
             </div>
           )}
-        </div>
-        <div
-          className="modal-foot"
-          style={{
-            display: 'flex',
-            gap: 8,
-            justifyContent: 'flex-end',
-            padding: 12,
-            borderTop: '1px solid var(--border)',
-          }}
-        >
-          <button className="tb-btn" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            className="tb-btn primary"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await onApply();
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {busy ? 'Applying…' : alreadyApplied ? 'Re-apply' : 'Apply'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
 // ─────────────────────────── Agent skills view ───────────────────────────
 
-const AGENT_ROLES: ReadonlyArray<{ id: string; label: string; hint: string }> = [
+type MarketplaceRoleId = import('../../shared/types').AgentRole | 'director';
+
+const AGENT_ROLES: ReadonlyArray<{
+  id: MarketplaceRoleId;
+  label: string;
+  hint: string;
+}> = [
   { id: 'director', label: 'Director', hint: 'Plans + supervises agents' },
   { id: 'pm', label: 'PM', hint: 'Decomposes tasks; read-only' },
   { id: 'researcher', label: 'Researcher', hint: 'Reads, web-fetches, summarises' },
@@ -1041,43 +1053,35 @@ function LoadoutModal({
     AGENT_ROLES.find((r) => r.id === role)?.label ?? role;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          maxWidth: 720,
-          maxHeight: '85vh',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div className="modal-head">
-          <span className="title">
-            <b>{roleLabel} loadout</b>
-            <span
-              style={{
-                marginLeft: 8,
-                color: 'var(--muted)',
-                fontSize: 11,
-                fontWeight: 400,
-              }}
-            >
-              dry-run — what a fresh <code>{role}</code> spawn would receive
-            </span>
+    <Modal
+      title={
+        <>
+          <b>{roleLabel} loadout</b>
+          <span
+            style={{
+              marginLeft: 8,
+              color: 'var(--muted)',
+              fontSize: 11,
+              fontWeight: 400,
+            }}
+          >
+            dry-run — what a fresh <code>{role}</code> spawn would receive
           </span>
-          <span className="spacer" />
-          <button className="icon-btn" onClick={onClose} title="Close">
-            <Icon name="x" size={11} />
-          </button>
-        </div>
+        </>
+      }
+      onClose={onClose}
+      maxWidth={720}
+      footer={
+        <button className="tb-btn" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
         <div
-          className="modal-body"
           style={{
             flex: 1,
             minHeight: 0,
             overflowY: 'auto',
-            padding: 12,
           }}
         >
           {report === null && !error && (
@@ -1208,22 +1212,7 @@ function LoadoutModal({
             </>
           )}
         </div>
-        <div
-          className="modal-foot"
-          style={{
-            display: 'flex',
-            gap: 8,
-            justifyContent: 'flex-end',
-            padding: 12,
-            borderTop: '1px solid var(--border)',
-          }}
-        >
-          <button className="tb-btn" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1389,40 +1378,31 @@ function SkillPreviewModal({
   }, [readSkill, sourceId, bundleId, skill.id]);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          maxWidth: 760,
-          maxHeight: '85vh',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div className="modal-head">
-          <span className="title">
-            <b>{skill.name ?? skill.id}</b>
-            <span
-              style={{
-                marginLeft: 8,
-                color: 'var(--muted)',
-                fontSize: 11,
-                fontWeight: 400,
-              }}
-            >
-              <code>{bundleId}/{skill.id}</code>
-            </span>
+    <Modal
+      title={
+        <>
+          <b>{skill.name ?? skill.id}</b>
+          <span
+            style={{
+              marginLeft: 8,
+              color: 'var(--muted)',
+              fontSize: 11,
+              fontWeight: 400,
+            }}
+          >
+            <code>{bundleId}/{skill.id}</code>
           </span>
-          <span className="spacer" />
-          <button className="icon-btn" onClick={onClose} title="Close">
-            <Icon name="x" size={11} />
-          </button>
-        </div>
-        <div
-          className="modal-body"
-          style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12 }}
-        >
+        </>
+      }
+      onClose={onClose}
+      maxWidth={760}
+      footer={
+        <button className="tb-btn" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
           {skill.description && (
             <p
               style={{
@@ -1460,22 +1440,7 @@ function SkillPreviewModal({
             </div>
           )}
         </div>
-        <div
-          className="modal-foot"
-          style={{
-            display: 'flex',
-            gap: 8,
-            justifyContent: 'flex-end',
-            padding: 12,
-            borderTop: '1px solid var(--border)',
-          }}
-        >
-          <button className="tb-btn" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1510,74 +1475,11 @@ function AddSourceModal({
   };
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div
-        className="modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 520 }}
-      >
-        <div className="modal-head">
-          <span className="title">
-            <b>Add marketplace source</b>
-          </span>
-          <span className="spacer" />
-          <button className="icon-btn" onClick={onCancel} title="Cancel">
-            <Icon name="x" size={11} />
-          </button>
-        </div>
-        <div className="modal-body">
-          <div className="field">
-            <span className="lbl">GitHub repo</span>
-            <input
-              className="text-input"
-              value={repo}
-              onChange={(e) => {
-                setRepo(e.target.value);
-                setError(null);
-              }}
-              placeholder="owner/repo or https://github.com/owner/repo"
-              autoFocus
-              spellCheck={false}
-            />
-            <span
-              className="meta"
-              style={{
-                fontSize: 11,
-                color: 'var(--muted)',
-                marginTop: 2,
-              }}
-            >
-              The repo must publish a{' '}
-              <code>.claude-plugin/marketplace.json</code> manifest. We
-              do a shallow git clone of the default branch on add.
-            </span>
-          </div>
-          <div className="field">
-            <span className="lbl">Branch (optional)</span>
-            <input
-              className="text-input"
-              value={branch}
-              onChange={(e) => setBranch(e.target.value)}
-              placeholder="main"
-              spellCheck={false}
-            />
-          </div>
-          {error && (
-            <div className="form-error" style={{ marginTop: 6 }}>
-              {error}
-            </div>
-          )}
-        </div>
-        <div
-          className="modal-foot"
-          style={{
-            display: 'flex',
-            gap: 8,
-            justifyContent: 'flex-end',
-            padding: 12,
-            borderTop: '1px solid var(--border)',
-          }}
-        >
+    <Modal
+      title={<b>Add marketplace source</b>}
+      onClose={busy ? undefined : onCancel}
+      footer={
+        <>
           <button className="tb-btn" onClick={onCancel} disabled={busy}>
             Cancel
           </button>
@@ -1588,9 +1490,53 @@ function AddSourceModal({
           >
             {busy ? 'Cloning…' : 'Add'}
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="field">
+        <span className="lbl">GitHub repo</span>
+        <input
+          className="text-input"
+          value={repo}
+          onChange={(e) => {
+            setRepo(e.target.value);
+            setError(null);
+          }}
+          placeholder="owner/repo or https://github.com/owner/repo"
+          autoFocus
+          spellCheck={false}
+        />
+        <span
+          className="meta"
+          style={{
+            fontSize: 11,
+            color: 'var(--muted)',
+            marginTop: 2,
+          }}
+        >
+          The repo must publish a{' '}
+          <code>.claude-plugin/marketplace.json</code> manifest. Adding
+          a source clones it and lets agents auto-load its skills /
+          plugins on every spawn — i.e. it can execute code from the
+          repo on each agent run. Stick to repos you trust.
+        </span>
       </div>
-    </div>
+      <div className="field">
+        <span className="lbl">Branch (optional)</span>
+        <input
+          className="text-input"
+          value={branch}
+          onChange={(e) => setBranch(e.target.value)}
+          placeholder="main"
+          spellCheck={false}
+        />
+      </div>
+      {error && (
+        <div className="form-error" style={{ marginTop: 6 }}>
+          {error}
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -1932,7 +1878,7 @@ function SourceSection({
   );
 }
 
-const ALL_ROLES: { key: string; tint: string }[] = [
+const ALL_ROLES: { key: MarketplaceRoleId; tint: string }[] = [
   { key: 'pm', tint: '#4ade80' },
   { key: 'researcher', tint: '#60a5fa' },
   { key: 'coder', tint: '#c084fc' },
@@ -2021,9 +1967,10 @@ function BundleCard({
 
   // A chip is "on" when roles is null (all-roles legacy default) or
   // when it includes this role. Click toggles.
-  const isRoleOn = (key: string) => roles === null || roles.includes(key);
+  const isRoleOn = (key: MarketplaceRoleId) =>
+    roles === null || roles.includes(key);
 
-  const toggleRole = (key: string) => {
+  const toggleRole = (key: MarketplaceRoleId) => {
     const currentlyOn = isRoleOn(key);
     if (roles === null) {
       // First per-role edit: start from "all roles", remove the
@@ -2363,36 +2310,27 @@ function ChangelogModal({
   }, [onLoad]);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="modal"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          maxWidth: 640,
-          maxHeight: '80vh',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div className="modal-head">
-          <span className="title">
-            <b>What&apos;s new · {bundle.id}</b>
-          </span>
+    <Modal
+      title={
+        <>
+          <b>What&apos;s new · {bundle.id}</b>
           <span
             className="meta"
             style={{ marginLeft: 8, fontSize: 11, color: 'var(--muted)' }}
           >
             {installedVersion ?? 'unknown'} → v{bundle.version}
           </span>
-          <span className="spacer" />
-          <button className="icon-btn" onClick={onClose} title="Close">
-            <Icon name="x" size={11} />
-          </button>
-        </div>
-        <div
-          className="modal-body"
-          style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}
-        >
+        </>
+      }
+      onClose={onClose}
+      maxWidth={640}
+      footer={
+        <button className="tb-btn" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
           {error && (
             <div className="form-error">
               Failed to load changelog: {error}
@@ -2468,21 +2406,93 @@ function ChangelogModal({
             </div>
           )}
         </div>
-        <div
-          style={{
-            display: 'flex',
-            gap: 8,
-            justifyContent: 'flex-end',
-            padding: 12,
-            borderTop: '1px solid var(--border)',
-          }}
-        >
-          <button className="tb-btn" onClick={onClose}>
-            Close
+    </Modal>
+  );
+}
+
+function LoadoutInsightCard({
+  insight,
+  onReload,
+}: {
+  insight: LoadoutInsight;
+  /** Force a fresh insights pull after the action lands. */
+  onReload: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const tint = insight.severity === 'warn' ? 'var(--waiting)' : 'var(--accent)';
+  const handleAction = async () => {
+    if (!insight.action) return;
+    setBusy(true);
+    try {
+      const a = insight.action;
+      if (a.kind === 'prune-idle-skills') {
+        // Flat-list form (string[]) — these skills apply to every
+        // enabled role uniformly. Mirrors how the legacy Pick modal
+        // writes selectedSkills and is the right shape for "narrow
+        // from null/all to this set". Use the lower-level IPC
+        // directly with the action's real scope id (could be the
+        // global sentinel or a real projectId); the useMarketplace
+        // setSkills helper takes a 'global'|'project' string, not
+        // the raw scope, so going under it is cleaner here.
+        await window.api.setMarketplaceBundleSkills(
+          a.scope,
+          a.sourceId,
+          a.bundleId,
+          a.keepSkillIds,
+        );
+        // The setSkills broadcast cycle will re-derive subscriptions,
+        // which already triggers a reloadInsights via the hook's
+        // useEffect — but call it explicitly to avoid the visible
+        // gap where the card stays on screen until the broadcast
+        // round-trips.
+        await onReload();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div
+      style={{
+        border: '1px solid var(--border)',
+        borderLeft: `3px solid ${tint}`,
+        borderRadius: 4,
+        background: 'var(--sub-1)',
+        padding: '8px 12px',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontSize: 12,
+          fontWeight: 600,
+          marginBottom: 4,
+        }}
+      >
+        <span style={{ color: tint }}>
+          {insight.severity === 'warn' ? '!' : 'i'}
+        </span>
+        <span>{insight.title}</span>
+        <span className="spacer" style={{ flex: 1 }} />
+        {insight.action && insight.action.kind === 'prune-idle-skills' && (
+          <button
+            className="tb-btn"
+            onClick={() => void handleAction()}
+            disabled={busy}
+            style={{ height: 20, fontSize: 11 }}
+            title={`Will keep ${insight.action.keepSkillIds.length} skills and exclude ${insight.action.pruneSkillIds.length}: ${insight.action.pruneSkillIds.slice(0, 5).join(', ')}${insight.action.pruneSkillIds.length > 5 ? '…' : ''}`}
+          >
+            {busy
+              ? 'Pruning…'
+              : `Prune ${insight.action.pruneSkillIds.length} idle skills`}
           </button>
-        </div>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.4 }}>
+        {insight.body}
       </div>
     </div>
   );
 }
-

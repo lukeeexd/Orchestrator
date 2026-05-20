@@ -5,7 +5,55 @@ export interface RoleDefinition {
   systemPrompt: string;
   tools: string[];
   model: string;
+  /** Brand colour for chips, swatches, sigils. Shared with the renderer. */
+  tint: string;
 }
+
+/**
+ * Canonical ordering of agent roles for any UI that iterates them.
+ * Centralised here so the Marketplace's per-role chips, the Spawn
+ * form's role picker, the History/Spend filter chips, and the
+ * Director's plan-row colour table all advance in the same order.
+ */
+export const AGENT_ROLE_ORDER: readonly AgentRole[] = [
+  'pm',
+  'researcher',
+  'coder',
+  'qa',
+  'devops',
+  'security',
+];
+
+/**
+ * Convenience map matching the old per-component ROLE_TINT constants.
+ * Derived from ROLES below — kept as its own export so callers that
+ * only want the tint (no label, no prompt) don't have to depend on
+ * the full role definition table.
+ */
+export const ROLE_TINT: Record<AgentRole, string> = {
+  pm: '#4ade80',
+  researcher: '#60a5fa',
+  coder: '#c084fc',
+  qa: '#fbbf24',
+  devops: '#f97316',
+  security: '#f87171',
+};
+
+/**
+ * Status → CSS variable / colour for the swatches the History and
+ * Spend screens render. Previously duplicated in those two files
+ * with the `approval` case missing from one — promoted here so the
+ * superset is the single source of truth.
+ */
+export const STATUS_TINT: Record<string, string> = {
+  done: 'var(--accent)',
+  error: 'var(--error)',
+  running: 'var(--accent)',
+  waiting: 'var(--waiting)',
+  aborted: 'var(--muted)',
+  paused: 'var(--muted)',
+  approval: 'var(--waiting)',
+};
 
 const CODER_TOOLS = ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep'];
 const READONLY_TOOLS = ['Read', 'Glob', 'Grep'];
@@ -18,6 +66,7 @@ export const ROLES: Record<AgentRole, RoleDefinition> = {
 When you have completed your analysis, write a final message summarising the plan and stop. Do not call any more tools.`,
     tools: READONLY_TOOLS,
     model: 'claude-sonnet-4-6',
+    tint: ROLE_TINT.pm,
   },
   researcher: {
     label: 'Researcher',
@@ -28,6 +77,7 @@ You do not modify production code. You DO write your findings to disk so that do
 When the artefact is on disk and complete, write a one-paragraph summary in chat naming the file path and what's in it, then stop.`,
     tools: [...READONLY_TOOLS, 'WebFetch', 'Write', 'Edit'],
     model: 'claude-sonnet-4-6',
+    tint: ROLE_TINT.researcher,
   },
   coder: {
     label: 'Coder',
@@ -36,6 +86,7 @@ When the artefact is on disk and complete, write a one-paragraph summary in chat
 Keep your changes focused on the task. Don't refactor unrelated code. When you've finished and verified the work, write a brief summary of what you did and stop.`,
     tools: CODER_TOOLS,
     model: 'claude-sonnet-4-6',
+    tint: ROLE_TINT.coder,
   },
   qa: {
     label: 'QA',
@@ -44,6 +95,7 @@ Keep your changes focused on the task. Don't refactor unrelated code. When you'v
 Run the relevant tests, capture failures, and write a concise report.`,
     tools: CODER_TOOLS,
     model: 'claude-sonnet-4-6',
+    tint: ROLE_TINT.qa,
   },
   devops: {
     label: 'DevOps',
@@ -52,6 +104,7 @@ Run the relevant tests, capture failures, and write a concise report.`,
 Make the requested change, verify it works, and report back.`,
     tools: ['Read', 'Edit', 'Bash', 'Glob', 'Grep'],
     model: 'claude-sonnet-4-6',
+    tint: ROLE_TINT.devops,
   },
   security: {
     label: 'Security',
@@ -66,5 +119,6 @@ For each finding, report:
 When the audit is complete, write a brief summary at the top with counts per severity and a "ship-readiness" recommendation, then stop.`,
     tools: ['Read', 'Glob', 'Grep', 'Bash', 'WebFetch'],
     model: 'claude-sonnet-4-6',
+    tint: ROLE_TINT.security,
   },
 };

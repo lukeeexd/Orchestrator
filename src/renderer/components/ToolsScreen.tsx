@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { AgentRole, Project } from '../../shared/types';
-import { ROLES } from '../../shared/roles';
+import { AGENT_ROLE_ORDER, ROLES, ROLE_TINT } from '../../shared/roles';
 import { KNOWN_TOOLS } from '../../shared/tools';
 import {
   MCP_PRESETS,
@@ -23,16 +23,7 @@ interface Props {
   ) => Promise<{ ok: boolean; error?: string }>;
 }
 
-const ROLE_TINT: Record<AgentRole, string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
-
-const ROLE_ORDER: AgentRole[] = ['pm', 'researcher', 'coder', 'qa', 'devops', 'security'];
+const ROLE_ORDER = AGENT_ROLE_ORDER;
 
 export function ToolsScreen({ project, onChange, onMcpChange }: Props) {
   // Compose the live allow-list for every role: project override (if any)

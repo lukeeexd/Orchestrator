@@ -18,6 +18,7 @@ import type {
 import type { SlashCommand } from '../../shared/commands';
 import { applyCommandArguments } from '../../shared/commands';
 import { BUILTIN_COMMANDS } from '../../shared/builtinCommands';
+import { ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { AttachmentThumb } from './AttachmentThumb';
 import { PlanCard } from './PlanCard';
@@ -30,15 +31,6 @@ import {
   handleAttachmentDrop,
   handleAttachmentPaste,
 } from '../lib/attachmentDataTransfer';
-
-const ROLE_TINT: Record<Agent['role'], string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
 
 interface Props {
   width: number;
@@ -67,6 +59,8 @@ interface Props {
     attachments?: string[],
   ) => Promise<void>;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
+  /** Open the Save-as-template dialog with the currently-edited rows. */
+  onSaveAsTemplate?: (rows: PlanRow[]) => void;
   onWipe: () => Promise<void>;
   viewMode: ViewMode;
   /** Project id used to scope which `.claude/commands/` directory to load from. */
@@ -98,6 +92,7 @@ export function DirectorPane({
   onDirectorProviderChange,
   onSend,
   onSpawnPlan,
+  onSaveAsTemplate,
   onWipe,
   viewMode,
   projectId,
@@ -170,11 +165,17 @@ export function DirectorPane({
           messages={messages}
           mode={mode}
           onSpawnPlan={onSpawnPlan}
+          onSaveAsTemplate={onSaveAsTemplate}
         />
       ) : messages.length === 0 ? (
         <EmptyChat mode={mode} />
       ) : (
-        <Chat messages={messages} mode={mode} onSpawnPlan={onSpawnPlan} />
+        <Chat
+          messages={messages}
+          mode={mode}
+          onSpawnPlan={onSpawnPlan}
+          onSaveAsTemplate={onSaveAsTemplate}
+        />
       )}
 
       <Composer
@@ -314,20 +315,35 @@ function Chat({
   messages,
   mode,
   onSpawnPlan,
+  onSaveAsTemplate,
 }: {
   messages: DirectorMessage[];
   mode: DirectorMode;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
+  onSaveAsTemplate?: (rows: PlanRow[]) => void;
 }) {
   const tailRef = useRef<HTMLDivElement | null>(null);
+  // M11: also pin to bottom when an existing message's body
+  // grows (streaming Director response). messages.length doesn't
+  // change as tokens append to the live message, so the previous
+  // dep array let the streaming text run off-screen.
+  const tailSignature = messages
+    .map((m) => m.id + ':' + (m.body?.length ?? 0))
+    .join('|');
   useEffect(() => {
     tailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [messages.length]);
+  }, [tailSignature]);
 
   return (
     <div className="chat">
       {messages.map((m) => (
-        <Message key={m.id} message={m} mode={mode} onSpawn={onSpawnPlan} />
+        <Message
+          key={m.id}
+          message={m}
+          mode={mode}
+          onSpawn={onSpawnPlan}
+          onSaveAsTemplate={onSaveAsTemplate}
+        />
       ))}
       <div ref={tailRef} />
     </div>
@@ -338,10 +354,12 @@ function Message({
   message,
   mode,
   onSpawn,
+  onSaveAsTemplate,
 }: {
   message: DirectorMessage;
   mode: DirectorMode;
   onSpawn: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
+  onSaveAsTemplate?: (rows: PlanRow[]) => void;
 }) {
   return (
     <div className="msg">
@@ -374,6 +392,7 @@ function Message({
           accepted={message.planAccepted === true}
           mode={mode}
           onSpawn={(rows) => onSpawn(message, rows)}
+          onSaveAsTemplate={onSaveAsTemplate}
         />
       )}
       {message.redirect && (

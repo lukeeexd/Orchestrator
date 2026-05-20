@@ -1,8 +1,50 @@
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import type { Settings } from '../shared/ipc';
 import { DEFAULT_EFFORT, isEffortLevel } from '../shared/efforts';
+
+/**
+ * Prefix stamped onto encrypted secret values in settings.json so we
+ * can tell encrypted blobs from raw plaintext (legacy / migration
+ * fallthrough). Plain strings without this prefix are treated as
+ * pre-encryption-era values and migrated on next write.
+ */
+const ENC_PREFIX = 'enc:v1:';
+
+function encryptSecret(plain: string): string {
+  if (!plain) return '';
+  if (!safeStorage.isEncryptionAvailable()) {
+    // Fall back to plaintext when the OS keychain isn't available
+    // (first-launch Linux, headless CI). The DPAPI on Windows is
+    // always available, which is the only platform we ship to.
+    return plain;
+  }
+  try {
+    return ENC_PREFIX + safeStorage.encryptString(plain).toString('base64');
+  } catch {
+    return plain;
+  }
+}
+
+function decryptSecret(stored: string): string {
+  if (!stored) return '';
+  if (!stored.startsWith(ENC_PREFIX)) {
+    // Legacy plaintext — migration runs on next write.
+    return stored;
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    // Encrypted blob with no keystore: nothing we can do. Treat as
+    // empty so the next spawn cleanly falls back to auto-discovery.
+    return '';
+  }
+  try {
+    const buf = Buffer.from(stored.slice(ENC_PREFIX.length), 'base64');
+    return safeStorage.decryptString(buf);
+  } catch {
+    return '';
+  }
+}
 
 const DEFAULTS: Settings = {
   apiKey: '',
@@ -53,6 +95,16 @@ export function readSettings(): Settings {
     const raw = fs.readFileSync(p, 'utf8');
     const parsed = JSON.parse(raw) as Partial<Settings>;
 
+    // M4: decrypt secrets that were written with the safeStorage
+    // wrapper. Legacy plaintext flows through unchanged and gets
+    // re-encrypted on next write (auto-migration).
+    if (typeof parsed.apiKey === 'string') {
+      parsed.apiKey = decryptSecret(parsed.apiKey);
+    }
+    if (typeof parsed.oauthToken === 'string') {
+      parsed.oauthToken = decryptSecret(parsed.oauthToken);
+    }
+
     // One-time migration: the v1.0 defaults were ($1 / 100k / 600s) and
     // surprised users who'd never set a budget. If we see all three at
     // exactly those values, assume they're untouched legacy defaults and
@@ -66,7 +118,9 @@ export function readSettings(): Settings {
       parsed.defaultBudgetTokens = 0;
       parsed.defaultBudgetSeconds = 0;
       const merged: Settings = { ...DEFAULTS, ...parsed };
-      fs.writeFileSync(p, JSON.stringify(merged, null, 2), 'utf8');
+      // Write through so both the budget migration AND the
+      // plaintext→ciphertext secrets migration land on disk.
+      writeSettingsToDisk(merged);
       cached = merged;
       return cached;
     }
@@ -88,11 +142,26 @@ export function readSettings(): Settings {
   return cached;
 }
 
-export function writeSettings(next: Partial<Settings>): Settings {
-  const merged: Settings = { ...readSettings(), ...next };
+/**
+ * Persist the settings record to disk, encrypting the two secret
+ * fields via safeStorage. The in-memory `cached` Settings keeps
+ * plaintext (so consumers don't have to decrypt every read); only
+ * disk-side bytes are wrapped.
+ */
+function writeSettingsToDisk(merged: Settings): void {
   const p = pathFor();
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(merged, null, 2), 'utf8');
+  const onDisk = {
+    ...merged,
+    apiKey: encryptSecret(merged.apiKey),
+    oauthToken: encryptSecret(merged.oauthToken),
+  };
+  fs.writeFileSync(p, JSON.stringify(onDisk, null, 2), 'utf8');
+}
+
+export function writeSettings(next: Partial<Settings>): Settings {
+  const merged: Settings = { ...readSettings(), ...next };
+  writeSettingsToDisk(merged);
   cached = merged;
   return merged;
 }

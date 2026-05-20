@@ -1,10 +1,18 @@
+import { memo } from 'react';
 import type { LogLine, ToolCall } from '../../shared/types';
 
 interface Props {
   line: LogLine;
 }
 
-export function LogLineRow({ line }: Props) {
+/**
+ * H8: memoised so the long-running chatty-agent case doesn't
+ * re-render every prior row on each streamed line. LogLine
+ * objects are immutable (the runner creates a new instance per
+ * line and never mutates them in place), so reference equality
+ * is a correct memo check here.
+ */
+function LogLineRowInner({ line }: Props) {
   return (
     <div className={'log-line ' + line.kind}>
       <span className="ts">{line.ts}</span>
@@ -15,6 +23,8 @@ export function LogLineRow({ line }: Props) {
     </div>
   );
 }
+
+export const LogLineRow = memo(LogLineRowInner);
 
 function LogMsg({ msg }: { msg: string | ToolCall }) {
   if (typeof msg === 'string') return <span>{msg}</span>;

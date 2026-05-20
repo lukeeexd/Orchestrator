@@ -68,6 +68,11 @@ class DirectorSession {
   private sessionId: string | null = null;
   private controller: AbortController | null = null;
   private currentMode: DirectorMode = 'auto';
+  // Set by abort(); consulted at the top of each runTurn so an
+  // abort landing between turns (queue draining + new turn
+  // starting) isn't silently dropped by the unconditional
+  // `this.controller = new AbortController()` at runTurn entry.
+  private pendingAbort = false;
 
   constructor(projectId: string) {
     this.projectId = projectId;
@@ -83,6 +88,7 @@ class DirectorSession {
   }
 
   abort(): void {
+    this.pendingAbort = true;
     this.controller?.abort();
   }
 
@@ -121,10 +127,43 @@ class DirectorSession {
     void this.pump();
   }
 
-  notifyAgentDone(agentName: string, summary: string): void {
-    const body = `[handoff] Agent ${agentName} completed. ${
-      summary ? 'Summary: ' + summary : 'No summary.'
-    }`;
+  /**
+   * Push a free-form system message into the chat. Used for audit-
+   * trail events like "MCP config updated — these commands will
+   * execute on every spawn" so the user has a persistent visible
+   * record of trust-relevant decisions.
+   *
+   * Doesn't queue a Director turn — pure UI notification.
+   */
+  notifySystem(body: string): void {
+    this.pushMessage({
+      id: randomUUID(),
+      projectId: this.projectId,
+      who: 'system',
+      name: 'system',
+      time: timeOnly(),
+      body,
+    });
+  }
+
+  notifyAgentDone(
+    agentName: string,
+    payload: import('../../shared/types').HandoffPayload,
+  ): void {
+    // P14: structured handoff. The Director's queued [handoff] body
+    // carries machine-readable evidence as a fenced JSON block under
+    // a stable label so the Director can reason about facts (which
+    // files changed, did the tests pass, are there explicit todos)
+    // instead of parsing prose. The leading prose line stays so the
+    // body is still readable when surfaced verbatim somewhere.
+    const proseSummary = payload.summary
+      ? `Summary: ${payload.summary}`
+      : 'No summary.';
+    const body =
+      `[handoff] Agent ${agentName} completed. ${proseSummary}\n\n` +
+      '```json handoff-payload\n' +
+      JSON.stringify(payload, null, 2) +
+      '\n```';
     this.pushMessage({
       id: randomUUID(),
       projectId: this.projectId,
@@ -207,6 +246,14 @@ class DirectorSession {
     this.busy = true;
     try {
       while (this.queue.length > 0) {
+        // Honour an abort that landed between turns. Without this,
+        // queued messages would keep firing fresh runTurn calls
+        // (each minting a brand new controller) even though the
+        // user already aborted.
+        if (this.pendingAbort) {
+          this.queue.length = 0;
+          break;
+        }
         const next = this.queue.shift();
         if (!next) break;
         const attachments = next.kind === 'user' ? next.attachments : undefined;
@@ -214,6 +261,10 @@ class DirectorSession {
       }
     } finally {
       this.busy = false;
+      // Reset the flag at end of drain so a future user message can
+      // resume the conversation. Mirrors the abort/resume model in
+      // the renderer (Director isn't terminated, just interrupted).
+      this.pendingAbort = false;
     }
   }
 
@@ -289,6 +340,11 @@ class DirectorSession {
       env.ANTHROPIC_API_KEY = settings.apiKey;
     }
 
+    // Late-arriving abort: pump() already guards this, but if a
+    // race lets us reach runTurn after abort was called, bail before
+    // minting a fresh controller that the original abort signal
+    // can't reach.
+    if (this.pendingAbort) return;
     this.controller = new AbortController();
 
     const directorMessage: DirectorMessage = {
@@ -539,9 +595,13 @@ export function sendFromUser(
 export function notifyAgentDone(
   projectId: string,
   agentName: string,
-  summary: string,
+  payload: import('../../shared/types').HandoffPayload,
 ): void {
-  getSession(projectId).notifyAgentDone(agentName, summary);
+  getSession(projectId).notifyAgentDone(agentName, payload);
+}
+
+export function notifySystem(projectId: string, body: string): void {
+  getSession(projectId).notifySystem(body);
 }
 
 export function acknowledgePlanAccepted(

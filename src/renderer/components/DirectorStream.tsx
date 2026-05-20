@@ -21,9 +21,15 @@ interface Props {
   messages: DirectorMessage[];
   mode: DirectorMode;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
+  onSaveAsTemplate?: (rows: PlanRow[]) => void;
 }
 
-export function DirectorStream({ messages, mode, onSpawnPlan }: Props) {
+export function DirectorStream({
+  messages,
+  mode,
+  onSpawnPlan,
+  onSaveAsTemplate,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [stickToBottom, setStickToBottom] = useState(true);
 
@@ -52,6 +58,7 @@ export function DirectorStream({ messages, mode, onSpawnPlan }: Props) {
           message={m}
           mode={mode}
           onSpawnPlan={(rows) => onSpawnPlan(m, rows)}
+          onSaveAsTemplate={onSaveAsTemplate}
         />
       ))}
       {messages.length === 0 && (
@@ -70,10 +77,12 @@ function StreamEntry({
   message,
   mode,
   onSpawnPlan,
+  onSaveAsTemplate,
 }: {
   message: DirectorMessage;
   mode: DirectorMode;
   onSpawnPlan: (rows: PlanRow[]) => Promise<void>;
+  onSaveAsTemplate?: (rows: PlanRow[]) => void;
 }) {
   // Pick a glyph + className per author. Mirrors the Claude Code CLI's
   // ●/⏺/⎿ vocabulary — keeps reads quick: ● is "actor talking", ⎿ is
@@ -120,6 +129,7 @@ function StreamEntry({
             accepted={message.planAccepted === true}
             mode={mode}
             onSpawn={onSpawnPlan}
+            onSaveAsTemplate={onSaveAsTemplate}
           />
         </div>
       )}

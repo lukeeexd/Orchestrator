@@ -1114,10 +1114,15 @@ body.resizing * { cursor: col-resize !important; }
   padding: 8px 12px;
   font-size: 11px;
   color: var(--muted);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  /* Reset the native <button> defaults. Without these, browsers
+     render a light-gray fill + border on each tab, punching white
+     rectangles through the row against the dark theme. */
+  background: transparent;
+  border: none;
   border-bottom: 1px solid transparent;
   margin-bottom: -1px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   cursor: default;
 }
 .tab:hover { color: var(--text-2); }

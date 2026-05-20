@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
+import { isAttachmentAllowed } from './security/attachments';
 
 /**
  * Single source of truth for the temp directory we use to stage
@@ -55,6 +56,22 @@ const DOCUMENT_MEDIA_TYPES: Record<string, string> = {
 
 /** Max bytes per inlined text file; over the cap is truncated with a note. */
 const MAX_TEXT_BYTES = 100 * 1024; // 100 KiB
+
+/**
+ * M3: belt-and-braces caps across a single spawn's attachment set.
+ * The per-file caps above (text/image/document) already prevent any
+ * one file from running away, but a renderer that handed in 1000
+ * 100-KiB text files would still produce a 100 MiB prompt over
+ * stdin. These two caps stop that.
+ *
+ * The text-total cap is set well above the per-file cap so a single
+ * legitimate near-cap file still inlines while still rejecting
+ * blatant bulk submission. The 32-file count cap matches user-
+ * realistic usage (the picker dialog struggles past a few dozen
+ * anyway).
+ */
+const MAX_TOTAL_INLINED_BYTES = 2 * 1024 * 1024; // 2 MiB
+const MAX_ATTACHMENTS_PER_CALL = 32;
 
 /**
  * Max bytes per image attachment. Anthropic's vision API accepts up to
@@ -225,10 +242,16 @@ export function splitAttachments(paths: string[]): {
  * prepending to a prompt. Image / unsupported paths are filtered out by
  * the caller via splitAttachments — anything that slips through is
  * skipped with a note so the LLM at least sees something didn't make it.
+ *
+ * M3: enforces a 2 MiB total inlined cap across all text files. Any
+ * file that would push the running total over is skipped with a
+ * note — keeps a malicious renderer from chaining 1000 ≤100-KiB
+ * text files into a 100 MiB stdin prompt.
  */
 export function inlineAttachments(paths: string[]): string {
   if (paths.length === 0) return '';
   const parts: string[] = ['[attachments]'];
+  let runningBytes = 0;
   for (const p of paths) {
     const name = path.basename(p);
     const ext = path.extname(p).toLowerCase();
@@ -259,6 +282,14 @@ export function inlineAttachments(paths: string[]): string {
       );
       continue;
     }
+    const contentBytes = Buffer.byteLength(content, 'utf8');
+    if (runningBytes + contentBytes > MAX_TOTAL_INLINED_BYTES) {
+      parts.push(
+        `\n--- ${name} (skipped: cumulative inlined size would exceed ${(MAX_TOTAL_INLINED_BYTES / (1024 * 1024)).toFixed(0)} MiB cap) ---`,
+      );
+      continue;
+    }
+    runningBytes += contentBytes;
     const lang = langTag(p);
     parts.push(`\n--- ${name}${truncated ? ' (truncated to 100 KiB)' : ''} ---`);
     parts.push('```' + lang);
@@ -391,10 +422,45 @@ export function prepareAttachments(
   if (!paths || paths.length === 0) {
     return { textInline: '', images: [], documents: [], warnLines: [] };
   }
-  const { textPaths, imagePaths, documentPaths } = splitAttachments(paths);
-  const textInline = textPaths.length > 0 ? inlineAttachments(textPaths) : '';
 
   const warnLines: string[] = [];
+
+  // M3: cap attachment count per call. The picker dialog tops out
+  // before this in practice, but a renderer driving the IPC
+  // directly could pass an arbitrary list.
+  let working = paths;
+  if (working.length > MAX_ATTACHMENTS_PER_CALL) {
+    const dropped = working.length - MAX_ATTACHMENTS_PER_CALL;
+    working = working.slice(0, MAX_ATTACHMENTS_PER_CALL);
+    warnLines.push(
+      `${dropped} attachment${dropped === 1 ? '' : 's'} dropped — cap of ${MAX_ATTACHMENTS_PER_CALL} per call`,
+    );
+  }
+
+  // M2: reject any path the user didn't surface via a picker/paste/
+  // drop. Without this, a compromised renderer can pass arbitrary
+  // local paths and get them inlined into the LLM prompt (i.e.
+  // exfil). Allow-listed paths come from real user gestures only.
+  const allowed: string[] = [];
+  let denied = 0;
+  for (const p of working) {
+    if (isAttachmentAllowed(p)) {
+      allowed.push(p);
+    } else {
+      denied += 1;
+    }
+  }
+  if (denied > 0) {
+    warnLines.push(
+      `${denied} attachment${denied === 1 ? '' : 's'} rejected — path not in this session's allow-list (must be picked, pasted, or dropped via the composer)`,
+    );
+  }
+  if (allowed.length === 0) {
+    return { textInline: '', images: [], documents: [], warnLines };
+  }
+
+  const { textPaths, imagePaths, documentPaths } = splitAttachments(allowed);
+  const textInline = textPaths.length > 0 ? inlineAttachments(textPaths) : '';
   let images: ImageContentBlock[] = [];
   let documents: DocumentContentBlock[] = [];
 
@@ -530,21 +596,35 @@ export function savePastedImage(
  * the user actually owns. Silent on missing-file / permission failures —
  * the OS's eventual %TEMP% reap is our fallback.
  *
+ * M2: realpath-resolves both sides of the containment check so a
+ * junction inside %TEMP% can't redirect the unlink to a file
+ * outside the managed dir. If either side fails to resolve, refuse
+ * the delete.
+ *
  * Returns true if a delete attempt was made; false if the path was
  * outside the managed dir (i.e. not ours to delete).
  */
 export function disposePastedFile(tempDir: string, target: string): boolean {
   if (!target) return false;
-  const parent = path.resolve(tempDir);
-  const child = path.resolve(target);
+  // We need realpath of both. The paste-temp dir always exists
+  // (we mkdirSync on first save), so realpath should succeed. The
+  // target may already be gone — if so, refuse.
+  let parentReal: string;
+  let childReal: string;
+  try {
+    parentReal = fs.realpathSync(tempDir);
+    childReal = fs.realpathSync(target);
+  } catch {
+    return false;
+  }
   const isWin = process.platform === 'win32';
   const sep = path.sep;
   const inside = isWin
-    ? child.toLowerCase().startsWith(parent.toLowerCase() + sep)
-    : child.startsWith(parent + sep);
+    ? childReal.toLowerCase().startsWith(parentReal.toLowerCase() + sep)
+    : childReal.startsWith(parentReal + sep);
   if (!inside) return false;
   try {
-    fs.unlinkSync(child);
+    fs.unlinkSync(childReal);
   } catch {
     /* already gone, permission denied, etc. — best-effort */
   }

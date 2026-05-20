@@ -32,12 +32,3 @@ export function getAllCliStatus(): CliStatusMap {
   return cached;
 }
 
-// Backwards-compat: the renderer used to call getClaudeCliStatus().
-// Keep the old shape working while the IPC layer is being widened.
-export function setClaudeCliStatus(next: CliStatus): void {
-  setCliStatus('claude', next);
-}
-
-export function getClaudeCliStatus(): CliStatus {
-  return getCliStatus('claude');
-}

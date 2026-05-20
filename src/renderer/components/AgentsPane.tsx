@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import type { Agent, EffortLevel, Provider } from '../../shared/types';
 import { Icon } from './Icon';
 import { AgentRow } from './AgentRow';
 import { AgentStreamPanel } from './AgentStreamPanel';
 import { SpawnAgentForm } from './SpawnAgentForm';
+import { FocusedFixDialog } from './FocusedFixDialog';
+import { OnboardingBanner } from './OnboardingBanner';
 import type { ViewMode } from './TopBar';
 
 interface Props {
@@ -16,6 +19,16 @@ interface Props {
   spawning: boolean;
   viewMode: ViewMode;
   provider: Provider;
+  /**
+   * When set, renders the P2 onboarding banner at the top of the pane.
+   * Computed in the parent (App.tsx) so the trigger logic lives next
+   * to the rest of the project / workspace state.
+   */
+  onboardingBanner?: {
+    busy: boolean;
+    onRun: () => void;
+    onSkip: () => void;
+  };
   setSpawning: (next: boolean) => void;
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
@@ -32,6 +45,7 @@ export function AgentsPane({
   spawning,
   viewMode,
   provider,
+  onboardingBanner,
   setSpawning,
   onSelect,
   onToggle,
@@ -39,6 +53,11 @@ export function AgentsPane({
   const activeCount = agents.filter(
     (a) => a.status === 'running' || a.status === 'waiting',
   ).length;
+
+  // Local "focused fix" dialog state. The quick-spawn flow lives next
+  // to the regular spawn flow but is a different shape — kept local
+  // here so the parent doesn't need to thread a second spawning bit.
+  const [focusedFixOpen, setFocusedFixOpen] = useState(false);
 
   return (
     <div className="pane agents-pane">
@@ -50,11 +69,26 @@ export function AgentsPane({
           </b>
         </span>
         <span className="spacer" />
+        <button
+          className="tb-btn"
+          onClick={() => setFocusedFixOpen(true)}
+          title="Skip the Director — spawn a single coder pinned to one file"
+        >
+          <Icon name="file" size={11} /> Focused fix
+        </button>
         <button className="tb-btn primary" onClick={() => setSpawning(true)}>
           <Icon name="plus" size={11} /> New agent
           <span className="kbd">⌘N</span>
         </button>
       </div>
+
+      {onboardingBanner && (
+        <OnboardingBanner
+          busy={onboardingBanner.busy}
+          onRun={onboardingBanner.onRun}
+          onSkip={onboardingBanner.onSkip}
+        />
+      )}
 
       {agents.length === 0 ? (
         <EmptyAgents onNew={() => setSpawning(true)} />
@@ -72,7 +106,30 @@ export function AgentsPane({
           ))}
         </div>
       ) : (
-        <div className="agents-list">
+        // H11: role="list" + per-row listitem + arrow-key navigation
+        // turns the agents pane into a proper a11y list. The
+        // keyboard handler advances selection up/down within the
+        // list; Enter expands the focused row.
+        <div
+          className="agents-list"
+          role="list"
+          onKeyDown={(e) => {
+            if (agents.length === 0) return;
+            const idx = agents.findIndex((a) => a.id === selectedId);
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              const next = agents[Math.min(idx + 1, agents.length - 1)];
+              if (next) onSelect(next.id);
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              const prev = agents[Math.max(idx - 1, 0)];
+              if (prev) onSelect(prev.id);
+            } else if (e.key === 'Enter' && idx >= 0) {
+              e.preventDefault();
+              onToggle(agents[idx].id);
+            }
+          }}
+        >
           {agents.map((a) => (
             <AgentRow
               key={a.id}
@@ -97,6 +154,17 @@ export function AgentsPane({
           provider={provider}
           onCancel={() => setSpawning(false)}
           onSpawned={() => setSpawning(false)}
+        />
+      )}
+      {focusedFixOpen && (
+        <FocusedFixDialog
+          projectId={projectId}
+          workspace={workspace}
+          defaultModel={defaultModel}
+          defaultEffort={defaultEffort}
+          provider={provider}
+          onCancel={() => setFocusedFixOpen(false)}
+          onSpawned={() => setFocusedFixOpen(false)}
         />
       )}
     </div>

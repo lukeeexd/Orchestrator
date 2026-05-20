@@ -1,7 +1,7 @@
 {
   "name": "orchestrator",
   "productName": "Orchestrator",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Desktop app for orchestrating Claude agents with distinct roles.",
   "main": ".vite/build/main.js",
   "private": true,
@@ -43,6 +43,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "sql.js": "^1.14.1",
-    "update-electron-app": "^3.2.0"
+    "update-electron-app": "^3.2.0",
+    "zod": "^4.4.3"
   }
 }

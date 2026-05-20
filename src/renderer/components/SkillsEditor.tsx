@@ -1,17 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { AgentRole, Project, SkillKey } from '../../shared/types';
+import type { Project, SkillKey } from '../../shared/types';
 import type { SkillEntry } from '../../shared/ipc';
-import { ROLES } from '../../shared/roles';
+import { ROLES, ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
-
-const ROLE_TINT: Record<AgentRole, string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
 
 /** Director sits first; agent roles in execution order after. */
 const SKILL_ORDER: SkillKey[] = [

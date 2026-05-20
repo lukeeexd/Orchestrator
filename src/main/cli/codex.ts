@@ -175,6 +175,21 @@ async function* parseAndNormalize(
 
   const queue: unknown[] = [];
   let waiter: (() => void) | null = null;
+  // M7: tracks whether any terminal `result` event has been pushed.
+  // If codex returns 0 but never emits turn.completed, we synthesize
+  // one on close so the runner reaches a final status instead of
+  // hanging on 'running' forever.
+  let terminalEmitted = false;
+  const pushQueue = (ev: unknown): void => {
+    if (
+      ev &&
+      typeof ev === 'object' &&
+      (ev as { type?: unknown }).type === 'result'
+    ) {
+      terminalEmitted = true;
+    }
+    queue.push(ev);
+  };
   const wake = () => {
     const w = waiter;
     waiter = null;
@@ -204,10 +219,14 @@ async function* parseAndNormalize(
 
       try {
         const ev = JSON.parse(raw) as Record<string, unknown>;
-        // Diagnostic: log every raw event so we can see what codex
-        // actually emitted when the user reports "(empty response)".
-        // Visible in the dev console / terminal that started npm start.
-        console.error('[codex raw]', JSON.stringify(ev));
+        // M9: log every raw codex event only when DEBUG_CODEX_RAW
+        // is set. Previously this fired unconditionally and the
+        // assistant messages + any pasted user content accumulated
+        // in production user log files. Off by default; flip the
+        // env var when investigating "(empty response)" reports.
+        if (process.env.DEBUG_CODEX_RAW) {
+          console.error('[codex raw]', JSON.stringify(ev));
+        }
         const translated = translate(ev, {
           sessionId: () => sessionId,
           setSessionId: (id) => {
@@ -227,9 +246,9 @@ async function* parseAndNormalize(
           }),
           model,
         });
-        for (const out of translated) queue.push(out);
+        for (const out of translated) pushQueue(out);
       } catch {
-        queue.push({
+        pushQueue({
           type: 'result',
           subtype: 'parse_error',
           is_error: true,
@@ -246,9 +265,34 @@ async function* parseAndNormalize(
     const tail = buf.trim();
     if (tail) {
       try {
-        queue.push(JSON.parse(tail));
+        const parsed = JSON.parse(tail);
+        // Run trailing JSON through `translate` too so a final
+        // turn.completed in the buffer still produces the
+        // result/usage event (and flips terminalEmitted) instead of
+        // going through as a raw codex object the runner doesn't
+        // understand.
+        const translated = translate(parsed as Record<string, unknown>, {
+          sessionId: () => sessionId,
+          setSessionId: (id) => {
+            sessionId = id;
+          },
+          addUsage: (u) => {
+            cumulativeInput += u.input_tokens ?? 0;
+            cumulativeCachedInput += u.cached_input_tokens ?? 0;
+            cumulativeOutput += u.output_tokens ?? 0;
+            cumulativeReasoning += u.reasoning_output_tokens ?? 0;
+          },
+          getCumulativeUsage: () => ({
+            input_tokens: cumulativeInput,
+            cache_read_input_tokens: cumulativeCachedInput,
+            cache_creation_input_tokens: 0,
+            output_tokens: cumulativeOutput + cumulativeReasoning,
+          }),
+          model,
+        });
+        for (const out of translated) pushQueue(out);
       } catch {
-        queue.push({
+        pushQueue({
           type: 'result',
           subtype: 'parse_error',
           is_error: true,
@@ -258,7 +302,7 @@ async function* parseAndNormalize(
       buf = '';
     }
     if (code !== 0) {
-      queue.push({
+      pushQueue({
         type: 'result',
         subtype: 'process_error',
         is_error: true,
@@ -268,12 +312,25 @@ async function* parseAndNormalize(
           }`,
         ],
       });
+    } else if (!terminalEmitted) {
+      // M7: codex exited cleanly but never emitted turn.completed.
+      // Without this synth event, the runner's for-await loop just
+      // exits and the agent's status stays on 'running' forever.
+      pushQueue({
+        type: 'result',
+        subtype: 'no_terminal_event',
+        is_error: true,
+        errors: [
+          'codex exited cleanly but never emitted turn.completed',
+        ],
+        session_id: sessionId ?? undefined,
+      });
     }
     wake();
   });
 
   proc.on('error', (err) => {
-    queue.push({
+    pushQueue({
       type: 'result',
       subtype: 'spawn_error',
       is_error: true,

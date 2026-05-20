@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Project } from '../../shared/types';
 import { Icon } from './Icon';
+import { Modal } from './Modal';
 
 interface Props {
   projects: Project[];
@@ -109,19 +110,24 @@ export function NewProjectForm({ onCreate, onCancel }: NewProjectFormProps) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <span className="title">
-            <b>New project</b>
-          </span>
-          <span className="spacer" />
-          <button className="icon-btn" onClick={onCancel} title="Cancel">
-            <Icon name="x" size={11} />
+    <Modal
+      title={<b>New project</b>}
+      onClose={busy ? undefined : onCancel}
+      footer={
+        <>
+          <button className="tb-btn" onClick={onCancel} disabled={busy}>
+            Cancel
           </button>
-        </div>
-
-        <div className="modal-body">
+          <button
+            className="tb-btn primary"
+            onClick={() => void submit()}
+            disabled={busy || !name.trim()}
+          >
+            <Icon name="plus" size={11} /> Create
+          </button>
+        </>
+      }
+    >
           <div className="field">
             <span className="lbl">Name</span>
             <input
@@ -175,22 +181,7 @@ export function NewProjectForm({ onCreate, onCancel }: NewProjectFormProps) {
           </div>
 
           {error && <div className="form-error">{error}</div>}
-        </div>
-
-        <div className="modal-foot">
-          <button className="tb-btn" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            className="tb-btn primary"
-            onClick={() => void submit()}
-            disabled={busy || !name.trim()}
-          >
-            <Icon name="plus" size={11} /> Create
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -207,45 +198,11 @@ export function ConfirmDeleteProject({
 }: ConfirmDeleteProps) {
   const [busy, setBusy] = useState(false);
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <span className="title">
-            <b>Remove project</b>
-          </span>
-          <span className="spacer" />
-          <button className="icon-btn" onClick={onCancel} title="Cancel">
-            <Icon name="x" size={11} />
-          </button>
-        </div>
-        <div className="modal-body">
-          <div className="field">
-            <span className="v">
-              Remove <code>{project.name}</code> from the orchestrator?
-            </span>
-          </div>
-          <div className="field">
-            <span className="lbl">Wiped</span>
-            <span className="v">
-              Director chat history, agent rows, log lines, and the SDK
-              session id for this project.
-            </span>
-          </div>
-          <div className="field">
-            <span className="lbl">Not touched</span>
-            <span className="v">
-              {project.workspace ? (
-                <>
-                  Workspace folder at <code>{project.workspace}</code> — any
-                  files agents created stay on disk.
-                </>
-              ) : (
-                <>No workspace was set, so nothing on disk to leave behind.</>
-              )}
-            </span>
-          </div>
-        </div>
-        <div className="modal-foot">
+    <Modal
+      title={<b>Remove project</b>}
+      onClose={busy ? undefined : onCancel}
+      footer={
+        <>
           <button className="tb-btn" onClick={onCancel} disabled={busy}>
             Cancel
           </button>
@@ -268,8 +225,34 @@ export function ConfirmDeleteProject({
           >
             <Icon name="x" size={11} /> Remove
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="field">
+        <span className="v">
+          Remove <code>{project.name}</code> from the orchestrator?
+        </span>
       </div>
-    </div>
+      <div className="field">
+        <span className="lbl">Wiped</span>
+        <span className="v">
+          Director chat history, agent rows, log lines, and the SDK
+          session id for this project.
+        </span>
+      </div>
+      <div className="field">
+        <span className="lbl">Not touched</span>
+        <span className="v">
+          {project.workspace ? (
+            <>
+              Workspace folder at <code>{project.workspace}</code> — any
+              files agents created stay on disk.
+            </>
+          ) : (
+            <>No workspace was set, so nothing on disk to leave behind.</>
+          )}
+        </span>
+      </div>
+    </Modal>
   );
 }

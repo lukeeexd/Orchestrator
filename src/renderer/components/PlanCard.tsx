@@ -1,14 +1,29 @@
 import { useEffect, useState } from 'react';
 import type { AgentRole, DirectorMode, PlanRow } from '../../shared/types';
+import { ROLE_TINT } from '../../shared/roles';
 
-const ROLE_TINT: Record<AgentRole, string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
+const SHIP_GATE_LS_KEY = 'orchestrator.shipGate';
+
+/**
+ * Synthetic qa + security rows appended to a plan when Ship Gate is on.
+ * Hardcoded prompts — the user can edit them inline like any other row
+ * before clicking Spawn, and they go through the runner's normal
+ * sequential-spawn path. If either fails, the existing per-row failure
+ * handling in DirectorAcceptPlan stops the sequence and pushes a
+ * system message; no separate "gate failed" plumbing needed.
+ */
+const SHIP_GATE_ROWS: ReadonlyArray<Pick<PlanRow, 'role' | 'name' | 'task'>> = [
+  {
+    role: 'qa',
+    name: 'gate-qa',
+    task: 'Run the test suite and exercise the changes from the previous rows against the golden path + one edge case. Report pass/fail counts and any regressions.',
+  },
+  {
+    role: 'security',
+    name: 'gate-security',
+    task: 'Audit the changes from the previous rows for hardcoded secrets, unsafe shell/SQL patterns, missing input validation at trust boundaries, and any new dependencies with known CVEs. Report findings ranked by severity.',
+  },
+];
 
 interface Props {
   rows: PlanRow[];
@@ -16,9 +31,22 @@ interface Props {
   mode: DirectorMode;
   /** Receives the (possibly edited) rows the user actually wants to spawn. */
   onSpawn: (rows: PlanRow[]) => Promise<void>;
+  /**
+   * Optional capture-as-template hook. The PlanCard exposes a small
+   * "Save" button next to Spawn when this is provided; the parent
+   * handles the actual dialog + IPC. Receives the *currently edited*
+   * row set so the saved template matches what the user sees.
+   */
+  onSaveAsTemplate?: (rows: PlanRow[]) => void;
 }
 
-export function PlanCard({ rows, accepted, mode, onSpawn }: Props) {
+export function PlanCard({
+  rows,
+  accepted,
+  mode,
+  onSpawn,
+  onSaveAsTemplate,
+}: Props) {
   // Local editable copy of the plan. The Director's original proposal
   // stays on the message; this state is what the user can prune/tweak
   // before clicking Spawn. Resync if the upstream rows change (e.g. a
@@ -29,12 +57,41 @@ export function PlanCard({ rows, accepted, mode, onSpawn }: Props) {
   }, [rows, accepted]);
 
   const [busy, setBusy] = useState(false);
+  // Ship Gate toggle — when on, the Spawn click appends a qa + security
+  // pass to the plan so the user can't accidentally land a feature
+  // without verification. Persisted globally (not per-project) so the
+  // intent travels with the user.
+  const [shipGate, setShipGate] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SHIP_GATE_LS_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(SHIP_GATE_LS_KEY, shipGate ? '1' : '0');
+    } catch {
+      /* private window / quota / etc — best-effort persistence */
+    }
+  }, [shipGate]);
 
   const handleSpawn = async () => {
     if (edited.length === 0) return;
     setBusy(true);
     try {
-      await onSpawn(edited);
+      // Build the final row list. When the gate is on, append synthetic
+      // qa + security rows; renumber `i` so PlanCard's 00/01/02 numbering
+      // stays sequential. The user already saw the final list when they
+      // ticked the gate — no extra confirmation here.
+      const gateRows: PlanRow[] = shipGate
+        ? SHIP_GATE_ROWS.map((g, idx) => ({
+            ...g,
+            i: edited.length + idx + 1,
+          }))
+        : [];
+      const finalRows = [...edited, ...gateRows];
+      await onSpawn(finalRows);
     } finally {
       setBusy(false);
     }
@@ -74,17 +131,49 @@ export function PlanCard({ rows, accepted, mode, onSpawn }: Props) {
                 edited
               </span>
             )}
+            <label
+              style={{
+                marginLeft: dirty ? 6 : 'auto',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 11,
+                color: shipGate ? 'var(--accent)' : 'var(--text-2)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+              title="Append a qa + security pass after the plan. The gates must complete without error before the Director considers the plan done."
+            >
+              <input
+                type="checkbox"
+                checked={shipGate}
+                onChange={(e) => setShipGate(e.target.checked)}
+                style={{ margin: 0 }}
+                disabled={busy}
+              />
+              ship gate
+            </label>
+            {onSaveAsTemplate && edited.length > 0 && (
+              <button
+                className="tb-btn"
+                style={{ height: 20, marginLeft: 6 }}
+                disabled={busy}
+                onClick={() => onSaveAsTemplate(edited)}
+                title="Save these rows as a reusable template"
+              >
+                Save as template
+              </button>
+            )}
             <button
               className="tb-btn primary"
-              style={{
-                height: 20,
-                marginLeft: dirty ? 6 : 'auto',
-              }}
+              style={{ height: 20, marginLeft: 6 }}
               disabled={busy || edited.length === 0}
               onClick={handleSpawn}
               title={
                 edited.length === 0
                   ? 'No rows left — add some back or send a new task'
+                  : shipGate
+                  ? `Spawn ${edited.length} + 2 gate agents (qa, security)`
                   : mode === 'auto'
                   ? 'Spawn the fleet — Director will continue to orchestrate'
                   : 'Spawn the fleet'
@@ -92,6 +181,8 @@ export function PlanCard({ rows, accepted, mode, onSpawn }: Props) {
             >
               {busy
                 ? 'Spawning…'
+                : shipGate
+                ? `Spawn ${edited.length} + 2`
                 : `Spawn ${edited.length}${edited.length === 1 ? ' agent' : ' agents'}`}
             </button>
           </>

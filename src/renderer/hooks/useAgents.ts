@@ -18,10 +18,16 @@ export function useAgents(projectId: string | null): UseAgentsResult {
   useEffect(() => {
     if (!projectId) {
       setAgents([]);
+      setExpanded({});
       return;
     }
     let mounted = true;
     setSelectedId(null);
+    // M10: drop the expanded map on project switch. Previously it
+    // kept every {agentId: bool} for every project ever visited
+    // in the session — grew unbounded and leaked agent ids
+    // belonging to other projects into this project's render.
+    setExpanded({});
     window.api.listAgents(projectId).then((initial) => {
       if (mounted) setAgents(initial);
     });

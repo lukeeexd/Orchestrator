@@ -3,28 +3,12 @@ import type {
   AgentRole,
   AgentStatus,
   HistoryRow,
+  PlanRow,
   Project,
 } from '../../shared/types';
+import { ROLE_TINT, STATUS_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
-
-const ROLE_TINT: Record<AgentRole, string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
-
-const STATUS_TINT: Record<string, string> = {
-  done: 'var(--accent)',
-  error: 'var(--error)',
-  running: 'var(--accent)',
-  waiting: 'var(--waiting)',
-  aborted: 'var(--muted)',
-  paused: 'var(--muted)',
-  approval: 'var(--waiting)',
-};
+import { SaveTemplateDialog } from './SaveTemplateDialog';
 
 const ROLES_ALL: AgentRole[] = ['pm', 'researcher', 'coder', 'qa', 'devops', 'security'];
 const STATUSES_ALL: AgentStatus[] = [
@@ -74,6 +58,16 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('startedAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  /**
+   * Open SaveTemplateDialog with this row's role + task captured as a
+   * single-row PlanRow[]. Null = closed. Lets the user reuse a one-off
+   * task they ran via Save-as-template the same way they would from
+   * a PlanCard (P11 — closes the loop on the Templates feature from P1).
+   */
+  const [saveTemplateContext, setSaveTemplateContext] = useState<{
+    rows: PlanRow[];
+    prefillName: string;
+  } | null>(null);
 
   const load = async () => {
     setReloading(true);
@@ -277,6 +271,27 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
                     >
                       {r.name}
                     </span>
+                    <button
+                      className="icon-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSaveTemplateContext({
+                          rows: [
+                            { i: 1, role: r.role, name: r.name, task: r.task },
+                          ],
+                          prefillName: `${r.role}: ${r.task.slice(0, 60).trim()}${r.task.length > 60 ? '…' : ''}`,
+                        });
+                      }}
+                      title="Save this run's task as a reusable template"
+                      style={{
+                        width: 18,
+                        height: 18,
+                        marginLeft: 6,
+                        opacity: 0.6,
+                      }}
+                    >
+                      <Icon name="templates" size={11} />
+                    </button>
                     {r.forkedFromName && (
                       <span
                         className="badge"
@@ -331,6 +346,27 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
           )}
         </section>
       </div>
+
+      {saveTemplateContext && (
+        <SaveTemplateDialog
+          rows={saveTemplateContext.rows}
+          mode="auto"
+          prefillName={saveTemplateContext.prefillName}
+          prefillTags={['runbook', saveTemplateContext.rows[0].role]}
+          onCancel={() => setSaveTemplateContext(null)}
+          onSave={async (input) => {
+            const created = await window.api.createTemplate({
+              name: input.name,
+              description: input.description,
+              mode: input.mode,
+              tags: input.tags,
+              rows: saveTemplateContext.rows,
+            });
+            setSaveTemplateContext(null);
+            return created;
+          }}
+        />
+      )}
     </div>
   );
 }

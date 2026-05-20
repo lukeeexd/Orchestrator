@@ -179,6 +179,28 @@ export type DirectorMode = 'auto' | 'manual';
 
 export type DirectorWho = 'user' | 'director' | 'system';
 
+/**
+ * A reusable Director plan. Surfaced in the Templates rail item;
+ * picking one synthesises a plan message so the existing PlanCard
+ * editor handles spawn / edit / drop rows the same way as a
+ * Director-emitted plan.
+ */
+export interface Template {
+  id: string;
+  name: string;
+  description: string;
+  /** Director mode the template was authored against — hint only; the user can change mode before spawning. */
+  mode: DirectorMode;
+  /** Short labels for filtering ("refactor", "tdd", "security", "onboarding", …). */
+  tags: string[];
+  /** PlanRow[] the runner spawns when the user accepts. */
+  rows: PlanRow[];
+  /** True for the four seeded defaults — the UI hides delete on these. */
+  builtin: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface AttachmentRef {
   path: string;
   name: string;
@@ -224,10 +246,10 @@ export interface SpawnAgentRequest {
   attachments?: string[];
 }
 
-export interface SpawnAgentResponse {
-  ok: true;
-  agentId: string;
-}
+// SpawnAgentResponse lives in shared/ipc.ts — keeping the IPC
+// surface in one place. The earlier duplicate here was never
+// imported but drifted independently when ipc.ts gained the
+// `ok: true` literal.
 
 export interface SpendBucket {
   /** Display label for the bucket (project name, model id, or role label). */
@@ -296,4 +318,87 @@ export interface SpendSummary {
   byDay: SpendDayBucket[];
   /** Top 20 most expensive agents, all-time. */
   topAgents: SpendAgentRow[];
+}
+
+/**
+ * One rule-based recommendation surfaced on the Spend screen.
+ * Recomputed every time the user opens the rail; no persistent
+ * "dismissed" state in v1 (the underlying conditions resolving is the
+ * dismiss signal — e.g. unsubscribing the idle bundle removes the
+ * card on next load).
+ */
+export interface SpendRecommendation {
+  /** Stable id — used as a React key and as a hook for future dismiss state. */
+  id: string;
+  /** Visual weight: 'info' for FYI, 'warn' for "you probably want to look at this". */
+  severity: 'info' | 'warn';
+  /** One-line headline shown in the card. */
+  title: string;
+  /** Two-or-three-sentence explanation + suggested action. */
+  body: string;
+  /** Optional rail item id to deep-link to (history / marketplace / settings / tools). */
+  deepLink?: 'settings' | 'marketplace' | 'tools' | 'history';
+}
+
+/**
+ * Self-improving-loadout nudge for the Marketplace screen. Each insight
+ * carries an optional in-place action — usually a narrower selectedSkills
+ * value the renderer can apply via the existing setMarketplaceBundleSkills
+ * IPC without a new write path.
+ */
+export interface LoadoutInsight {
+  id: string;
+  severity: 'info' | 'warn';
+  title: string;
+  body: string;
+  action?: LoadoutInsightAction;
+}
+
+/**
+ * Structured-handoff evidence summarising what an agent did before
+ * the Director sees the next turn. Computed from the agent's log
+ * lines + the CLI's final result message. Embedded as a fenced JSON
+ * block in the [handoff] message body so the Director can reason
+ * about machine-readable facts rather than parsing prose.
+ *
+ * All fields are present even when empty (`files_touched: []`,
+ * `tests_run: null`, etc) — keeps the JSON shape stable for any
+ * downstream consumer.
+ */
+export interface HandoffPayload {
+  /** The agent's final prose summary (the CLI's `result` field). May be empty. */
+  summary: string;
+  /** Workspace-relative paths the agent wrote to or edited, deduped. */
+  files_touched: string[];
+  /** Best-effort tally from Bash tool_use + result text. Null when we couldn't infer counts. */
+  tests_run: TestsRunSummary | null;
+  /** TODO / "next step" / "follow-up" lines the agent surfaced in its own prose. */
+  todos: string[];
+  /** Errors logged during the run. Up to 5; truncated for readability. */
+  errors: string[];
+}
+
+export interface TestsRunSummary {
+  pass: number;
+  fail: number;
+  skip: number;
+}
+
+/**
+ * The single supported action in v1 is "prune the bundle's selectedSkills
+ * down to a flat list of skills that have actually fired". Future
+ * variants (promote-to-global, reset-to-recommended) would add tagged
+ * union members here.
+ */
+export interface LoadoutInsightAction {
+  kind: 'prune-idle-skills';
+  /** Identifies the subscription to update. */
+  sourceId: string;
+  bundleId: string;
+  /** Scope: 'global' uses the marketplace sentinel; otherwise a real projectId. */
+  scope: string;
+  /** Skills to keep — the renderer passes this to setSubscriptionSkills as the flat-list form. */
+  keepSkillIds: string[];
+  /** Skills that would be removed — surfaced in the button's tooltip / confirmation. */
+  pruneSkillIds: string[];
 }

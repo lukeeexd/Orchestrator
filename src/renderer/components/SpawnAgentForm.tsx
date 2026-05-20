@@ -5,7 +5,9 @@ import type {
   EffortLevel,
   Provider,
 } from '../../shared/types';
+import { AGENT_ROLE_ORDER, ROLES as ROLE_DEFS } from '../../shared/roles';
 import { Icon } from './Icon';
+import { Modal } from './Modal';
 import { AttachmentThumb } from './AttachmentThumb';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
@@ -14,14 +16,17 @@ import {
   handleAttachmentPaste,
 } from '../lib/attachmentDataTransfer';
 
-const ROLES: { id: AgentRole; label: string; tint: string }[] = [
-  { id: 'pm', label: 'Project Manager', tint: '#4ade80' },
-  { id: 'researcher', label: 'Researcher', tint: '#60a5fa' },
-  { id: 'coder', label: 'Coder', tint: '#c084fc' },
-  { id: 'qa', label: 'QA', tint: '#fbbf24' },
-  { id: 'devops', label: 'DevOps', tint: '#f97316' },
-  { id: 'security', label: 'Security', tint: '#f87171' },
-];
+// Derived from the shared roles table so a role rename or tint
+// change lands in one place. Previously the file shadowed the
+// shared ROLES with its own array — same data but a separate
+// source of truth that could drift (and did, briefly, when the
+// security role was added).
+const ROLES: { id: AgentRole; label: string; tint: string }[] =
+  AGENT_ROLE_ORDER.map((id) => ({
+    id,
+    label: ROLE_DEFS[id].label,
+    tint: ROLE_DEFS[id].tint,
+  }));
 
 interface Props {
   onCancel: () => void;
@@ -153,19 +158,24 @@ export function SpawnAgentForm({
   };
 
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <span className="title">
-            <b>Spawn agent</b>
-          </span>
-          <span className="spacer" />
-          <button className="icon-btn" onClick={onCancel} title="Cancel">
-            <Icon name="x" size={11} />
+    <Modal
+      title={<b>Spawn agent</b>}
+      onClose={busy ? undefined : onCancel}
+      footer={
+        <>
+          <button className="tb-btn" onClick={onCancel} disabled={busy}>
+            Cancel
           </button>
-        </div>
-
-        <div className="modal-body">
+          <button
+            className="tb-btn primary"
+            onClick={submit}
+            disabled={busy}
+          >
+            <Icon name="play" size={11} /> Spawn
+          </button>
+        </>
+      }
+    >
           <div className="field">
             <span className="lbl">Role</span>
             <div className="role-picker">
@@ -175,10 +185,12 @@ export function SpawnAgentForm({
                   className={'role-chip' + (role === r.id ? ' on' : '')}
                   onClick={() => setRole(r.id)}
                   style={{ borderColor: role === r.id ? r.tint : undefined }}
+                  aria-pressed={role === r.id}
                 >
                   <span
                     className="role-tint"
                     style={{ background: r.tint }}
+                    aria-hidden="true"
                   />
                   {r.label}
                 </button>
@@ -351,21 +363,6 @@ export function SpawnAgentForm({
           </div>
 
           {error && <div className="form-error">{error}</div>}
-        </div>
-
-        <div className="modal-foot">
-          <button className="tb-btn" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            className="tb-btn primary"
-            onClick={submit}
-            disabled={busy}
-          >
-            <Icon name="play" size={11} /> Spawn
-          </button>
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

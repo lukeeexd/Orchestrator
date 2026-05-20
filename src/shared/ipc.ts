@@ -43,6 +43,7 @@ export const IpcChannels = {
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
   ProjectSetDirectorProvider: 'project:setDirectorProvider',
   ProjectSetMcpConfig: 'project:setMcpConfig',
+  ProjectPreviewMcpConfigCommands: 'project:previewMcpConfigCommands',
   MarketplaceListSources: 'marketplace:listSources',
   MarketplaceListBundles: 'marketplace:listBundles',
   MarketplaceListSubscriptions: 'marketplace:listSubscriptions',
@@ -59,6 +60,7 @@ export const IpcChannels = {
   MarketplaceReadSkill: 'marketplace:readSkill',
   MarketplaceResolveLoadout: 'marketplace:resolveLoadout',
   MarketplaceListFireCounts: 'marketplace:listFireCounts',
+  MarketplaceGetLoadoutInsights: 'marketplace:getLoadoutInsights',
   MarketplaceSetSkills: 'marketplace:setSkills',
   MarketplaceGetChangelog: 'marketplace:getChangelog',
   MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
@@ -68,14 +70,20 @@ export const IpcChannels = {
   ProjectDelete: 'project:delete',
   ProjectGetActive: 'project:getActive',
   AppShowSettingsFile: 'app:showSettingsFile',
-  AppCliStatus: 'app:cliStatus',
   AppCliStatusByProvider: 'app:cliStatusByProvider',
   AppOpenUsage: 'app:openUsage',
+  AppHasWorkspaceMd: 'app:hasWorkspaceMd',
   SpendGet: 'spend:get',
+  SpendRecommendations: 'spend:recommendations',
   HistoryList: 'history:list',
   CommandsList: 'commands:list',
   SkillsList: 'skills:list',
   SkillsSet: 'skills:set',
+  TemplatesList: 'templates:list',
+  TemplatesCreate: 'templates:create',
+  TemplatesUpdate: 'templates:update',
+  TemplatesDelete: 'templates:delete',
+  TemplatesUse: 'templates:use',
   UpdaterRestart: 'updater:restart',
   UpdaterEventDownloaded: 'updater:event:update-downloaded',
   // Renderer-bound streaming events:
@@ -291,8 +299,11 @@ export interface MarketplaceSubscriptionView {
    * 'director' (if present). An empty array subscribes the bundle
    * without making it available to any role — the UI surfaces that
    * as a "no agents" hint.
+   *
+   * L4: narrowed from `string[] | null` to the actual union the
+   * runtime enforces. Anything else round-trips a no-op.
    */
-  roles: string[] | null;
+  roles: Array<import('./types').AgentRole | 'director'> | null;
   selectedSkills: MarketplaceSelectedSkills;
   /** Derived from projectId — 'global' for the sentinel, 'project' otherwise. */
   scope: 'global' | 'project';
@@ -395,6 +406,22 @@ export interface SkillEntry {
   path: string | null;
 }
 
+export interface TemplateCreateRequest {
+  name: string;
+  description?: string;
+  mode?: import('./types').DirectorMode;
+  tags?: string[];
+  rows: PlanRow[];
+}
+
+export interface TemplateUpdateRequest {
+  name?: string;
+  description?: string;
+  mode?: import('./types').DirectorMode;
+  tags?: string[];
+  rows?: PlanRow[];
+}
+
 export interface AcceptPlanRequest {
   projectId: string;
   rows: PlanRow[];
@@ -409,8 +436,36 @@ export interface AcceptPlanRequest {
   attachments?: string[];
 }
 
+/**
+ * Returned by `acceptPlan`. Plans are spawned sequentially — rows
+ * 2..N kick off in a detached loop that fires the next spawn only
+ * after the previous one reaches a terminal status. So this is the
+ * set of agent IDs that exist *at the time the IPC call resolves*,
+ * not the full plan's worth.
+ *
+ * In practice that's always row 1 (the only spawn that happens
+ * synchronously in acceptPlan). Subsequent rows surface to the
+ * renderer via the `onAgent` event stream as they spawn. H10: the
+ * old "array of all spawned IDs" contract was misleading — the
+ * array always had exactly one (or zero) elements.
+ */
 export interface AcceptPlanResponse {
-  spawnedAgentIds: string[];
+  /** Agent ID of the first row, if any. Empty for a zero-row plan. */
+  firstSpawnedAgentId: string | null;
+}
+
+/**
+ * Payload for the `ackDirectorRedirect` IPC. Promoted from three
+ * inline copies (preload signature, main handler signature, renderer
+ * call site) to a single named interface so a future field change
+ * lands in one place. M13.
+ */
+export interface DirectorAckRedirectRequest {
+  projectId: string;
+  messageId: string;
+  agentName: string;
+  ok: boolean;
+  error?: string;
 }
 
 export interface OrchestratorApi {
@@ -483,13 +538,7 @@ export interface OrchestratorApi {
     attachments?: string[],
   ) => Promise<{ ok: true }>;
   acceptPlan: (req: AcceptPlanRequest) => Promise<AcceptPlanResponse>;
-  ackDirectorRedirect: (req: {
-    projectId: string;
-    messageId: string;
-    agentName: string;
-    ok: boolean;
-    error?: string;
-  }) => Promise<{ ok: true }>;
+  ackDirectorRedirect: (req: DirectorAckRedirectRequest) => Promise<{ ok: true }>;
   abortDirector: (projectId: string) => Promise<{ ok: true }>;
   wipeDirector: (projectId: string) => Promise<{ ok: true }>;
   // Projects
@@ -501,10 +550,24 @@ export interface OrchestratorApi {
   ) => Promise<Project>;
   setActiveProject: (id: string) => Promise<{ ok: true }>;
   renameProject: (id: string, name: string) => Promise<{ ok: true }>;
-  setProjectDirectorModel: (id: string, model: string) => Promise<{ ok: true }>;
+  /**
+   * Set the Director's per-project model override, or clear it by
+   * passing `''` (empty string). The main side normalises empty to
+   * NULL on the row, returning the project to the cascade default.
+   */
+  setProjectDirectorModel: (
+    id: string,
+    model: string,
+  ) => Promise<{ ok: true }>;
+  /**
+   * Set the Director's per-project effort override, or clear it by
+   * passing `null`. H10: the param was previously typed `EffortLevel`
+   * only, so renderers had to bypass types to clear the override —
+   * even though the main handler accepted null all along.
+   */
   setProjectDirectorEffort: (
     id: string,
-    effort: import('./types').EffortLevel,
+    effort: import('./types').EffortLevel | null,
   ) => Promise<{ ok: true }>;
   /**
    * Set the Director's provider override for a project, or clear it
@@ -525,10 +588,27 @@ export interface OrchestratorApi {
    * Claude spawns pick up the new config on their next run; codex
    * spawns ignore MCP entirely (codex exec has no equivalent flag).
    */
+  /**
+   * Returns the list of commands the MCP config would spawn on each
+   * agent run, parsed from `mcpServers[*].command`. Used by the
+   * renderer to show a "this will execute X on every spawn"
+   * confirmation step before commit. Empty config / invalid JSON
+   * returns an empty commands array — the actual commit call
+   * returns the parse error.
+   */
+  previewMcpConfigCommands: (
+    config: string | null,
+  ) => Promise<{ commands: string[] }>;
+  /**
+   * Returns the commands as part of the response so the renderer can
+   * show a "saved — these commands will run on each spawn" confirm
+   * message. Also pushed as a Director system message for an audit
+   * trail the user can see later.
+   */
   setProjectMcpConfig: (
     id: string,
     config: string | null,
-  ) => Promise<{ ok: boolean; error?: string }>;
+  ) => Promise<{ ok: boolean; error?: string; commands?: string[] }>;
   // ───────────────────────── Skill marketplace ─────────────────────────
   /** Configured marketplace sources (the alirezarezvani repo etc.). */
   listMarketplaceSources: () => Promise<MarketplaceSourceView[]>;
@@ -658,6 +738,14 @@ export interface OrchestratorApi {
     projectId: string,
   ) => Promise<MarketplaceSkillFireCount[]>;
   /**
+   * Self-improving-loadout nudges over the active project's
+   * subscriptions + cross-project fire data. Recomputed on every call;
+   * cheap (a handful of DB reads + an in-memory join).
+   */
+  getMarketplaceLoadoutInsights: (
+    projectId: string,
+  ) => Promise<import('./types').LoadoutInsight[]>;
+  /**
    * Set the per-skill subset for a subscription. Three forms:
    *   - `null` — all skills load for every enabled role (default).
    *   - `string[]` — these skills load for every enabled role (legacy
@@ -702,16 +790,22 @@ export interface OrchestratorApi {
   deleteProject: (id: string) => Promise<{ ok: true }>;
   getActiveProjectId: () => Promise<string | null>;
   showSettingsFile: () => Promise<{ ok: boolean }>;
-  getClaudeCliStatus: () => Promise<{
-    available: boolean;
-    version: string | null;
-  }>;
   /** Status for a specific provider's CLI (claude / codex). */
   getCliStatus: (
     provider: import('./types').Provider,
   ) => Promise<{ available: boolean; version: string | null }>;
   openClaudeUsage: () => Promise<{ ok: boolean }>;
+  /**
+   * True when a `WORKSPACE.md` exists at the workspace root. Used by
+   * the renderer's onboarding banner to decide whether the
+   * codebase-onboarding nudge should appear for this project.
+   */
+  hasWorkspaceMd: (workspace: string) => Promise<boolean>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
+  /** Rule-based cost / loadout recommendations recomputed each call. */
+  getSpendRecommendations: () => Promise<
+    import('./types').SpendRecommendation[]
+  >;
   listHistory: () => Promise<import('./types').HistoryRow[]>;
   listSlashCommands: (
     projectId: string | null,
@@ -722,6 +816,30 @@ export interface OrchestratorApi {
     key: import('./types').SkillKey,
     content: string,
   ) => Promise<{ ok: boolean; entry?: SkillEntry; error?: string }>;
+  // ───────────────────────── Workflow templates ─────────────────────────
+  /** Every template (built-ins first, then user-authored alphabetically). */
+  listTemplates: () => Promise<import('./types').Template[]>;
+  /** Create a new user-authored template from the given rows. */
+  createTemplate: (
+    input: TemplateCreateRequest,
+  ) => Promise<import('./types').Template>;
+  /** Update a user-authored template. Built-ins are read-only; returns the unchanged row. */
+  updateTemplate: (
+    id: string,
+    patch: TemplateUpdateRequest,
+  ) => Promise<{ ok: boolean; template?: import('./types').Template }>;
+  /** Delete a user-authored template. Built-ins are protected; returns ok: false. */
+  deleteTemplate: (id: string) => Promise<{ ok: boolean }>;
+  /**
+   * Synthesise a Director chat message carrying the template's plan
+   * rows. The renderer's existing PlanCard handler picks it up and the
+   * user can edit / drop rows / accept just like any Director-emitted
+   * plan. Returns the inserted message so the caller can scroll to it.
+   */
+  useTemplate: (
+    projectId: string,
+    templateId: string,
+  ) => Promise<{ ok: boolean; message?: DirectorMessage; error?: string }>;
   restartToUpdate: () => Promise<void>;
   onUpdateDownloaded: (
     cb: (p: { version: string; notes: string }) => void,

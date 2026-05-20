@@ -20,6 +20,7 @@ import {
 import { estimateCost } from '../../shared/rates';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';
+import { buildHandoffPayload } from './handoffPayload';
 import { readSettings } from '../settings';
 import * as director from '../director/runner';
 import * as persistence from '../persistence';
@@ -47,6 +48,11 @@ function buildSystemPromptFor(role: AgentRole, projectId: string): string {
 }
 import { runClaudeQuery } from '../cli/spawn';
 import { runCodexQuery } from '../cli/codex';
+import {
+  awaitCompletion as awaitLockedCompletion,
+  trackCompletion,
+  withAgentLock,
+} from './agent-lock';
 
 /**
  * Resolve the tool allow-list for an agent: per-project role override
@@ -130,15 +136,17 @@ function checkBudget(
   return null;
 }
 
-const completions = new Map<string, Promise<void>>();
-
 /**
  * Returns a promise that resolves when the given agent reaches a terminal
  * status (done | error | aborted). Already-completed agents resolve
  * immediately.
+ *
+ * Backed by the generation-tagged tracker in `agent-lock.ts` so a
+ * redirect or fork replacing the in-flight entry doesn't trip the
+ * earlier cleanup timer.
  */
 export function awaitCompletion(agentId: string): Promise<void> {
-  return completions.get(agentId) ?? Promise.resolve();
+  return awaitLockedCompletion(agentId);
 }
 
 export async function spawnAgent(
@@ -209,25 +217,17 @@ export async function spawnAgent(
 
   const settings = readSettings();
 
-  let resolveDone!: () => void;
-  const donePromise = new Promise<void>((res) => {
-    resolveDone = res;
-  });
-  completions.set(id, donePromise);
-
   // Fire-and-forget the async run; events stream via sinks.
-  run(id, req, req.workspace, settings, controller, sinks)
-    .catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      sinks.onLog(id, { ts: nowTs(), kind: 'error', msg: `runner crashed: ${msg}` });
-      sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
-    })
-    .finally(() => {
-      resolveDone();
-      // Keep the entry in `completions` for a short tail so late awaiters
-      // resolve immediately, then drop it. Memory hygiene.
-      setTimeout(() => completions.delete(id), 60_000);
-    });
+  // The lock is unnecessary on a freshly minted id (no other caller
+  // can target it yet), but using the same trackCompletion helper as
+  // redirect/fork keeps the cleanup story uniform.
+  const work = run(id, req, req.workspace, settings, controller, sinks);
+  trackCompletion(id, work);
+  work.catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    sinks.onLog(id, { ts: nowTs(), kind: 'error', msg: `runner crashed: ${msg}` });
+    sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
+  });
 
   return { agentId: id };
 }
@@ -239,6 +239,18 @@ export async function spawnAgent(
  * the parent stays intact and untouched.
  */
 export async function forkAgent(
+  req: ForkAgentRequest,
+  sinks: RunnerSinks,
+): Promise<{ ok: boolean; agentId?: string; error?: string }> {
+  // Lock on the parent: the fork reads parent.sessionId atomically
+  // and a concurrent redirect on the parent could otherwise swap
+  // the session out from under us mid-read.
+  return withAgentLock(req.parentAgentId, () =>
+    forkAgentLocked(req, sinks),
+  );
+}
+
+async function forkAgentLocked(
   req: ForkAgentRequest,
   sinks: RunnerSinks,
 ): Promise<{ ok: boolean; agentId?: string; error?: string }> {
@@ -311,33 +323,24 @@ export async function forkAgent(
   persistence.saveAgent(agent);
   sinks.onAgent(agent);
 
-  let resolveDone!: () => void;
-  const donePromise = new Promise<void>((res) => {
-    resolveDone = res;
-  });
-  completions.set(id, donePromise);
-
-  runFork(
+  const work = runFork(
     id,
     parent.agent.sessionId,
     req.task,
     req.attachments,
     controller,
     sinks,
-  )
-    .catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      sinks.onLog(id, {
-        ts: nowTs(),
-        kind: 'error',
-        msg: `fork crashed: ${msg}`,
-      });
-      sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
-    })
-    .finally(() => {
-      resolveDone();
-      setTimeout(() => completions.delete(id), 60_000);
+  );
+  trackCompletion(id, work);
+  work.catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    sinks.onLog(id, {
+      ts: nowTs(),
+      kind: 'error',
+      msg: `fork crashed: ${msg}`,
     });
+    sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
+  });
 
   return { ok: true, agentId: id };
 }
@@ -357,12 +360,6 @@ async function runFork(
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
   try {
-    const role = ROLES[entry.agent.role];
-    const effectiveModel = entry.agent.model;
-    const effectiveEffort = entry.agent.effort || DEFAULT_EFFORT;
-    const resolved = resolveModel(effectiveModel);
-    const effectiveTools = resolveTools(entry.agent.role, entry.agent.projectId);
-
     // Forks already inherit their parent's stored provider in
     // forkAgent. Honour that here rather than re-reading project, so
     // a fork of an overridden-provider parent stays consistent even
@@ -383,53 +380,23 @@ ${task}`;
       msg: `Forked from ${entry.agent.forkedFromName ?? 'unknown'} (parent session ${parentSessionId})`,
     });
 
-    const q =
-      provider === 'codex'
-        ? runCodexQuery({
-            cwd: entry.agent.workspace,
-            env,
-            prompt: `[role: ${role.label}]\n${role.systemPrompt}\n\n---\n\n${prompt}`,
-            model: effectiveModel,
-            effort: effectiveEffort,
-            resume: parentSessionId,
-            forkSession: true,
-            abortController: controller,
-          })
-        : runClaudeQuery({
-            cwd: entry.agent.workspace,
-            env,
-            prompt,
-            ...(prep.images.length > 0 ? { images: prep.images } : {}),
-            ...(prep.documents.length > 0
-              ? { documents: prep.documents }
-              : {}),
-            ...((p) => (p ? { mcpConfigPath: p } : {}))(
-              getMcpConfigPath(entry.agent.projectId),
-            ),
-            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
-              pluginDirsForProject(
-                entry.agent.projectId,
-                entry.agent.role,
-              ),
-            ),
-            abortController: controller,
-            resume: parentSessionId,
-            forkSession: true,
-            agent: 'main',
-            agents: {
-              main: {
-                description: `${role.label} for the Orchestrator app`,
-                prompt: buildSystemPromptFor(
-                  entry.agent.role,
-                  entry.agent.projectId,
-                ),
-                tools: effectiveTools,
-                model: resolved.model,
-                effort: effectiveEffort,
-              },
-            },
-            betas: resolved.betas,
-          });
+    const effectiveModel = entry.agent.model;
+    const effectiveEffort = entry.agent.effort || DEFAULT_EFFORT;
+
+    const q = buildQuery({
+      agent: entry.agent,
+      prompt,
+      prep,
+      provider,
+      model: effectiveModel,
+      effort: effectiveEffort,
+      env,
+      controller,
+      resume: parentSessionId,
+      forkSession: true,
+      sinks,
+      agentId,
+    });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
@@ -456,15 +423,16 @@ async function run(
     // spawnAgent and this point). The fallback respects project provider
     // and validates the stored model id against it.
     const entry = registry.get(agentId);
+    if (!entry) return;
     // Honour the per-agent provider override stored at spawn time;
     // fall back to the project's provider for agents persisted before
     // schema v13.
     const runProvider: Provider =
-      entry?.agent.provider ??
+      entry.agent.provider ??
       getProject(req.projectId)?.provider ??
       'claude';
     const storedAgentModel =
-      entry?.agent.model && modelMatchesProvider(entry.agent.model, runProvider)
+      entry.agent.model && modelMatchesProvider(entry.agent.model, runProvider)
         ? entry.agent.model
         : undefined;
     const effectiveModel =
@@ -473,31 +441,10 @@ async function run(
         ? settings.defaultModel || role.model
         : defaultModelForProvider(runProvider));
     const effectiveEffort: EffortLevel =
-      entry?.agent.effort || DEFAULT_EFFORT;
-    // Pseudo-ids like `*-1m` resolve to a base model id + a beta header.
-    const resolved = resolveModel(effectiveModel);
+      entry.agent.effort || DEFAULT_EFFORT;
     const prep = prepareAttachments(req.attachments, runProvider);
     for (const line of prep.warnLines) {
       sinks.onLog(agentId, { ts: nowTs(), kind: 'warn', msg: line });
-    }
-    // Diagnostic: surface the marketplace plugins we're about to load
-    // so the user can verify --plugin-dir is being passed correctly.
-    // Emitted only when the spawn is going to claude (codex ignores
-    // pluginDirs); skipped silently when no bundles are subscribed.
-    if (runProvider === 'claude') {
-      const pluginDirs = pluginDirsForProject(req.projectId, req.role);
-      if (pluginDirs.length > 0) {
-        const summary = pluginDirs
-          .map((p) => p.split(/[/\\]/).pop() ?? p)
-          .join(', ');
-        sinks.onLog(agentId, {
-          ts: nowTs(),
-          kind: 'note',
-          msg: `Loading ${pluginDirs.length} skill bundle${
-            pluginDirs.length === 1 ? '' : 's'
-          } via --plugin-dir: ${summary}`,
-        });
-      }
     }
     const promptWithContext = `[workspace] ${workdir}
 All file paths resolve here — your Read, Write, Edit, Glob, Grep tools all operate inside this folder. Use simple relative paths like "notes.md" (preferred) or the absolute path above.
@@ -507,48 +454,22 @@ Do NOT invent paths like /home/user/, /tmp/, or POSIX-style locations — they a
 ${prep.textInline}Task:
 ${req.task}`;
 
-    const effectiveTools = resolveTools(req.role, req.projectId);
-
-    const q =
-      runProvider === 'codex'
-        ? runCodexQuery({
-            cwd: workdir,
-            env,
-            // Codex has no inline system-prompt flag — bake the role
-            // prompt into the user prompt as a preamble so the model
-            // still sees its persona instructions.
-            prompt: `[role: ${role.label}]\n${buildSystemPromptFor(req.role, req.projectId)}\n\n---\n\n${promptWithContext}`,
-            model: effectiveModel,
-            effort: effectiveEffort,
-            abortController: controller,
-          })
-        : runClaudeQuery({
-            cwd: workdir,
-            env,
-            prompt: promptWithContext,
-            ...(prep.images.length > 0 ? { images: prep.images } : {}),
-            ...(prep.documents.length > 0
-              ? { documents: prep.documents }
-              : {}),
-            ...((p) => (p ? { mcpConfigPath: p } : {}))(
-              getMcpConfigPath(req.projectId),
-            ),
-            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
-              pluginDirsForProject(req.projectId, req.role),
-            ),
-            abortController: controller,
-            agent: 'main',
-            agents: {
-              main: {
-                description: `${role.label} for the Orchestrator app`,
-                prompt: buildSystemPromptFor(req.role, req.projectId),
-                tools: effectiveTools,
-                model: resolved.model,
-                effort: effectiveEffort,
-              },
-            },
-            betas: resolved.betas,
-          });
+    const q = buildQuery({
+      agent: entry.agent,
+      prompt: promptWithContext,
+      prep,
+      provider: runProvider,
+      model: effectiveModel,
+      effort: effectiveEffort,
+      env,
+      controller,
+      sinks,
+      agentId,
+      // Initial spawn diagnostic — fork/redirect skip this because
+      // the same plugin-dirs were already logged when the parent
+      // spawned.
+      emitPluginDirsNote: true,
+    });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
@@ -562,6 +483,17 @@ ${req.task}`;
  * + system prompt are all carried over from the original spawn.
  */
 export async function redirectAgent(
+  req: RedirectAgentRequest,
+  sinks: RunnerSinks,
+): Promise<{ ok: boolean; error?: string }> {
+  // Lock the agent id: the [status check → status flip → controller
+  // swap → kick off work] sequence must be atomic, otherwise two
+  // redirects in the same tick both pass the 'running' guard and
+  // the first controller leaks unreferenced.
+  return withAgentLock(req.agentId, () => redirectAgentLocked(req, sinks));
+}
+
+async function redirectAgentLocked(
   req: RedirectAgentRequest,
   sinks: RunnerSinks,
 ): Promise<{ ok: boolean; error?: string }> {
@@ -588,13 +520,7 @@ export async function redirectAgent(
   const controller = new AbortController();
   registry.setController(req.agentId, controller);
 
-  let resolveDone!: () => void;
-  const donePromise = new Promise<void>((res) => {
-    resolveDone = res;
-  });
-  completions.set(req.agentId, donePromise);
-
-  runRedirect(
+  const work = runRedirect(
     req.agentId,
     req.body,
     req.attachments,
@@ -602,20 +528,17 @@ export async function redirectAgent(
     req.effort,
     controller,
     sinks,
-  )
-    .catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      sinks.onLog(req.agentId, {
-        ts: nowTs(),
-        kind: 'error',
-        msg: `redirect crashed: ${msg}`,
-      });
-      sinks.onPatch(req.agentId, { status: 'error', statusLabel: 'Crashed' });
-    })
-    .finally(() => {
-      resolveDone();
-      setTimeout(() => completions.delete(req.agentId), 60_000);
+  );
+  trackCompletion(req.agentId, work);
+  work.catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    sinks.onLog(req.agentId, {
+      ts: nowTs(),
+      kind: 'error',
+      msg: `redirect crashed: ${msg}`,
     });
+    sinks.onPatch(req.agentId, { status: 'error', statusLabel: 'Crashed' });
+  });
 
   return { ok: true };
 }
@@ -640,7 +563,6 @@ async function runRedirect(
   // The CLI call below explicitly passes both in the agent definition so
   // the resumed turn actually uses them (rather than inheriting the
   // session's original).
-  const role = ROLES[entry.agent.role];
   const effectiveModel = modelOverride || entry.agent.model;
   const effectiveEffort: EffortLevel =
     effortOverride || entry.agent.effort || DEFAULT_EFFORT;
@@ -654,8 +576,6 @@ async function runRedirect(
     registry.patch(agentId, patch);
     sinks.onPatch(agentId, patch);
   }
-  const resolved = resolveModel(effectiveModel);
-
   try {
     // Redirect uses the provider the agent originally spawned with —
     // resuming a session on a different provider doesn't make sense
@@ -681,60 +601,48 @@ ${body}`;
       }`,
     });
 
-    const q =
-      provider === 'codex'
-        ? runCodexQuery({
-            cwd: entry.agent.workspace,
-            env,
-            // Same role-prompt preamble approach as initial spawn.
-            prompt: `[role: ${role.label}]\n${buildSystemPromptFor(entry.agent.role, entry.agent.projectId)}\n\n---\n\n${prompt}`,
-            model: effectiveModel,
-            effort: effectiveEffort,
-            resume: entry.agent.sessionId,
-            abortController: controller,
-          })
-        : runClaudeQuery({
-            cwd: entry.agent.workspace,
-            env,
-            prompt,
-            ...(prep.images.length > 0 ? { images: prep.images } : {}),
-            ...(prep.documents.length > 0
-              ? { documents: prep.documents }
-              : {}),
-            ...((p) => (p ? { mcpConfigPath: p } : {}))(
-              getMcpConfigPath(entry.agent.projectId),
-            ),
-            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
-              pluginDirsForProject(
-                entry.agent.projectId,
-                entry.agent.role,
-              ),
-            ),
-            abortController: controller,
-            resume: entry.agent.sessionId,
-            // Pass the agent config explicitly so the resumed turn uses
-            // our chosen model + tools + effort, not whatever the saved
-            // session had.
-            agent: 'main',
-            agents: {
-              main: {
-                description: `${role.label} for the Orchestrator app`,
-                prompt: buildSystemPromptFor(
-                  entry.agent.role,
-                  entry.agent.projectId,
-                ),
-                tools: resolveTools(entry.agent.role, entry.agent.projectId),
-                model: resolved.model,
-                effort: effectiveEffort,
-              },
-            },
-            betas: resolved.betas,
-          });
+    const q = buildQuery({
+      agent: entry.agent,
+      prompt,
+      prep,
+      provider,
+      model: effectiveModel,
+      effort: effectiveEffort,
+      env,
+      controller,
+      resume: entry.agent.sessionId,
+      sinks,
+      agentId,
+    });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
     clearInterval(elapsedTimer);
   }
+}
+
+/**
+ * Abort a running agent. Acquired the per-agent lock so we serialize
+ * with any in-flight redirect/fork critical section — without this,
+ * an abort racing a redirect's controller-swap can land on the
+ * pre-swap controller and the post-swap run continues unaffected.
+ */
+export async function abortAgent(
+  id: string,
+  sinks: RunnerSinks,
+): Promise<{ ok: boolean }> {
+  return withAgentLock(id, () => {
+    const ok = registry.abort(id);
+    if (ok) {
+      const patch: Partial<Agent> = {
+        status: 'aborted',
+        statusLabel: 'Aborted',
+      };
+      registry.patch(id, patch);
+      sinks.onPatch(id, patch);
+    }
+    return { ok };
+  });
 }
 
 function startElapsedTimer(
@@ -758,6 +666,12 @@ function startElapsedTimer(
       e.agent.budget.seconds > 0 &&
       (Date.now() - e.agent.startedAt) / 1000 > e.agent.budget.seconds
     ) {
+      // Stop the timer FIRST so a late assistant/result event in
+      // consumeQuery can't overwrite "Budget exceeded" with a
+      // generic 'is_error' subtype label. The runFork/runRedirect/
+      // run finally-blocks also clearInterval defensively, but by
+      // then consumeQuery has already drained one more event.
+      clearInterval(elapsedTimer);
       sinks.onLog(agentId, {
         ts: nowTs(),
         kind: 'error',
@@ -776,6 +690,30 @@ function startElapsedTimer(
   }, 1000);
   return elapsedTimer;
 }
+
+/**
+ * Terminal-status set covers the post-abort patch states. Once an
+ * agent reaches one of these, consumeQuery must stop draining the
+ * CLI tail — otherwise a buffered `result` event arriving after a
+ * budget abort overwrites "Budget exceeded" with the CLI's generic
+ * is_error subtype.
+ */
+const TERMINAL_STATUSES = new Set(['done', 'error', 'aborted']);
+
+/**
+ * H5: in-memory cap on `agent.log`. The persistence layer keeps
+ * the full history on disk; the Drawer's Logs tab pulls older
+ * slices on demand via persistence.listLogLinesForAgent. Without
+ * the cap a long-running chatty agent grows its array unbounded
+ * and `registry.listForProject` serialises the whole thing over
+ * IPC on every renderer mount.
+ *
+ * 2000 lines is well above the Drawer's last-8 view + roughly
+ * one or two assistant turns' worth of tool calls. The boundary
+ * is fuzzy by design — losing the oldest line off the in-memory
+ * tail isn't a correctness issue because the disk has it.
+ */
+const LOG_TAIL_CAP = 2000;
 
 function safeResolveLoadout(
   projectId: string,
@@ -880,6 +818,124 @@ function findSkillFromToolUse(
   return null;
 }
 
+/**
+ * Inputs to `buildQuery` — the shared core of `run` / `runFork` /
+ * `runRedirect`. The three call sites still own their own prompt
+ * preludes (workspace context for `run`, "Forked from prior session"
+ * for `runFork`, "Continuing task" for `runRedirect`); everything
+ * downstream of that — CLI selection, role-prompt preamble, plugin
+ * dirs, MCP config — is consolidated here.
+ *
+ * Before this helper existed the three flows shared ~300 lines of
+ * near-duplicate code that had already drifted (only `run` emitted
+ * the plugin-dir diagnostic; only `runFork`'s codex preamble used
+ * `role.systemPrompt` instead of `buildSystemPromptFor`, so codex
+ * forks silently dropped the project skill body).
+ */
+interface BuildQueryArgs {
+  agentId: string;
+  agent: Agent;
+  /** Prompt body the agent will see — already includes any prep.textInline + flow-specific prelude. */
+  prompt: string;
+  prep: ReturnType<typeof prepareAttachments>;
+  provider: Provider;
+  model: string;
+  effort: EffortLevel;
+  env: Record<string, string | undefined>;
+  controller: AbortController;
+  /** Session id to resume — set for redirect (agent's own) and fork (parent's). */
+  resume?: string;
+  /** True for fork (claude only — codex fork has no --json mode). */
+  forkSession?: boolean;
+  /** Emit the "Loading N skill bundles via --plugin-dir: …" note. Only `run` does. */
+  emitPluginDirsNote?: boolean;
+  sinks: RunnerSinks;
+}
+
+function buildQuery(args: BuildQueryArgs): AsyncIterable<unknown> {
+  const {
+    agent,
+    prompt,
+    prep,
+    provider,
+    model,
+    effort,
+    env,
+    controller,
+    resume,
+    forkSession,
+    emitPluginDirsNote,
+    sinks,
+    agentId,
+  } = args;
+  const role = ROLES[agent.role];
+  const resolved = resolveModel(model);
+  const effectiveTools = resolveTools(agent.role, agent.projectId);
+  const projectId = agent.projectId;
+  const systemPrompt = buildSystemPromptFor(agent.role, projectId);
+
+  if (emitPluginDirsNote && provider === 'claude') {
+    const pluginDirs = pluginDirsForProject(projectId, agent.role);
+    if (pluginDirs.length > 0) {
+      const summary = pluginDirs
+        .map((p) => p.split(/[/\\]/).pop() ?? p)
+        .join(', ');
+      sinks.onLog(agentId, {
+        ts: nowTs(),
+        kind: 'note',
+        msg: `Loading ${pluginDirs.length} skill bundle${
+          pluginDirs.length === 1 ? '' : 's'
+        } via --plugin-dir: ${summary}`,
+      });
+    }
+  }
+
+  if (provider === 'codex') {
+    return runCodexQuery({
+      cwd: agent.workspace,
+      env,
+      // Codex has no inline system-prompt flag — bake the role
+      // prompt into the user prompt as a preamble so the model
+      // still sees its persona instructions.
+      prompt: `[role: ${role.label}]\n${systemPrompt}\n\n---\n\n${prompt}`,
+      model,
+      effort,
+      ...(resume ? { resume } : {}),
+      // codex fork has no --json mode; forkAgent already gates
+      // this at the entry point so forkSession will only ever be
+      // true on the claude branch — but assert defensively.
+      ...(forkSession ? { forkSession: true } : {}),
+      abortController: controller,
+    });
+  }
+
+  return runClaudeQuery({
+    cwd: agent.workspace,
+    env,
+    prompt,
+    ...(prep.images.length > 0 ? { images: prep.images } : {}),
+    ...(prep.documents.length > 0 ? { documents: prep.documents } : {}),
+    ...((p) => (p ? { mcpConfigPath: p } : {}))(getMcpConfigPath(projectId)),
+    ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
+      pluginDirsForProject(projectId, agent.role),
+    ),
+    abortController: controller,
+    ...(resume ? { resume } : {}),
+    ...(forkSession ? { forkSession: true } : {}),
+    agent: 'main',
+    agents: {
+      main: {
+        description: `${role.label} for the Orchestrator app`,
+        prompt: systemPrompt,
+        tools: effectiveTools,
+        model: resolved.model,
+        effort,
+      },
+    },
+    betas: resolved.betas,
+  });
+}
+
 async function consumeQuery(
   agentId: string,
   q: AsyncIterable<unknown>,
@@ -909,6 +965,12 @@ async function consumeQuery(
 
   for await (const event of q) {
     if (controller.signal.aborted) break;
+    // Once a terminal status has been written (typically by the
+    // wall-clock budget timer aborting the run), stop draining the
+    // CLI tail. Otherwise a buffered `result` event lands and the
+    // is_error subtype overwrites "Budget exceeded".
+    const guard = registry.get(agentId);
+    if (guard && TERMINAL_STATUSES.has(guard.agent.status)) break;
     const ev = event as { type: string; session_id?: string; [k: string]: unknown };
 
     // Capture session_id whenever we see one — needed for Redirect to
@@ -924,7 +986,21 @@ async function consumeQuery(
     const lines = classify(ev);
     for (const line of lines) {
       const entry = registry.get(agentId);
-      if (entry) entry.agent.log.push(line);
+      if (entry) {
+        entry.agent.log.push(line);
+        // H5: cap in-memory log to the last LOG_TAIL_CAP lines.
+        // Older lines stay on disk via persistence.appendLogLine
+        // above and are fetched on demand via listLogLinesForAgent.
+        // Without this, a chatty long-running agent grew its log
+        // array unbounded and `registry.listForProject` serialised
+        // the whole thing over IPC on every renderer mount.
+        if (entry.agent.log.length > LOG_TAIL_CAP) {
+          entry.agent.log.splice(
+            0,
+            entry.agent.log.length - LOG_TAIL_CAP,
+          );
+        }
+      }
       persistence.appendLogLine(agentId, line);
       sinks.onLog(agentId, line);
     }
@@ -1087,11 +1163,17 @@ async function consumeQuery(
         // spawned, or redirected. Director sees the live fleet block on each
         // turn and can decide whether to comment briefly or stay quiet.
         if (entry) {
+          // P14: build a structured handoff payload from the agent's
+          // accumulated log + the CLI's final result message before
+          // notifying the Director. The Director then sees evidence
+          // (files touched, test counts, todos, errors) as a fenced
+          // JSON block on its next turn, not just prose.
           const summary = result.result ?? '';
+          const payload = buildHandoffPayload(entry.agent, summary);
           director.notifyAgentDone(
             entry.agent.projectId,
             entry.agent.name,
-            summary,
+            payload,
           );
         }
       } else {

@@ -1,15 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Agent, LogLine, ToolCall } from '../../shared/types';
+import { ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
-
-const ROLE_TINT: Record<Agent['role'], string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
 
 /**
  * Terminal-style live log for a single agent. Replaces the row+drawer
@@ -125,7 +117,11 @@ export function AgentStreamPanel({
             {isRunning ? 'Awaiting first response…' : 'No log entries.'}
           </div>
         ) : (
-          agent.log.map((line, i) => <StreamLine key={i} line={line} />)
+          // M11: composite key so a memoised StreamLine survives
+          // re-renders driven by sibling log appends.
+          agent.log.map((line, i) => (
+            <StreamLine key={`${line.ts}-${line.kind}-${i}`} line={line} />
+          ))
         )}
         {isRunning && (
           <span className="log-cursor" aria-hidden="true">
