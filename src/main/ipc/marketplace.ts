@@ -8,6 +8,8 @@ import {
   type MarketplaceSubscriptionView,
 } from '../../shared/ipc';
 import * as marketplace from '../marketplace';
+import { getLoadoutInsights } from '../loadoutInsights';
+import type { LoadoutInsight } from '../../shared/types';
 import type { IpcContext } from './_shared';
 
 function sourceView(row: marketplace.SkillSourceRow): MarketplaceSourceView {
@@ -297,6 +299,12 @@ export function registerMarketplaceHandlers(ctx: IpcContext): void {
       _event,
       projectId: string,
     ): marketplace.SkillFireCount[] => marketplace.getSkillFireCounts(projectId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceGetLoadoutInsights,
+    (_event, projectId: string): LoadoutInsight[] =>
+      getLoadoutInsights(projectId),
   );
 
   ipcMain.handle(

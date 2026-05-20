@@ -15,7 +15,7 @@ import {
   MARKETPLACE_DEFAULT_SOURCE_ID,
   MARKETPLACE_RECOMMENDED_DEFAULTS,
 } from '../../shared/ipc';
-import type { Provider } from '../../shared/types';
+import type { LoadoutInsight, Provider } from '../../shared/types';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { useMarketplace } from '../hooks/useMarketplace';
@@ -228,6 +228,31 @@ export function MarketplaceScreen({
             <code>codex plugin marketplace add &lt;repo&gt;</code> from
             your shell.
           </div>
+        )}
+        {mp.loadoutInsights.length > 0 && (
+          <section
+            className="settings-section"
+            style={{ marginBottom: 12 }}
+          >
+            <h3 className="settings-h">Skill insights</h3>
+            <p className="settings-help">
+              Rule-based nudges over the bundles you have subscribed plus the
+              skill-fire telemetry from your runs. Each card disappears once
+              the underlying state changes (e.g. once you've pruned the idle
+              skills, the bundle stops triggering the rule).
+            </p>
+            <div
+              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+            >
+              {mp.loadoutInsights.map((rec) => (
+                <LoadoutInsightCard
+                  key={rec.id}
+                  insight={rec}
+                  onReload={mp.reloadInsights}
+                />
+              ))}
+            </div>
+          </section>
         )}
         {viewTab === 'agents' ? (
           <AgentSkillsView
@@ -2385,3 +2410,89 @@ function ChangelogModal({
   );
 }
 
+function LoadoutInsightCard({
+  insight,
+  onReload,
+}: {
+  insight: LoadoutInsight;
+  /** Force a fresh insights pull after the action lands. */
+  onReload: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const tint = insight.severity === 'warn' ? 'var(--waiting)' : 'var(--accent)';
+  const handleAction = async () => {
+    if (!insight.action) return;
+    setBusy(true);
+    try {
+      const a = insight.action;
+      if (a.kind === 'prune-idle-skills') {
+        // Flat-list form (string[]) — these skills apply to every
+        // enabled role uniformly. Mirrors how the legacy Pick modal
+        // writes selectedSkills and is the right shape for "narrow
+        // from null/all to this set". Use the lower-level IPC
+        // directly with the action's real scope id (could be the
+        // global sentinel or a real projectId); the useMarketplace
+        // setSkills helper takes a 'global'|'project' string, not
+        // the raw scope, so going under it is cleaner here.
+        await window.api.setMarketplaceBundleSkills(
+          a.scope,
+          a.sourceId,
+          a.bundleId,
+          a.keepSkillIds,
+        );
+        // The setSkills broadcast cycle will re-derive subscriptions,
+        // which already triggers a reloadInsights via the hook's
+        // useEffect — but call it explicitly to avoid the visible
+        // gap where the card stays on screen until the broadcast
+        // round-trips.
+        await onReload();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div
+      style={{
+        border: '1px solid var(--border)',
+        borderLeft: `3px solid ${tint}`,
+        borderRadius: 4,
+        background: 'var(--sub-1)',
+        padding: '8px 12px',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontSize: 12,
+          fontWeight: 600,
+          marginBottom: 4,
+        }}
+      >
+        <span style={{ color: tint }}>
+          {insight.severity === 'warn' ? '!' : 'i'}
+        </span>
+        <span>{insight.title}</span>
+        <span className="spacer" style={{ flex: 1 }} />
+        {insight.action && insight.action.kind === 'prune-idle-skills' && (
+          <button
+            className="tb-btn"
+            onClick={() => void handleAction()}
+            disabled={busy}
+            style={{ height: 20, fontSize: 11 }}
+            title={`Will keep ${insight.action.keepSkillIds.length} skills and exclude ${insight.action.pruneSkillIds.length}: ${insight.action.pruneSkillIds.slice(0, 5).join(', ')}${insight.action.pruneSkillIds.length > 5 ? '…' : ''}`}
+          >
+            {busy
+              ? 'Pruning…'
+              : `Prune ${insight.action.pruneSkillIds.length} idle skills`}
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.4 }}>
+        {insight.body}
+      </div>
+    </div>
+  );
+}

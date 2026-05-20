@@ -10,6 +10,7 @@ import type {
   MarketplaceSubscriptionView,
 } from '../../shared/ipc';
 import { MARKETPLACE_GLOBAL_SCOPE_ID } from '../../shared/ipc';
+import type { LoadoutInsight } from '../../shared/types';
 
 interface UseMarketplaceResult {
   sources: MarketplaceSourceView[];
@@ -90,6 +91,10 @@ interface UseMarketplaceResult {
   fireCounts: MarketplaceSkillFireCount[];
   /** Pull a fresh fire-count snapshot from main. */
   reloadFireCounts: () => Promise<void>;
+  /** Self-improving-loadout nudges (P6). Recomputed when subscriptions or fires change. */
+  loadoutInsights: LoadoutInsight[];
+  /** Force a fresh insights recompute from main. */
+  reloadInsights: () => Promise<void>;
   /**
    * Set the per-skill picks on a subscription. Pass `null` for "all
    * skills in the bundle", a flat `string[]` for "these skills for
@@ -343,6 +348,28 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     void reloadFireCounts();
   }, [reloadFireCounts]);
 
+  // P6 — loadout insights. Recomputed when projectId changes, when
+  // subscriptions change (the broadcast subscription below already
+  // re-triggers because it bumps subscriptions which we re-derive
+  // insights from), and on demand via reloadInsights().
+  const [loadoutInsights, setLoadoutInsights] = useState<LoadoutInsight[]>(
+    [],
+  );
+  const reloadInsights = useCallback(async () => {
+    if (!projectId) {
+      setLoadoutInsights([]);
+      return;
+    }
+    const rows = await window.api.getMarketplaceLoadoutInsights(projectId);
+    setLoadoutInsights(rows);
+  }, [projectId]);
+  useEffect(() => {
+    void reloadInsights();
+    // Re-evaluate when subscriptions move — pruning a bundle's skills
+    // resolves the insight, and the broadcast that follows must clear
+    // the card without the user having to refresh the rail.
+  }, [reloadInsights, subscriptions]);
+
   const getChangelog = useCallback(
     async (
       sourceId: string,
@@ -466,6 +493,8 @@ export function useMarketplace(projectId: string | null): UseMarketplaceResult {
     resolveLoadout,
     fireCounts,
     reloadFireCounts,
+    loadoutInsights,
+    reloadInsights,
     setSkills,
     getChangelog,
     reload,

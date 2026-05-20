@@ -339,3 +339,36 @@ export interface SpendRecommendation {
   /** Optional rail item id to deep-link to (history / marketplace / settings / tools). */
   deepLink?: 'settings' | 'marketplace' | 'tools' | 'history';
 }
+
+/**
+ * Self-improving-loadout nudge for the Marketplace screen. Each insight
+ * carries an optional in-place action — usually a narrower selectedSkills
+ * value the renderer can apply via the existing setMarketplaceBundleSkills
+ * IPC without a new write path.
+ */
+export interface LoadoutInsight {
+  id: string;
+  severity: 'info' | 'warn';
+  title: string;
+  body: string;
+  action?: LoadoutInsightAction;
+}
+
+/**
+ * The single supported action in v1 is "prune the bundle's selectedSkills
+ * down to a flat list of skills that have actually fired". Future
+ * variants (promote-to-global, reset-to-recommended) would add tagged
+ * union members here.
+ */
+export interface LoadoutInsightAction {
+  kind: 'prune-idle-skills';
+  /** Identifies the subscription to update. */
+  sourceId: string;
+  bundleId: string;
+  /** Scope: 'global' uses the marketplace sentinel; otherwise a real projectId. */
+  scope: string;
+  /** Skills to keep — the renderer passes this to setSubscriptionSkills as the flat-list form. */
+  keepSkillIds: string[];
+  /** Skills that would be removed — surfaced in the button's tooltip / confirmation. */
+  pruneSkillIds: string[];
+}

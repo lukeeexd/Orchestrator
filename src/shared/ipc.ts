@@ -60,6 +60,7 @@ export const IpcChannels = {
   MarketplaceReadSkill: 'marketplace:readSkill',
   MarketplaceResolveLoadout: 'marketplace:resolveLoadout',
   MarketplaceListFireCounts: 'marketplace:listFireCounts',
+  MarketplaceGetLoadoutInsights: 'marketplace:getLoadoutInsights',
   MarketplaceSetSkills: 'marketplace:setSkills',
   MarketplaceGetChangelog: 'marketplace:getChangelog',
   MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
@@ -735,6 +736,14 @@ export interface OrchestratorApi {
   listMarketplaceFireCounts: (
     projectId: string,
   ) => Promise<MarketplaceSkillFireCount[]>;
+  /**
+   * Self-improving-loadout nudges over the active project's
+   * subscriptions + cross-project fire data. Recomputed on every call;
+   * cheap (a handful of DB reads + an in-memory join).
+   */
+  getMarketplaceLoadoutInsights: (
+    projectId: string,
+  ) => Promise<import('./types').LoadoutInsight[]>;
   /**
    * Set the per-skill subset for a subscription. Three forms:
    *   - `null` — all skills load for every enabled role (default).
