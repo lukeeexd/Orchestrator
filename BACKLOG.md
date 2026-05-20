@@ -185,9 +185,17 @@ higher creativity.
   opens a modal (name + description + tags + preview) that captures
   the currently-edited rows. Cornerstone for P11 + P17.
 
-- **P2.** `[ ]` **Codebase Onboarding preset** — one-shot researcher on first
-  workspace open; produces `WORKSPACE.md`; Director auto-receives it as
-  context. Banner offer + "Re-run onboarding" in workspace-pill dropdown.
+- **P2.** `[x]` **Codebase Onboarding preset** — shipped 2026-05-20 (`c40f91d`).
+  Banner at the top of the agents pane appears when the active project's
+  workspace has no `WORKSPACE.md` and the banner hasn't been dismissed
+  for that project. "Run onboarding" → invokes the existing
+  `builtin-codebase-onboarding` template (shipped with P1) via
+  `window.api.useTemplate`, which synthesises a Director plan message
+  → user accepts the PlanCard → researcher spawns. New
+  `AppHasWorkspaceMd` IPC channel does the file-exists check
+  main-side. "Skip" persists per-project via localStorage. Out of
+  scope: "Re-run onboarding" affordance on the workspace pill (next
+  iteration if needed).
 
 - **P3.** `[x]` **Spend Optimizer Panel** — shipped 2026-05-20 (`08260cf`).
   Recommendations section on Spend screen between Totals and the daily
