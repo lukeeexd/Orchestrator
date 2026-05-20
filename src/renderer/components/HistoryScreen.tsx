@@ -384,14 +384,9 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
                         });
                       }}
                       title="Save this run's task as a reusable template"
-                      style={{
-                        width: 18,
-                        height: 18,
-                        marginLeft: 6,
-                        opacity: 0.6,
-                      }}
+                      style={{ width: 22, height: 22, marginLeft: 6 }}
                     >
-                      <Icon name="templates" size={11} />
+                      <Icon name="templates" size={13} />
                     </button>
                     {/* P12 — generate a CHANGELOG.md entry from recent git state. */}
                     <button
@@ -405,14 +400,9 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
                         distilling.kind === 'changelog'
                       }
                       title="Generate a CHANGELOG.md entry from recent workspace git state (spawns a one-shot researcher)"
-                      style={{
-                        width: 18,
-                        height: 18,
-                        marginLeft: 4,
-                        opacity: 0.6,
-                      }}
+                      style={{ width: 22, height: 22, marginLeft: 2 }}
                     >
-                      <Icon name="file" size={11} />
+                      <Icon name="file" size={13} />
                     </button>
                     {/* P16 — narrative recap of this row's run. */}
                     <button
@@ -426,14 +416,9 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
                         distilling.kind === 'recap'
                       }
                       title="Generate a 3-paragraph recap of this run (spawns a one-shot researcher with the task + result already in its prompt)"
-                      style={{
-                        width: 18,
-                        height: 18,
-                        marginLeft: 4,
-                        opacity: 0.6,
-                      }}
+                      style={{ width: 22, height: 22, marginLeft: 2 }}
                     >
-                      <Icon name="logs" size={11} />
+                      <Icon name="logs" size={13} />
                     </button>
                     {r.forkedFromName && (
                       <span
