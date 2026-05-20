@@ -163,10 +163,14 @@ higher creativity.
 
 ### Product features
 
-- **P1.** `[ ]` **Workflow Templates** — fills the existing `Templates` rail
-  placeholder. Library of named Director plans (Ship a feature / TDD bug fix
-  / Security audit / Onboarding) loadable into the composer. Cornerstone for
-  P11 + P17 below.
+- **P1.** `[x]` **Workflow Templates** — shipped 2026-05-20 (`eb9c818`).
+  Templates rail item is now a real screen backed by a `templates`
+  table (migration v20). Four built-ins seeded on boot (Ship a feature,
+  TDD bug fix, Security audit, Codebase onboarding). "Use template"
+  synthesises a Director chat message with `plan: rows` so the existing
+  PlanCard handles edit/spawn. "Save as template" button on PlanCard
+  opens a modal (name + description + tags + preview) that captures
+  the currently-edited rows. Cornerstone for P11 + P17.
 
 - **P2.** `[ ]` **Codebase Onboarding preset** — one-shot researcher on first
   workspace open; produces `WORKSPACE.md`; Director auto-receives it as
@@ -257,7 +261,7 @@ higher creativity.
 If picking the next 3 slices off this list, the data favours:
 
 1. ~~**S1** — marketplace.ts split~~ — shipped 2026-05-20, see commit `3f850a5`.
-2. **P1** — Workflow Templates (unblocks 2 follow-ups; visible UI win)
+2. ~~**P1** — Workflow Templates~~ — shipped 2026-05-20, see commit `eb9c818`.
 3. **S2** — IPC split + zod (enables every future per-domain feature to
    land in a clean module instead of widening the monolith)
 
