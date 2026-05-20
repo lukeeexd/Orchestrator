@@ -225,8 +225,13 @@ higher creativity.
 
 ### Smaller follow-ups (mostly depend on P1)
 
-- **P11.** `[ ]` **Save run as Runbook** — button on Runs screen turns
-  successful sessions into reusable Workflow Templates. Depends on P1.
+- **P11.** `[x]` **Save run as Runbook** — shipped 2026-05-20 (`2990921`).
+  Per-row Templates icon on the History list captures one agent's
+  (role, name, task) as a 1-row Template via the existing
+  SaveTemplateDialog. Tagged `runbook` by default; name prefilled
+  with `<role>: <first 60 chars of task>`. Whole-session multi-row
+  capture is a future P11.1 (needs either a `planId` field on
+  agents or fuzzy timestamp grouping).
 
 - **P12.** `[ ]` **Changelog generator from session** — button on Runs;
   one-shot researcher reads diff, emits a `CHANGELOG.md` entry, lands in a
