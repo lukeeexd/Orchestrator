@@ -20,6 +20,7 @@ import {
 import { estimateCost } from '../../shared/rates';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';
+import { buildHandoffPayload } from './handoffPayload';
 import { readSettings } from '../settings';
 import * as director from '../director/runner';
 import * as persistence from '../persistence';
@@ -1162,11 +1163,17 @@ async function consumeQuery(
         // spawned, or redirected. Director sees the live fleet block on each
         // turn and can decide whether to comment briefly or stay quiet.
         if (entry) {
+          // P14: build a structured handoff payload from the agent's
+          // accumulated log + the CLI's final result message before
+          // notifying the Director. The Director then sees evidence
+          // (files touched, test counts, todos, errors) as a fenced
+          // JSON block on its next turn, not just prose.
           const summary = result.result ?? '';
+          const payload = buildHandoffPayload(entry.agent, summary);
           director.notifyAgentDone(
             entry.agent.projectId,
             entry.agent.name,
-            summary,
+            payload,
           );
         }
       } else {

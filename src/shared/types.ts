@@ -355,6 +355,36 @@ export interface LoadoutInsight {
 }
 
 /**
+ * Structured-handoff evidence summarising what an agent did before
+ * the Director sees the next turn. Computed from the agent's log
+ * lines + the CLI's final result message. Embedded as a fenced JSON
+ * block in the [handoff] message body so the Director can reason
+ * about machine-readable facts rather than parsing prose.
+ *
+ * All fields are present even when empty (`files_touched: []`,
+ * `tests_run: null`, etc) — keeps the JSON shape stable for any
+ * downstream consumer.
+ */
+export interface HandoffPayload {
+  /** The agent's final prose summary (the CLI's `result` field). May be empty. */
+  summary: string;
+  /** Workspace-relative paths the agent wrote to or edited, deduped. */
+  files_touched: string[];
+  /** Best-effort tally from Bash tool_use + result text. Null when we couldn't infer counts. */
+  tests_run: TestsRunSummary | null;
+  /** TODO / "next step" / "follow-up" lines the agent surfaced in its own prose. */
+  todos: string[];
+  /** Errors logged during the run. Up to 5; truncated for readability. */
+  errors: string[];
+}
+
+export interface TestsRunSummary {
+  pass: number;
+  fail: number;
+  skip: number;
+}
+
+/**
  * The single supported action in v1 is "prune the bundle's selectedSkills
  * down to a flat list of skills that have actually fired". Future
  * variants (promote-to-global, reset-to-recommended) would add tagged

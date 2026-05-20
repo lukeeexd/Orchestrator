@@ -146,10 +146,24 @@ class DirectorSession {
     });
   }
 
-  notifyAgentDone(agentName: string, summary: string): void {
-    const body = `[handoff] Agent ${agentName} completed. ${
-      summary ? 'Summary: ' + summary : 'No summary.'
-    }`;
+  notifyAgentDone(
+    agentName: string,
+    payload: import('../../shared/types').HandoffPayload,
+  ): void {
+    // P14: structured handoff. The Director's queued [handoff] body
+    // carries machine-readable evidence as a fenced JSON block under
+    // a stable label so the Director can reason about facts (which
+    // files changed, did the tests pass, are there explicit todos)
+    // instead of parsing prose. The leading prose line stays so the
+    // body is still readable when surfaced verbatim somewhere.
+    const proseSummary = payload.summary
+      ? `Summary: ${payload.summary}`
+      : 'No summary.';
+    const body =
+      `[handoff] Agent ${agentName} completed. ${proseSummary}\n\n` +
+      '```json handoff-payload\n' +
+      JSON.stringify(payload, null, 2) +
+      '\n```';
     this.pushMessage({
       id: randomUUID(),
       projectId: this.projectId,
@@ -581,9 +595,9 @@ export function sendFromUser(
 export function notifyAgentDone(
   projectId: string,
   agentName: string,
-  summary: string,
+  payload: import('../../shared/types').HandoffPayload,
 ): void {
-  getSession(projectId).notifyAgentDone(agentName, summary);
+  getSession(projectId).notifyAgentDone(agentName, payload);
 }
 
 export function notifySystem(projectId: string, body: string): void {

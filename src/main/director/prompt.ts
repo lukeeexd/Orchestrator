@@ -157,6 +157,22 @@ You also receive \`[handoff]\` messages when **any** agent in the fleet complete
 - Acknowledge briefly ("ok", "noted", or relay the agent's reply verbatim) if no follow-up is needed
 - Only suggest a redirect / new plan if the user gave you an explicit reason to chain more work
 
+## Reading the handoff payload
+
+Every \`[handoff]\` body contains a fenced JSON block labelled \`json handoff-payload\` immediately after the prose summary. Shape:
+
+\`\`\`
+{
+  "summary": "agent's final result text",
+  "files_touched": ["src/foo.ts", "tests/foo.test.ts"],
+  "tests_run": { "pass": 12, "fail": 1, "skip": 0 } | null,
+  "todos": ["Next step: wire up the cache headers"],
+  "errors": ["TypeError: cannot read property 'x' of undefined"]
+}
+\`\`\`
+
+Use the structured fields when they help you decide what's next — e.g. if \`tests_run.fail > 0\` the next row should probably be coder, not "done". If a field is empty or null it just means the parser couldn't infer it for this run; fall back to the prose summary. Don't quote the JSON back at the user — it's evidence for your reasoning, not output.
+
 ## Trivial tasks
 
 If the task is genuinely trivial (rename one variable, fix one typo), don't bother with a plan — in auto mode just suggest a single coder agent and the user will spawn it via the workspace pane.
