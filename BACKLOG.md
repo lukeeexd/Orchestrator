@@ -243,10 +243,18 @@ higher creativity.
   loadout-drift reset are valid P6.1 follow-ups; v1 ships the
   highest-signal rule.
 
-- **P7.** `[ ]` **Marketplace source security audit** — static heuristic
-  audit on new GitHub source subscription (network calls, fs writes outside
-  workspace, credential-store access). Red/yellow/green per skill before
-  user confirms. Default source skips the check.
+- **P7.** `[x]` **Marketplace source security audit** — shipped 2026-05-20 (`b6e5a4f`).
+  New `src/main/skillAudit.ts` walks every SKILL.md in a freshly-added
+  non-default source and pattern-matches against 13 regex defs across
+  four categories: network (curl/wget/fetch + exfil services),
+  credentials (gh-auth/aws/keychain/1password/sensitive-env),
+  fs-escape (home/appdata/tmp/.ssh), and eval (eval-exec/pipe-to-sh).
+  Findings surface in a `SourceAuditModal` after AddSource succeeds;
+  user picks Keep or Remove. Default source skips audit (vetted seed).
+  Audit IS NOT a sandbox — informational only. Per-pattern dedupe
+  per skill keeps the modal readable. Out of scope: auditing
+  non-markdown files inside skill dirs (v1.1); per-pattern user
+  allow-list ("don't show this again").
 
 - **P8.** `[x]` **Focused-fix quick spawn** — shipped 2026-05-20 (`cd09cff`).
   "Focused fix" button on AgentsPane next to "New agent" opens a tight
