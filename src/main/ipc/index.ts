@@ -28,15 +28,19 @@ import { registerMarketplaceHandlers } from './marketplace';
 export function registerIpcHandlers(): void {
   const ctx: IpcContext = { broadcast };
 
-  registerAppHandlers(ctx);
+  // Modules without state-change broadcasts skip the ctx argument
+  // entirely. The asymmetry is intentional — the unused arg would just
+  // be lint noise (the `_unused` convention isn't honoured here since
+  // the eslint config doesn't set argsIgnorePattern).
+  registerAppHandlers();
   registerSettingsHandlers(ctx);
-  registerMiscHandlers(ctx);
+  registerMiscHandlers();
   registerTemplatesHandlers(ctx);
   registerProjectsHandlers(ctx);
   // agents.ts returns the sinks so director.ts can reuse them when its
   // DirectorAcceptPlan handler triggers spawns directly.
   const agentSinks = registerAgentsHandlers(ctx);
-  registerAttachmentsHandlers(ctx);
+  registerAttachmentsHandlers();
   registerDirectorHandlers(ctx, agentSinks);
   registerMarketplaceHandlers(ctx);
 }

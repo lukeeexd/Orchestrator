@@ -5,11 +5,10 @@ import {
 } from '../../shared/ipc';
 import { getCliStatus } from '../cli/status';
 import { settingsFilePath, writeSettings } from '../settings';
-import type { IpcContext } from './_shared';
 
 const startedAt = Date.now();
 
-export function registerAppHandlers(_ctx: IpcContext): void {
+export function registerAppHandlers(): void {
   ipcMain.handle(IpcChannels.AppPing, (): AppPingResponse => {
     return { ok: true, version: app.getVersion(), startedAt };
   });

@@ -12,9 +12,8 @@ import {
   allowAttachment,
   isAttachmentAllowed,
 } from '../security/attachments';
-import type { IpcContext } from './_shared';
 
-export function registerAttachmentsHandlers(_ctx: IpcContext): void {
+export function registerAttachmentsHandlers(): void {
   ipcMain.handle(IpcChannels.AttachmentPick, async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win) return { attachments: [] };

@@ -5,7 +5,6 @@ import { listHistory } from '../history';
 import { listSlashCommands } from '../commands';
 import { listSkills, writeSkill } from '../skills';
 import { quitAndInstallUpdate } from '../updater';
-import type { IpcContext } from './_shared';
 
 /**
  * Single-channel handlers that don't justify their own module —
@@ -13,7 +12,7 @@ import type { IpcContext } from './_shared';
  * to the underlying module; grouping them keeps the file tree from
  * sprawling.
  */
-export function registerMiscHandlers(_ctx: IpcContext): void {
+export function registerMiscHandlers(): void {
   ipcMain.handle(
     IpcChannels.SpendGet,
     (): import('../../shared/types').SpendSummary => getSpendSummary(),
