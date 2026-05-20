@@ -58,14 +58,27 @@ attribution), `index.ts` (75, barrel re-export preserving the public API
 verbatim). No behavior change; both `adbe50c` (subset cache) and `3d4c308`
 (path-traversal guard) preserved intact in their new homes.
 
-### S2. `[ ]` IPC split + runtime schema validation
+### S2. `[x]` IPC split + runtime schema validation — shipped 2026-05-20 (`43ec3c7`)
 
-**Measurement:** `src/main/ipc.ts` (1,295) + `src/shared/ipc.ts` (800) =
-**~2,100 lines of contract surface with zero runtime validation**.
+**Measurement:** `src/main/ipc.ts` was 1,383 lines (had grown past the
+1,295 baseline since the templates work), with zero runtime validation
+on a 60+ channel contract.
 
-**Rationale:** TS types exist on both sides but nothing enforces them at
-runtime — a renderer→main shape drift would surface as a confusing TypeError
-deep in a handler rather than a loud boundary error.
+**Rationale:** TS types caught shape drift at compile time but a
+malformed call from any tool surfaced as a confusing TypeError deep
+inside a handler instead of a loud boundary error.
+
+**Shipped as:** new `src/main/ipc/` directory with 12 focused files —
+`_shared.ts` (broadcast + `validated()` helper), `_schemas.ts` (zod
+schemas), 9 per-domain handler modules (`app`, `settings`, `misc`,
+`templates`, `projects`, `agents`, `attachments`, `director`,
+`marketplace`), and `index.ts` (the barrel coordinating them).
+Largest module is now `marketplace.ts` at 444 lines.
+
+Runtime validation via zod on the 8 high-value object-payload channels
+(spawn, redirect, fork, acceptPlan, template create/update, settings
+set). Simple multi-arg channels stay TS-only. Added zod 4.4.3 as a
+prod dep (~13 KB, main-only).
 
 **Sketch:** (a) split `src/main/ipc.ts` by domain (auth / agents / marketplace
 / mcp / spend / runs); (b) add `zod` (or `valibot`) schemas on each IPC channel
@@ -262,8 +275,14 @@ If picking the next 3 slices off this list, the data favours:
 
 1. ~~**S1** — marketplace.ts split~~ — shipped 2026-05-20, see commit `3f850a5`.
 2. ~~**P1** — Workflow Templates~~ — shipped 2026-05-20, see commit `eb9c818`.
-3. **S2** — IPC split + zod (enables every future per-domain feature to
-   land in a clean module instead of widening the monolith)
+3. ~~**S2** — IPC split + zod~~ — shipped 2026-05-20, see commit `43ec3c7`.
+
+The original top-three sequencing is cleared. Suggested next slice:
+**P3** (Spend optimizer panel — uses the data we already collect) or
+**P2** (Codebase onboarding preset — visible UX, medium scope).
+**P11** (Save run as Runbook) is also unblocked by P1 and would be
+a quick win that immediately makes the Templates infrastructure
+more useful.
 
 S8 (e2e harness) is the strongest "defence" pick if the next release
 regresses on something the cadence is making hard to catch.
