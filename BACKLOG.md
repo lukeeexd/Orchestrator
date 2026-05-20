@@ -260,9 +260,16 @@ higher creativity.
   dropped decision. Spike doc only, no code yet. Read git-worktree-manager
   skill for patterns we may have missed.
 
-- **P14.** `[ ]` **Structured handoff payloads** — enrich `[handoff]`
-  messages with `{ filesTouched, testsRun, todos, errors }`. Director sees
-  structured JSON instead of free text.
+- **P14.** `[x]` **Structured handoff payloads** — shipped 2026-05-20 (`796f2ef`).
+  Each `[handoff]` body now carries a fenced `json handoff-payload` block
+  with `{ summary, files_touched, tests_run, todos, errors }`. Built from
+  the agent's accumulated log + the CLI's final result via
+  `src/main/agents/handoffPayload.ts` (regex-based parsers for pytest /
+  jest / vitest / go test patterns; tool_use events for files_touched;
+  thought-log prefix matching for todos). Director prompt updated to
+  explain the new block and how to use it ("don't quote it back, treat
+  it as evidence"). Backwards-incompat for `notifyAgentDone`'s
+  signature, but only one caller (runner.ts).
 
 - **P15.** `[ ]` **PRD mode (Director third mode)** — alongside auto /
   manual, add `prd` mode where Director reads the workspace and emits an
