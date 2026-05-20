@@ -1619,6 +1619,26 @@ function SourceSection({
   ) => Promise<MarketplaceChangelogEntry[]>;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // Per-source collapsed state, persisted via localStorage so a
+  // catalogue the user keeps folded (rarely-touched skills they
+  // don't want crowding the browse view) stays that way across
+  // reloads. Key has a stable prefix so future migrations can find
+  // it.
+  const collapseKey = `orchestrator.sourceCollapsed.${source.id}`;
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(collapseKey) === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(collapseKey, collapsed ? '1' : '0');
+    } catch {
+      /* private window / quota — collapse state resets next session, fine */
+    }
+  }, [collapseKey, collapsed]);
   const subByBundle = useMemo(() => {
     const m = new Map<string, MarketplaceSubscriptionView>();
     for (const s of subscriptions) m.set(s.bundleId, s);
@@ -1675,13 +1695,24 @@ function SourceSection({
           marginBottom: 8,
         }}
       >
+        <button
+          className="icon-btn"
+          onClick={() => setCollapsed((c) => !c)}
+          title={collapsed ? 'Expand source' : 'Collapse source'}
+          style={{ width: 20, height: 20 }}
+        >
+          <Icon name={collapsed ? 'chevron' : 'chevron-down'} size={11} />
+        </button>
         <code
           style={{
             fontSize: 12,
             color: 'var(--text)',
             background: 'transparent',
             padding: 0,
+            cursor: 'pointer',
           }}
+          onClick={() => setCollapsed((c) => !c)}
+          title="Click to toggle"
         >
           {source.repo}
         </code>
@@ -1808,7 +1839,19 @@ function SourceSection({
         </div>
       )}
 
-      {bundles.length === 0 ? (
+      {collapsed ? (
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--muted)',
+            paddingLeft: 28,
+            fontStyle: 'italic',
+          }}
+        >
+          {bundles.length} bundle{bundles.length === 1 ? '' : 's'}
+          {installedCount > 0 ? `, ${installedCount} installed` : ''} — hidden
+        </div>
+      ) : bundles.length === 0 ? (
         <div className="inline-empty" style={{ padding: 14 }}>
           {source.lastSyncAt
             ? 'No bundles found in this source.'
