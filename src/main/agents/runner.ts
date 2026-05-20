@@ -359,12 +359,6 @@ async function runFork(
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
   try {
-    const role = ROLES[entry.agent.role];
-    const effectiveModel = entry.agent.model;
-    const effectiveEffort = entry.agent.effort || DEFAULT_EFFORT;
-    const resolved = resolveModel(effectiveModel);
-    const effectiveTools = resolveTools(entry.agent.role, entry.agent.projectId);
-
     // Forks already inherit their parent's stored provider in
     // forkAgent. Honour that here rather than re-reading project, so
     // a fork of an overridden-provider parent stays consistent even
@@ -385,53 +379,23 @@ ${task}`;
       msg: `Forked from ${entry.agent.forkedFromName ?? 'unknown'} (parent session ${parentSessionId})`,
     });
 
-    const q =
-      provider === 'codex'
-        ? runCodexQuery({
-            cwd: entry.agent.workspace,
-            env,
-            prompt: `[role: ${role.label}]\n${role.systemPrompt}\n\n---\n\n${prompt}`,
-            model: effectiveModel,
-            effort: effectiveEffort,
-            resume: parentSessionId,
-            forkSession: true,
-            abortController: controller,
-          })
-        : runClaudeQuery({
-            cwd: entry.agent.workspace,
-            env,
-            prompt,
-            ...(prep.images.length > 0 ? { images: prep.images } : {}),
-            ...(prep.documents.length > 0
-              ? { documents: prep.documents }
-              : {}),
-            ...((p) => (p ? { mcpConfigPath: p } : {}))(
-              getMcpConfigPath(entry.agent.projectId),
-            ),
-            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
-              pluginDirsForProject(
-                entry.agent.projectId,
-                entry.agent.role,
-              ),
-            ),
-            abortController: controller,
-            resume: parentSessionId,
-            forkSession: true,
-            agent: 'main',
-            agents: {
-              main: {
-                description: `${role.label} for the Orchestrator app`,
-                prompt: buildSystemPromptFor(
-                  entry.agent.role,
-                  entry.agent.projectId,
-                ),
-                tools: effectiveTools,
-                model: resolved.model,
-                effort: effectiveEffort,
-              },
-            },
-            betas: resolved.betas,
-          });
+    const effectiveModel = entry.agent.model;
+    const effectiveEffort = entry.agent.effort || DEFAULT_EFFORT;
+
+    const q = buildQuery({
+      agent: entry.agent,
+      prompt,
+      prep,
+      provider,
+      model: effectiveModel,
+      effort: effectiveEffort,
+      env,
+      controller,
+      resume: parentSessionId,
+      forkSession: true,
+      sinks,
+      agentId,
+    });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
@@ -458,15 +422,16 @@ async function run(
     // spawnAgent and this point). The fallback respects project provider
     // and validates the stored model id against it.
     const entry = registry.get(agentId);
+    if (!entry) return;
     // Honour the per-agent provider override stored at spawn time;
     // fall back to the project's provider for agents persisted before
     // schema v13.
     const runProvider: Provider =
-      entry?.agent.provider ??
+      entry.agent.provider ??
       getProject(req.projectId)?.provider ??
       'claude';
     const storedAgentModel =
-      entry?.agent.model && modelMatchesProvider(entry.agent.model, runProvider)
+      entry.agent.model && modelMatchesProvider(entry.agent.model, runProvider)
         ? entry.agent.model
         : undefined;
     const effectiveModel =
@@ -475,31 +440,10 @@ async function run(
         ? settings.defaultModel || role.model
         : defaultModelForProvider(runProvider));
     const effectiveEffort: EffortLevel =
-      entry?.agent.effort || DEFAULT_EFFORT;
-    // Pseudo-ids like `*-1m` resolve to a base model id + a beta header.
-    const resolved = resolveModel(effectiveModel);
+      entry.agent.effort || DEFAULT_EFFORT;
     const prep = prepareAttachments(req.attachments, runProvider);
     for (const line of prep.warnLines) {
       sinks.onLog(agentId, { ts: nowTs(), kind: 'warn', msg: line });
-    }
-    // Diagnostic: surface the marketplace plugins we're about to load
-    // so the user can verify --plugin-dir is being passed correctly.
-    // Emitted only when the spawn is going to claude (codex ignores
-    // pluginDirs); skipped silently when no bundles are subscribed.
-    if (runProvider === 'claude') {
-      const pluginDirs = pluginDirsForProject(req.projectId, req.role);
-      if (pluginDirs.length > 0) {
-        const summary = pluginDirs
-          .map((p) => p.split(/[/\\]/).pop() ?? p)
-          .join(', ');
-        sinks.onLog(agentId, {
-          ts: nowTs(),
-          kind: 'note',
-          msg: `Loading ${pluginDirs.length} skill bundle${
-            pluginDirs.length === 1 ? '' : 's'
-          } via --plugin-dir: ${summary}`,
-        });
-      }
     }
     const promptWithContext = `[workspace] ${workdir}
 All file paths resolve here — your Read, Write, Edit, Glob, Grep tools all operate inside this folder. Use simple relative paths like "notes.md" (preferred) or the absolute path above.
@@ -509,48 +453,22 @@ Do NOT invent paths like /home/user/, /tmp/, or POSIX-style locations — they a
 ${prep.textInline}Task:
 ${req.task}`;
 
-    const effectiveTools = resolveTools(req.role, req.projectId);
-
-    const q =
-      runProvider === 'codex'
-        ? runCodexQuery({
-            cwd: workdir,
-            env,
-            // Codex has no inline system-prompt flag — bake the role
-            // prompt into the user prompt as a preamble so the model
-            // still sees its persona instructions.
-            prompt: `[role: ${role.label}]\n${buildSystemPromptFor(req.role, req.projectId)}\n\n---\n\n${promptWithContext}`,
-            model: effectiveModel,
-            effort: effectiveEffort,
-            abortController: controller,
-          })
-        : runClaudeQuery({
-            cwd: workdir,
-            env,
-            prompt: promptWithContext,
-            ...(prep.images.length > 0 ? { images: prep.images } : {}),
-            ...(prep.documents.length > 0
-              ? { documents: prep.documents }
-              : {}),
-            ...((p) => (p ? { mcpConfigPath: p } : {}))(
-              getMcpConfigPath(req.projectId),
-            ),
-            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
-              pluginDirsForProject(req.projectId, req.role),
-            ),
-            abortController: controller,
-            agent: 'main',
-            agents: {
-              main: {
-                description: `${role.label} for the Orchestrator app`,
-                prompt: buildSystemPromptFor(req.role, req.projectId),
-                tools: effectiveTools,
-                model: resolved.model,
-                effort: effectiveEffort,
-              },
-            },
-            betas: resolved.betas,
-          });
+    const q = buildQuery({
+      agent: entry.agent,
+      prompt: promptWithContext,
+      prep,
+      provider: runProvider,
+      model: effectiveModel,
+      effort: effectiveEffort,
+      env,
+      controller,
+      sinks,
+      agentId,
+      // Initial spawn diagnostic — fork/redirect skip this because
+      // the same plugin-dirs were already logged when the parent
+      // spawned.
+      emitPluginDirsNote: true,
+    });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
@@ -644,7 +562,6 @@ async function runRedirect(
   // The CLI call below explicitly passes both in the agent definition so
   // the resumed turn actually uses them (rather than inheriting the
   // session's original).
-  const role = ROLES[entry.agent.role];
   const effectiveModel = modelOverride || entry.agent.model;
   const effectiveEffort: EffortLevel =
     effortOverride || entry.agent.effort || DEFAULT_EFFORT;
@@ -658,8 +575,6 @@ async function runRedirect(
     registry.patch(agentId, patch);
     sinks.onPatch(agentId, patch);
   }
-  const resolved = resolveModel(effectiveModel);
-
   try {
     // Redirect uses the provider the agent originally spawned with —
     // resuming a session on a different provider doesn't make sense
@@ -685,55 +600,19 @@ ${body}`;
       }`,
     });
 
-    const q =
-      provider === 'codex'
-        ? runCodexQuery({
-            cwd: entry.agent.workspace,
-            env,
-            // Same role-prompt preamble approach as initial spawn.
-            prompt: `[role: ${role.label}]\n${buildSystemPromptFor(entry.agent.role, entry.agent.projectId)}\n\n---\n\n${prompt}`,
-            model: effectiveModel,
-            effort: effectiveEffort,
-            resume: entry.agent.sessionId,
-            abortController: controller,
-          })
-        : runClaudeQuery({
-            cwd: entry.agent.workspace,
-            env,
-            prompt,
-            ...(prep.images.length > 0 ? { images: prep.images } : {}),
-            ...(prep.documents.length > 0
-              ? { documents: prep.documents }
-              : {}),
-            ...((p) => (p ? { mcpConfigPath: p } : {}))(
-              getMcpConfigPath(entry.agent.projectId),
-            ),
-            ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
-              pluginDirsForProject(
-                entry.agent.projectId,
-                entry.agent.role,
-              ),
-            ),
-            abortController: controller,
-            resume: entry.agent.sessionId,
-            // Pass the agent config explicitly so the resumed turn uses
-            // our chosen model + tools + effort, not whatever the saved
-            // session had.
-            agent: 'main',
-            agents: {
-              main: {
-                description: `${role.label} for the Orchestrator app`,
-                prompt: buildSystemPromptFor(
-                  entry.agent.role,
-                  entry.agent.projectId,
-                ),
-                tools: resolveTools(entry.agent.role, entry.agent.projectId),
-                model: resolved.model,
-                effort: effectiveEffort,
-              },
-            },
-            betas: resolved.betas,
-          });
+    const q = buildQuery({
+      agent: entry.agent,
+      prompt,
+      prep,
+      provider,
+      model: effectiveModel,
+      effort: effectiveEffort,
+      env,
+      controller,
+      resume: entry.agent.sessionId,
+      sinks,
+      agentId,
+    });
 
     await consumeQuery(agentId, q, controller, effectiveModel, sinks);
   } finally {
@@ -936,6 +815,124 @@ function findSkillFromToolUse(
     if (matched) return matched;
   }
   return null;
+}
+
+/**
+ * Inputs to `buildQuery` — the shared core of `run` / `runFork` /
+ * `runRedirect`. The three call sites still own their own prompt
+ * preludes (workspace context for `run`, "Forked from prior session"
+ * for `runFork`, "Continuing task" for `runRedirect`); everything
+ * downstream of that — CLI selection, role-prompt preamble, plugin
+ * dirs, MCP config — is consolidated here.
+ *
+ * Before this helper existed the three flows shared ~300 lines of
+ * near-duplicate code that had already drifted (only `run` emitted
+ * the plugin-dir diagnostic; only `runFork`'s codex preamble used
+ * `role.systemPrompt` instead of `buildSystemPromptFor`, so codex
+ * forks silently dropped the project skill body).
+ */
+interface BuildQueryArgs {
+  agentId: string;
+  agent: Agent;
+  /** Prompt body the agent will see — already includes any prep.textInline + flow-specific prelude. */
+  prompt: string;
+  prep: ReturnType<typeof prepareAttachments>;
+  provider: Provider;
+  model: string;
+  effort: EffortLevel;
+  env: Record<string, string | undefined>;
+  controller: AbortController;
+  /** Session id to resume — set for redirect (agent's own) and fork (parent's). */
+  resume?: string;
+  /** True for fork (claude only — codex fork has no --json mode). */
+  forkSession?: boolean;
+  /** Emit the "Loading N skill bundles via --plugin-dir: …" note. Only `run` does. */
+  emitPluginDirsNote?: boolean;
+  sinks: RunnerSinks;
+}
+
+function buildQuery(args: BuildQueryArgs): AsyncIterable<unknown> {
+  const {
+    agent,
+    prompt,
+    prep,
+    provider,
+    model,
+    effort,
+    env,
+    controller,
+    resume,
+    forkSession,
+    emitPluginDirsNote,
+    sinks,
+    agentId,
+  } = args;
+  const role = ROLES[agent.role];
+  const resolved = resolveModel(model);
+  const effectiveTools = resolveTools(agent.role, agent.projectId);
+  const projectId = agent.projectId;
+  const systemPrompt = buildSystemPromptFor(agent.role, projectId);
+
+  if (emitPluginDirsNote && provider === 'claude') {
+    const pluginDirs = pluginDirsForProject(projectId, agent.role);
+    if (pluginDirs.length > 0) {
+      const summary = pluginDirs
+        .map((p) => p.split(/[/\\]/).pop() ?? p)
+        .join(', ');
+      sinks.onLog(agentId, {
+        ts: nowTs(),
+        kind: 'note',
+        msg: `Loading ${pluginDirs.length} skill bundle${
+          pluginDirs.length === 1 ? '' : 's'
+        } via --plugin-dir: ${summary}`,
+      });
+    }
+  }
+
+  if (provider === 'codex') {
+    return runCodexQuery({
+      cwd: agent.workspace,
+      env,
+      // Codex has no inline system-prompt flag — bake the role
+      // prompt into the user prompt as a preamble so the model
+      // still sees its persona instructions.
+      prompt: `[role: ${role.label}]\n${systemPrompt}\n\n---\n\n${prompt}`,
+      model,
+      effort,
+      ...(resume ? { resume } : {}),
+      // codex fork has no --json mode; forkAgent already gates
+      // this at the entry point so forkSession will only ever be
+      // true on the claude branch — but assert defensively.
+      ...(forkSession ? { forkSession: true } : {}),
+      abortController: controller,
+    });
+  }
+
+  return runClaudeQuery({
+    cwd: agent.workspace,
+    env,
+    prompt,
+    ...(prep.images.length > 0 ? { images: prep.images } : {}),
+    ...(prep.documents.length > 0 ? { documents: prep.documents } : {}),
+    ...((p) => (p ? { mcpConfigPath: p } : {}))(getMcpConfigPath(projectId)),
+    ...((dirs) => (dirs.length > 0 ? { pluginDirs: dirs } : {}))(
+      pluginDirsForProject(projectId, agent.role),
+    ),
+    abortController: controller,
+    ...(resume ? { resume } : {}),
+    ...(forkSession ? { forkSession: true } : {}),
+    agent: 'main',
+    agents: {
+      main: {
+        description: `${role.label} for the Orchestrator app`,
+        prompt: systemPrompt,
+        tools: effectiveTools,
+        model: resolved.model,
+        effort,
+      },
+    },
+    betas: resolved.betas,
+  });
 }
 
 async function consumeQuery(
