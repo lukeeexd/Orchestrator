@@ -141,17 +141,24 @@ users sit on stale versions indefinitely.
 self-hosted manifest (S3 + signed JSON). Try primary, fall back to secondary
 on failure. Doesn't replace the current channel — it's a hedge.
 
-### S7. `[ ]` agents/runner.ts split
+### S7. `[x]` agents/runner.ts split — shipped 2026-05-20 (post-v0.10.0)
 
-**Measurement:** `src/main/agents/runner.ts` is 1,190 lines;
-`src/main/director/runner.ts` is another 614.
+**Measurement:** `src/main/agents/runner.ts` was 1,196 lines after P14
+added the handoff-payload integration.
 
-**Rationale:** Commit `e5ab6a7` already started carving with the `buildQuery`
-helper. Natural follow-up.
+**Rationale:** Same shape as S1 (marketplace) and S2 (ipc). The
+`buildQuery` helper from commit `e5ab6a7` started the carving; this
+finished it.
 
-**Sketch:** split into event-classifier / budget-enforcer / fork-redirect /
-persistence-hooks. The hardening pass already added `agent-lock.ts` —
-follow that pattern (small, focused modules around `runner.ts`).
+**Shipped as:** new modules under `src/main/agents/` — `internal.ts`
+(217, shared helpers + budget timer), `skillFires.ts` (118,
+telemetry), `query.ts` (419, buildQuery + consumeQuery — the heart),
+`spawn.ts` (192), `fork.ts` (193), `redirect.ts` (162), `abort.ts`
+(28). `runner.ts` shrinks to a 27-line barrel preserving the public
+API (spawnAgent / forkAgent / redirectAgent / abortAgent /
+awaitCompletion / RunnerSinks / registry namespace). Largest module
+is now `query.ts` at 419 — well under project_architect's 500-line
+threshold. No behaviour change; tsc clean.
 
 ### S8. `[ ]` End-to-end test harness
 
