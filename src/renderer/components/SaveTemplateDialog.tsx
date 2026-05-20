@@ -21,6 +21,12 @@ interface Props {
   rows: PlanRow[];
   /** Surfaced in the dialog as a read-only hint; user can change post-save. */
   mode: DirectorMode;
+  /** Optional starter text for the Name field. The user can edit before saving. */
+  prefillName?: string;
+  /** Optional starter text for the Description field. */
+  prefillDescription?: string;
+  /** Optional starter tags (comma-joined into the Tags field). */
+  prefillTags?: string[];
   onSave: (input: {
     name: string;
     description: string;
@@ -30,10 +36,18 @@ interface Props {
   onCancel: () => void;
 }
 
-export function SaveTemplateDialog({ rows, mode, onSave, onCancel }: Props) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [tagsRaw, setTagsRaw] = useState('');
+export function SaveTemplateDialog({
+  rows,
+  mode,
+  prefillName,
+  prefillDescription,
+  prefillTags,
+  onSave,
+  onCancel,
+}: Props) {
+  const [name, setName] = useState(prefillName ?? '');
+  const [description, setDescription] = useState(prefillDescription ?? '');
+  const [tagsRaw, setTagsRaw] = useState((prefillTags ?? []).join(', '));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
