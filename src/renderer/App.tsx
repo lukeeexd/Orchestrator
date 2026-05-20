@@ -28,6 +28,8 @@ import { ToolsScreen } from './components/ToolsScreen';
 import { MarketplaceScreen } from './components/MarketplaceScreen';
 import { SpendScreen } from './components/SpendScreen';
 import { HistoryScreen } from './components/HistoryScreen';
+import { TemplatesScreen } from './components/TemplatesScreen';
+import { SaveTemplateDialog } from './components/SaveTemplateDialog';
 import { CliMissingGate } from './components/CliMissingGate';
 import type { BuiltinAction } from '../shared/builtinCommands';
 import {
@@ -70,6 +72,11 @@ export function App() {
     false,
   );
   const [showNewProject, setShowNewProject] = useState(false);
+  // Rows captured when the user clicks "Save as template" on a PlanCard.
+  // Set → SaveTemplateDialog opens; null → closed.
+  const [saveTemplateRows, setSaveTemplateRows] = useState<PlanRow[] | null>(
+    null,
+  );
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [agentCountByProject, setAgentCountByProject] = useState<
     Record<string, number>
@@ -478,6 +485,7 @@ export function App() {
               }}
               onSend={send}
               onSpawnPlan={spawnPlan}
+              onSaveAsTemplate={(rows) => setSaveTemplateRows(rows)}
               onWipe={async () => {
                 if (activeProjectId)
                   await window.api.wipeDirector(activeProjectId);
@@ -592,6 +600,11 @@ export function App() {
               setActive('agents');
             }}
           />
+        ) : active === 'templates' ? (
+          <TemplatesScreen
+            projectId={activeProjectId}
+            onTemplateUsed={() => setActive('agents')}
+          />
         ) : (
           <PlaceholderScreen
             {...(active === 'agents'
@@ -630,6 +643,24 @@ export function App() {
             setShowNewProject(false);
           }}
           onCancel={() => setShowNewProject(false)}
+        />
+      )}
+      {saveTemplateRows && (
+        <SaveTemplateDialog
+          rows={saveTemplateRows}
+          mode={mode}
+          onCancel={() => setSaveTemplateRows(null)}
+          onSave={async (input) => {
+            const created = await window.api.createTemplate({
+              name: input.name,
+              description: input.description,
+              mode: input.mode,
+              tags: input.tags,
+              rows: saveTemplateRows,
+            });
+            setSaveTemplateRows(null);
+            return created;
+          }}
         />
       )}
       {confirmDeleteId &&

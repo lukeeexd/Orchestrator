@@ -179,6 +179,28 @@ export type DirectorMode = 'auto' | 'manual';
 
 export type DirectorWho = 'user' | 'director' | 'system';
 
+/**
+ * A reusable Director plan. Surfaced in the Templates rail item;
+ * picking one synthesises a plan message so the existing PlanCard
+ * editor handles spawn / edit / drop rows the same way as a
+ * Director-emitted plan.
+ */
+export interface Template {
+  id: string;
+  name: string;
+  description: string;
+  /** Director mode the template was authored against — hint only; the user can change mode before spawning. */
+  mode: DirectorMode;
+  /** Short labels for filtering ("refactor", "tdd", "security", "onboarding", …). */
+  tags: string[];
+  /** PlanRow[] the runner spawns when the user accepts. */
+  rows: PlanRow[];
+  /** True for the four seeded defaults — the UI hides delete on these. */
+  builtin: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface AttachmentRef {
   path: string;
   name: string;

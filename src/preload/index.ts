@@ -361,6 +361,30 @@ const api: OrchestratorApi = {
       error?: string;
     }>,
 
+  listTemplates: () =>
+    ipcRenderer.invoke(IpcChannels.TemplatesList) as Promise<
+      import('../shared/types').Template[]
+    >,
+  createTemplate: (input) =>
+    ipcRenderer.invoke(IpcChannels.TemplatesCreate, input) as Promise<
+      import('../shared/types').Template
+    >,
+  updateTemplate: (id, patch) =>
+    ipcRenderer.invoke(IpcChannels.TemplatesUpdate, id, patch) as Promise<{
+      ok: boolean;
+      template?: import('../shared/types').Template;
+    }>,
+  deleteTemplate: (id) =>
+    ipcRenderer.invoke(IpcChannels.TemplatesDelete, id) as Promise<{
+      ok: boolean;
+    }>,
+  useTemplate: (projectId, templateId) =>
+    ipcRenderer.invoke(IpcChannels.TemplatesUse, projectId, templateId) as Promise<{
+      ok: boolean;
+      message?: import('../shared/types').DirectorMessage;
+      error?: string;
+    }>,
+
   restartToUpdate: () =>
     ipcRenderer.invoke(IpcChannels.UpdaterRestart) as Promise<void>,
   onUpdateDownloaded: (cb) =>

@@ -12,6 +12,7 @@ import { setCliStatus } from './cli/status';
 import { setupAutoUpdater } from './updater';
 import { cleanupPastedImagesAtStart, pasteTempDir } from './attachments';
 import * as marketplace from './marketplace';
+import { seedBuiltins as seedBuiltinTemplates } from './templates';
 
 if (started) {
   app.quit();
@@ -128,6 +129,9 @@ app.whenReady().then(async () => {
       defaultBranch: 'main',
     });
     void syncStaleMarketplaceSources();
+    // Idempotent — INSERT OR IGNORE; runs on every boot to make sure
+    // the built-ins are present after a fresh install / v20 migration.
+    seedBuiltinTemplates();
     createWindow();
 
     app.on('activate', () => {

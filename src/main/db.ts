@@ -324,6 +324,38 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 20,
+    up: (db) => {
+      // Workflow templates: named, reusable Director plans. The user
+      // picks one in the Templates rail item and the rows land as a
+      // synthetic director message — the existing PlanCard then drives
+      // edit + spawn the same way a Director-emitted plan does.
+      //
+      // `mode` records the Director mode the template was authored
+      // against ('auto' or 'manual'); the renderer can use it as a
+      // hint when injecting the synthesised plan message.
+      // `tags` is a JSON array of short strings ("refactor", "tdd",
+      // "security") — searchable in the list view.
+      // `rows_json` is the JSON-encoded PlanRow[].
+      // `builtin = 1` marks the seeded templates; the UI hides the
+      // delete affordance for those so the user can't accidentally
+      // remove a default.
+      db.exec(`
+        CREATE TABLE templates (
+          id          TEXT PRIMARY KEY,
+          name        TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          mode        TEXT NOT NULL DEFAULT 'auto',
+          tags        TEXT NOT NULL DEFAULT '[]',
+          rows_json   TEXT NOT NULL,
+          builtin     INTEGER NOT NULL DEFAULT 0,
+          created_at  INTEGER NOT NULL,
+          updated_at  INTEGER NOT NULL
+        );
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

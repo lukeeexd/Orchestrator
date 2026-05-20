@@ -8,6 +8,8 @@ import {
   type PickWorkspaceResponse,
   type Settings,
   type SpawnAgentResponse,
+  type TemplateCreateRequest,
+  type TemplateUpdateRequest,
 } from '../shared/ipc';
 import type {
   Agent,
@@ -15,6 +17,7 @@ import type {
   EffortLevel,
   Project,
   SpawnAgentRequest,
+  Template,
 } from '../shared/types';
 import { readSettings, writeSettings, settingsFilePath } from './settings';
 import { getCliStatus } from './cli/status';
@@ -42,6 +45,7 @@ import {
   supportedAttachmentExtensions,
 } from './attachments';
 import * as marketplace from './marketplace';
+import * as templates from './templates';
 import {
   assertValidWorkspacePath,
   assertWorkspaceMatchesProject,
@@ -179,6 +183,91 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IpcChannels.UpdaterRestart, (): void => {
     quitAndInstallUpdate();
   });
+
+  // ───────────────────────── Workflow templates ─────────────────────────
+
+  ipcMain.handle(IpcChannels.TemplatesList, (): Template[] =>
+    templates.listTemplates(),
+  );
+
+  ipcMain.handle(
+    IpcChannels.TemplatesCreate,
+    (_event, input: TemplateCreateRequest): Template => {
+      // Defensive sanitisation: trim whitespace, drop rows missing the
+      // bare-minimum fields. The renderer's form already guards against
+      // most of this, but we don't want a hand-crafted IPC call to
+      // stash a malformed template that breaks PlanCard later.
+      const cleanedRows = input.rows
+        .filter(
+          (r) =>
+            r &&
+            typeof r.task === 'string' &&
+            r.task.trim().length > 0 &&
+            typeof r.role === 'string',
+        )
+        .map((r, idx) => ({ ...r, i: idx + 1, task: r.task.trim() }));
+      return templates.createTemplate({
+        name: input.name.trim() || 'Untitled template',
+        description: input.description?.trim(),
+        mode: input.mode,
+        tags: input.tags
+          ?.map((t) => t.trim())
+          .filter((t) => t.length > 0),
+        rows: cleanedRows,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.TemplatesUpdate,
+    (
+      _event,
+      id: string,
+      patch: TemplateUpdateRequest,
+    ): { ok: boolean; template?: Template } => {
+      const cleanedPatch: TemplateUpdateRequest = { ...patch };
+      if (patch.rows) {
+        cleanedPatch.rows = patch.rows
+          .filter(
+            (r) =>
+              r &&
+              typeof r.task === 'string' &&
+              r.task.trim().length > 0 &&
+              typeof r.role === 'string',
+          )
+          .map((r, idx) => ({ ...r, i: idx + 1, task: r.task.trim() }));
+      }
+      if (patch.name !== undefined) cleanedPatch.name = patch.name.trim();
+      const updated = templates.updateTemplate(id, cleanedPatch);
+      return updated ? { ok: true, template: updated } : { ok: false };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.TemplatesDelete,
+    (_event, id: string): { ok: boolean } => ({
+      ok: templates.deleteTemplate(id),
+    }),
+  );
+
+  ipcMain.handle(
+    IpcChannels.TemplatesUse,
+    (
+      _event,
+      projectId: string,
+      templateId: string,
+    ): { ok: boolean; message?: DirectorMessage; error?: string } => {
+      const message = templates.useTemplate(projectId, templateId);
+      if (!message) {
+        return { ok: false, error: 'Template not found.' };
+      }
+      // Broadcast so the renderer's DirectorEventMessage subscriber
+      // appends it to the live message list — same path a Director
+      // turn would take.
+      broadcast(IpcChannels.DirectorEventMessage, { projectId, message });
+      return { ok: true, message };
+    },
+  );
 
   ipcMain.handle(
     IpcChannels.AppShowSettingsFile,

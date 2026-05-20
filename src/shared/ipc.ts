@@ -76,6 +76,11 @@ export const IpcChannels = {
   CommandsList: 'commands:list',
   SkillsList: 'skills:list',
   SkillsSet: 'skills:set',
+  TemplatesList: 'templates:list',
+  TemplatesCreate: 'templates:create',
+  TemplatesUpdate: 'templates:update',
+  TemplatesDelete: 'templates:delete',
+  TemplatesUse: 'templates:use',
   UpdaterRestart: 'updater:restart',
   UpdaterEventDownloaded: 'updater:event:update-downloaded',
   // Renderer-bound streaming events:
@@ -396,6 +401,22 @@ export interface SkillEntry {
   content: string;
   hasFile: boolean;
   path: string | null;
+}
+
+export interface TemplateCreateRequest {
+  name: string;
+  description?: string;
+  mode?: import('./types').DirectorMode;
+  tags?: string[];
+  rows: PlanRow[];
+}
+
+export interface TemplateUpdateRequest {
+  name?: string;
+  description?: string;
+  mode?: import('./types').DirectorMode;
+  tags?: string[];
+  rows?: PlanRow[];
 }
 
 export interface AcceptPlanRequest {
@@ -774,6 +795,30 @@ export interface OrchestratorApi {
     key: import('./types').SkillKey,
     content: string,
   ) => Promise<{ ok: boolean; entry?: SkillEntry; error?: string }>;
+  // ───────────────────────── Workflow templates ─────────────────────────
+  /** Every template (built-ins first, then user-authored alphabetically). */
+  listTemplates: () => Promise<import('./types').Template[]>;
+  /** Create a new user-authored template from the given rows. */
+  createTemplate: (
+    input: TemplateCreateRequest,
+  ) => Promise<import('./types').Template>;
+  /** Update a user-authored template. Built-ins are read-only; returns the unchanged row. */
+  updateTemplate: (
+    id: string,
+    patch: TemplateUpdateRequest,
+  ) => Promise<{ ok: boolean; template?: import('./types').Template }>;
+  /** Delete a user-authored template. Built-ins are protected; returns ok: false. */
+  deleteTemplate: (id: string) => Promise<{ ok: boolean }>;
+  /**
+   * Synthesise a Director chat message carrying the template's plan
+   * rows. The renderer's existing PlanCard handler picks it up and the
+   * user can edit / drop rows / accept just like any Director-emitted
+   * plan. Returns the inserted message so the caller can scroll to it.
+   */
+  useTemplate: (
+    projectId: string,
+    templateId: string,
+  ) => Promise<{ ok: boolean; message?: DirectorMessage; error?: string }>;
   restartToUpdate: () => Promise<void>;
   onUpdateDownloaded: (
     cb: (p: { version: string; notes: string }) => void,

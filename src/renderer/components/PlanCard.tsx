@@ -8,9 +8,22 @@ interface Props {
   mode: DirectorMode;
   /** Receives the (possibly edited) rows the user actually wants to spawn. */
   onSpawn: (rows: PlanRow[]) => Promise<void>;
+  /**
+   * Optional capture-as-template hook. The PlanCard exposes a small
+   * "Save" button next to Spawn when this is provided; the parent
+   * handles the actual dialog + IPC. Receives the *currently edited*
+   * row set so the saved template matches what the user sees.
+   */
+  onSaveAsTemplate?: (rows: PlanRow[]) => void;
 }
 
-export function PlanCard({ rows, accepted, mode, onSpawn }: Props) {
+export function PlanCard({
+  rows,
+  accepted,
+  mode,
+  onSpawn,
+  onSaveAsTemplate,
+}: Props) {
   // Local editable copy of the plan. The Director's original proposal
   // stays on the message; this state is what the user can prune/tweak
   // before clicking Spawn. Resync if the upstream rows change (e.g. a
@@ -66,11 +79,22 @@ export function PlanCard({ rows, accepted, mode, onSpawn }: Props) {
                 edited
               </span>
             )}
+            {onSaveAsTemplate && edited.length > 0 && (
+              <button
+                className="tb-btn"
+                style={{ height: 20, marginLeft: dirty ? 6 : 'auto' }}
+                disabled={busy}
+                onClick={() => onSaveAsTemplate(edited)}
+                title="Save these rows as a reusable template"
+              >
+                Save as template
+              </button>
+            )}
             <button
               className="tb-btn primary"
               style={{
                 height: 20,
-                marginLeft: dirty ? 6 : 'auto',
+                marginLeft: onSaveAsTemplate && edited.length > 0 ? 6 : dirty ? 6 : 'auto',
               }}
               disabled={busy || edited.length === 0}
               onClick={handleSpawn}

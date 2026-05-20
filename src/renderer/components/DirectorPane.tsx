@@ -59,6 +59,8 @@ interface Props {
     attachments?: string[],
   ) => Promise<void>;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
+  /** Open the Save-as-template dialog with the currently-edited rows. */
+  onSaveAsTemplate?: (rows: PlanRow[]) => void;
   onWipe: () => Promise<void>;
   viewMode: ViewMode;
   /** Project id used to scope which `.claude/commands/` directory to load from. */
@@ -90,6 +92,7 @@ export function DirectorPane({
   onDirectorProviderChange,
   onSend,
   onSpawnPlan,
+  onSaveAsTemplate,
   onWipe,
   viewMode,
   projectId,
@@ -162,11 +165,17 @@ export function DirectorPane({
           messages={messages}
           mode={mode}
           onSpawnPlan={onSpawnPlan}
+          onSaveAsTemplate={onSaveAsTemplate}
         />
       ) : messages.length === 0 ? (
         <EmptyChat mode={mode} />
       ) : (
-        <Chat messages={messages} mode={mode} onSpawnPlan={onSpawnPlan} />
+        <Chat
+          messages={messages}
+          mode={mode}
+          onSpawnPlan={onSpawnPlan}
+          onSaveAsTemplate={onSaveAsTemplate}
+        />
       )}
 
       <Composer
@@ -306,10 +315,12 @@ function Chat({
   messages,
   mode,
   onSpawnPlan,
+  onSaveAsTemplate,
 }: {
   messages: DirectorMessage[];
   mode: DirectorMode;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
+  onSaveAsTemplate?: (rows: PlanRow[]) => void;
 }) {
   const tailRef = useRef<HTMLDivElement | null>(null);
   // M11: also pin to bottom when an existing message's body
@@ -326,7 +337,13 @@ function Chat({
   return (
     <div className="chat">
       {messages.map((m) => (
-        <Message key={m.id} message={m} mode={mode} onSpawn={onSpawnPlan} />
+        <Message
+          key={m.id}
+          message={m}
+          mode={mode}
+          onSpawn={onSpawnPlan}
+          onSaveAsTemplate={onSaveAsTemplate}
+        />
       ))}
       <div ref={tailRef} />
     </div>
@@ -337,10 +354,12 @@ function Message({
   message,
   mode,
   onSpawn,
+  onSaveAsTemplate,
 }: {
   message: DirectorMessage;
   mode: DirectorMode;
   onSpawn: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
+  onSaveAsTemplate?: (rows: PlanRow[]) => void;
 }) {
   return (
     <div className="msg">
@@ -373,6 +392,7 @@ function Message({
           accepted={message.planAccepted === true}
           mode={mode}
           onSpawn={(rows) => onSpawn(message, rows)}
+          onSaveAsTemplate={onSaveAsTemplate}
         />
       )}
       {message.redirect && (
