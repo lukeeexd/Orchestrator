@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import type { Agent, EffortLevel, Provider } from '../../shared/types';
 import { Icon } from './Icon';
 import { AgentRow } from './AgentRow';
 import { AgentStreamPanel } from './AgentStreamPanel';
 import { SpawnAgentForm } from './SpawnAgentForm';
+import { FocusedFixDialog } from './FocusedFixDialog';
 import type { ViewMode } from './TopBar';
 
 interface Props {
@@ -40,6 +42,11 @@ export function AgentsPane({
     (a) => a.status === 'running' || a.status === 'waiting',
   ).length;
 
+  // Local "focused fix" dialog state. The quick-spawn flow lives next
+  // to the regular spawn flow but is a different shape — kept local
+  // here so the parent doesn't need to thread a second spawning bit.
+  const [focusedFixOpen, setFocusedFixOpen] = useState(false);
+
   return (
     <div className="pane agents-pane">
       <div className="pane-head">
@@ -50,6 +57,13 @@ export function AgentsPane({
           </b>
         </span>
         <span className="spacer" />
+        <button
+          className="tb-btn"
+          onClick={() => setFocusedFixOpen(true)}
+          title="Skip the Director — spawn a single coder pinned to one file"
+        >
+          <Icon name="file" size={11} /> Focused fix
+        </button>
         <button className="tb-btn primary" onClick={() => setSpawning(true)}>
           <Icon name="plus" size={11} /> New agent
           <span className="kbd">⌘N</span>
@@ -120,6 +134,17 @@ export function AgentsPane({
           provider={provider}
           onCancel={() => setSpawning(false)}
           onSpawned={() => setSpawning(false)}
+        />
+      )}
+      {focusedFixOpen && (
+        <FocusedFixDialog
+          projectId={projectId}
+          workspace={workspace}
+          defaultModel={defaultModel}
+          defaultEffort={defaultEffort}
+          provider={provider}
+          onCancel={() => setFocusedFixOpen(false)}
+          onSpawned={() => setFocusedFixOpen(false)}
         />
       )}
     </div>
