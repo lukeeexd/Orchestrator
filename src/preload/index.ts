@@ -290,6 +290,11 @@ const api: OrchestratorApi = {
       IpcChannels.MarketplaceGetLoadoutInsights,
       projectId,
     ) as Promise<import('../shared/types').LoadoutInsight[]>,
+  auditMarketplaceSource: (sourceId) =>
+    ipcRenderer.invoke(
+      IpcChannels.MarketplaceAuditSource,
+      sourceId,
+    ) as Promise<import('../shared/types').SkillAuditReport[]>,
   setMarketplaceBundleSkills: (projectId, sourceId, bundleId, skills) =>
     ipcRenderer.invoke(
       IpcChannels.MarketplaceSetSkills,

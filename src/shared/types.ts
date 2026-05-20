@@ -355,6 +355,35 @@ export interface LoadoutInsight {
 }
 
 /**
+ * P7 — one entry per audited skill that triggered at least one
+ * pattern match. Empty findings → skill omitted from the report
+ * (clean skills are implied by the bundle count vs report count).
+ */
+export interface SkillAuditReport {
+  sourceId: string;
+  bundleId: string;
+  skillId: string;
+  /** Human label from frontmatter `name:`, falls back to skill id. */
+  skillName: string;
+  /** Highest severity across this skill's findings — drives the badge. */
+  worstSeverity: SkillAuditFinding['severity'];
+  findings: SkillAuditFinding[];
+}
+
+export interface SkillAuditFinding {
+  /** Pattern id ("net-curl", "cred-keychain", etc) for stable refs. */
+  patternId: string;
+  category: 'network' | 'credentials' | 'fs-escape' | 'eval';
+  severity: 'red' | 'yellow' | 'green';
+  /** One-line explanation surfaced next to the snippet. */
+  reason: string;
+  /** Representative line (trimmed, capped at 200 chars) that triggered the match. */
+  snippet: string;
+  /** Line number within SKILL.md, 1-indexed. */
+  lineNumber: number;
+}
+
+/**
  * Structured-handoff evidence summarising what an agent did before
  * the Director sees the next turn. Computed from the agent's log
  * lines + the CLI's final result message. Embedded as a fenced JSON

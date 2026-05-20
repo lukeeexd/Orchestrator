@@ -61,6 +61,7 @@ export const IpcChannels = {
   MarketplaceResolveLoadout: 'marketplace:resolveLoadout',
   MarketplaceListFireCounts: 'marketplace:listFireCounts',
   MarketplaceGetLoadoutInsights: 'marketplace:getLoadoutInsights',
+  MarketplaceAuditSource: 'marketplace:auditSource',
   MarketplaceSetSkills: 'marketplace:setSkills',
   MarketplaceGetChangelog: 'marketplace:getChangelog',
   MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
@@ -745,6 +746,15 @@ export interface OrchestratorApi {
   getMarketplaceLoadoutInsights: (
     projectId: string,
   ) => Promise<import('./types').LoadoutInsight[]>;
+  /**
+   * P7 — static heuristic audit of every SKILL.md in a freshly-synced
+   * marketplace source. Returns one report per skill that triggered
+   * at least one pattern match; clean skills are omitted. Default
+   * source returns an empty array (the seed is vetted).
+   */
+  auditMarketplaceSource: (
+    sourceId: string,
+  ) => Promise<import('./types').SkillAuditReport[]>;
   /**
    * Set the per-skill subset for a subscription. Three forms:
    *   - `null` — all skills load for every enabled role (default).
