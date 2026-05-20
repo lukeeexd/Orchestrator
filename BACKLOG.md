@@ -210,10 +210,14 @@ higher creativity.
   between "Spawn N" and "Spawn N + 2" so the user sees the extra
   rows before they fire.
 
-- **P6.** `[ ]` **Self-improving loadouts** — use v0.9 `skill_fire_counts`
-  to nudge: idle-skill unsubscribe / hot-skill promotion / loadout-drift
-  reset. Surface as "Skill insights" card on Marketplace screen, not
-  intrusive popups.
+- **P6.** `[x]` **Self-improving loadouts** — shipped 2026-05-20 (`8d5fe2f`).
+  "Skill insights" section at the top of the Marketplace rail, mirroring
+  P3's Spend recommendations panel shape. v1 rule: **prune-idle-skills**
+  — for `selectedSkills=null` subscriptions with ≥5 skills, ≥7 days old,
+  ≥30% idle, offers a one-click "Prune N idle skills" button that
+  narrows to a flat list of the firing skills. Hot-skill promotion and
+  loadout-drift reset are valid P6.1 follow-ups; v1 ships the
+  highest-signal rule.
 
 - **P7.** `[ ]` **Marketplace source security audit** — static heuristic
   audit on new GitHub source subscription (network calls, fs writes outside
