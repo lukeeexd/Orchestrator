@@ -39,18 +39,24 @@ runs, plus `tech-stack-evaluator` decision-framework application:
 - 8 prod deps, 18 dev deps (lean)
 - Total: 46,957 lines across 170 files
 
-### S1. `[ ]` Marketplace module split
+### S1. `[x]` Marketplace module split — shipped 2026-05-20 (`3f850a5`)
 
-**Measurement:** `src/main/marketplace.ts` is 1,735 lines — the largest file in
-the repo, grew there during v0.8/v0.9.
+**Measurement:** `src/main/marketplace.ts` was 1,734 lines — the largest file
+in the repo, grew there during v0.8/v0.9 and the two post-v0.9 hardening
+passes (subset cache + path-traversal guard).
 
 **Rationale:** The Code Review 2026-05-18 explicitly deferred L1 file splits.
-The data now says marketplace specifically has outgrown that decision while
-other big files have stayed proportionate.
+The data now said marketplace specifically had outgrown that decision while
+other big files stayed proportionate.
 
-**Sketch:** split into source-registry / subscription-state / loadout-resolver
-/ telemetry-attribution modules. Memory note `code_review_2026_05_18_decisions`
-captures the original deferral context.
+**Shipped as:** new `src/main/marketplace/` directory with six focused files —
+`internal.ts` (37 lines, shared helpers), `sources.ts` (714, sources + sync +
+bundles + changelog + `assertNoPathTraversal`), `subscriptions.ts` (779, subs +
+skill enumeration + plugin-dir resolution + `subsetCache` + `hashSkills`),
+`loadout.ts` (135, `resolveLoadout`), `telemetry.ts` (116, fire counts +
+attribution), `index.ts` (75, barrel re-export preserving the public API
+verbatim). No behavior change; both `adbe50c` (subset cache) and `3d4c308`
+(path-traversal guard) preserved intact in their new homes.
 
 ### S2. `[ ]` IPC split + runtime schema validation
 
@@ -250,7 +256,7 @@ higher creativity.
 
 If picking the next 3 slices off this list, the data favours:
 
-1. **S1** — marketplace.ts split (biggest measured pain, clear scope)
+1. ~~**S1** — marketplace.ts split~~ — shipped 2026-05-20, see commit `3f850a5`.
 2. **P1** — Workflow Templates (unblocks 2 follow-ups; visible UI win)
 3. **S2** — IPC split + zod (enables every future per-domain feature to
    land in a clean module instead of widening the monolith)
