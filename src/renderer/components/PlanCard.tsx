@@ -1,14 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AgentRole, DirectorMode, PlanRow } from '../../shared/types';
-
-const ROLE_TINT: Record<AgentRole, string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
+import { ROLE_TINT } from '../../shared/roles';
 
 interface Props {
   rows: PlanRow[];

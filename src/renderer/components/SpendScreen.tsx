@@ -6,25 +6,8 @@ import type {
   SpendDayBucket,
   SpendSummary,
 } from '../../shared/types';
+import { ROLE_TINT, STATUS_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
-
-const ROLE_TINT: Record<AgentRole, string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
-
-const STATUS_TINT: Record<string, string> = {
-  done: 'var(--accent)',
-  error: 'var(--error)',
-  running: 'var(--accent)',
-  waiting: 'var(--waiting)',
-  aborted: 'var(--muted)',
-  paused: 'var(--muted)',
-};
 
 function fmt$(n: number): string {
   if (n === 0) return '$0.00';

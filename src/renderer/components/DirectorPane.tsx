@@ -18,6 +18,7 @@ import type {
 import type { SlashCommand } from '../../shared/commands';
 import { applyCommandArguments } from '../../shared/commands';
 import { BUILTIN_COMMANDS } from '../../shared/builtinCommands';
+import { ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { AttachmentThumb } from './AttachmentThumb';
 import { PlanCard } from './PlanCard';
@@ -30,15 +31,6 @@ import {
   handleAttachmentDrop,
   handleAttachmentPaste,
 } from '../lib/attachmentDataTransfer';
-
-const ROLE_TINT: Record<Agent['role'], string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
 
 interface Props {
   width: number;

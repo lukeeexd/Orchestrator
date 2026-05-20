@@ -1,15 +1,7 @@
 import type { Agent } from '../../shared/types';
+import { ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { LogLineRow } from './LogLineRow';
-
-const ROLE_TINT: Record<Agent['role'], string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
 
 interface Props {
   agent: Agent;

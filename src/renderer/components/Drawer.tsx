@@ -1,24 +1,14 @@
 import { useState } from 'react';
 import type {
   Agent,
-  AgentRole,
   EffortLevel,
   Provider,
 } from '../../shared/types';
-import { ROLES } from '../../shared/roles';
+import { ROLES, ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { LogLineRow } from './LogLineRow';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
-
-const ROLE_TINT: Record<AgentRole, string> = {
-  pm: '#4ade80',
-  researcher: '#60a5fa',
-  coder: '#c084fc',
-  qa: '#fbbf24',
-  devops: '#f97316',
-  security: '#f87171',
-};
 
 const CONTEXT_CAP_DEFAULT = 200_000;
 const CONTEXT_CAP_1M = 1_000_000;
