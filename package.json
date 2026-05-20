@@ -43,6 +43,7 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "sql.js": "^1.14.1",
-    "update-electron-app": "^3.2.0"
+    "update-electron-app": "^3.2.0",
+    "zod": "^4.4.3"
   }
 }
