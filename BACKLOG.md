@@ -267,9 +267,12 @@ higher creativity.
   capture is a future P11.1 (needs either a `planId` field on
   agents or fuzzy timestamp grouping).
 
-- **P12.** `[ ]` **Changelog generator from session** — button on Runs;
-  one-shot researcher reads diff, emits a `CHANGELOG.md` entry, lands in a
-  copyable modal.
+- **P12.** `[x]` **Changelog generator from session** — shipped 2026-05-20 (`dc8f6e6`).
+  Per-row `file` icon button on the Runs list spawns a one-shot
+  researcher with a `git log` + `git diff` + READ-existing-CHANGELOG
+  prompt. Result lands on the spawned agent (auto-navigates) for the
+  user to copy. Doesn't modify the file — user pastes where they
+  want. Combined slice with P16.
 
 - **P13.** `[ ]` **Per-agent worktree re-spike** — re-investigate the M2
   dropped decision. Spike doc only, no code yet. Read git-worktree-manager
@@ -291,9 +294,12 @@ higher creativity.
   `orchestrator-prd` block instead of a plan. Useful for inherited
   projects.
 
-- **P16.** `[ ]` **Session recap generator** — button on Runs; one-shot
-  researcher writes a narrative recap suitable for PR descriptions or
-  teammate sharing.
+- **P16.** `[x]` **Session recap generator** — shipped 2026-05-20 (`dc8f6e6`).
+  Per-row `logs` icon button on the Runs list spawns a one-shot
+  researcher with the source row's task / status / cost / duration
+  baked into the prompt; produces a 3-paragraph recap (intent / what
+  happened / loose ends). Tight terminal tone; no git lookup needed.
+  Combined slice with P12.
 
 - **P17.** `[ ]` **Dependency auditor preset for security role** —
   one-click "Audit deps" button on security spawn form; runs npm/pip/cargo
