@@ -10,6 +10,64 @@ import { ROLE_TINT, STATUS_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { SaveTemplateDialog } from './SaveTemplateDialog';
 
+/**
+ * P12 — Changelog generator prompt. Researcher walks recent git state
+ * in the workspace and produces a single CHANGELOG.md entry. We don't
+ * try to detect the project's existing changelog style client-side —
+ * the agent is asked to READ the file (if any) and match it.
+ */
+function buildChangelogPrompt(): string {
+  return (
+    `Produce a CHANGELOG.md entry for the recent work in this workspace.\n\n` +
+    `Steps:\n` +
+    `1. Run \`git log --since="14 days ago" --pretty="%h %s" --no-merges\` ` +
+    `to see recent commits.\n` +
+    `2. Run \`git diff HEAD~10..HEAD --stat\` (or fewer commits if the ` +
+    `repo is younger) to see file-level scope.\n` +
+    `3. If a CHANGELOG.md already exists at the workspace root, READ ` +
+    `it and match its formatting + heading style. Otherwise default to ` +
+    `Keep-a-Changelog form.\n` +
+    `4. Produce ONE entry covering the recent work. Group bullets by ` +
+    `theme (features / fixes / refactors). Two to six bullets, terse. ` +
+    `Lead with the WHY where it's non-obvious.\n\n` +
+    `Output: the markdown entry as your final result. Do NOT modify ` +
+    `CHANGELOG.md — the user wants to paste it themselves.`
+  );
+}
+
+/**
+ * P16 — Session recap prompt. Researcher turns ONE agent row's task
+ * + result into a narrative recap suitable for a PR description or
+ * teammate Slack. Context is baked into the prompt so the researcher
+ * doesn't have to chase the source agent's session id (which lives
+ * in a different CLI session anyway).
+ */
+function buildRecapPrompt(row: HistoryRow): string {
+  const truncate = (s: string, n: number) =>
+    s.length > n ? s.slice(0, n) + '…' : s;
+  return (
+    `Produce a narrative recap of a recent agent run.\n\n` +
+    `The run:\n` +
+    `- Agent: ${row.name}\n` +
+    `- Role: ${row.roleLabel} (${row.role})\n` +
+    `- Status: ${row.statusLabel}\n` +
+    `- Tokens: ${row.tokens.toLocaleString()} · Cost: $${row.cost.toFixed(2)} · ` +
+    `Duration: ${row.elapsed}\n\n` +
+    `Original task (verbatim):\n` +
+    `> ${truncate(row.task, 1200).replace(/\n/g, '\n> ')}\n\n` +
+    `Write a three-paragraph recap as your final result:\n` +
+    `  Para 1: What the agent set out to do (one sentence, no fluff).\n` +
+    `  Para 2: What it actually did — files touched, decisions made, ` +
+    `commands run. Two to four concrete sentences. If git state is ` +
+    `accessible from the workspace, cross-check claims against it.\n` +
+    `  Para 3: Loose ends, follow-ups, or anything the user should ` +
+    `verify before treating the work as done. One or two sentences.\n\n` +
+    `Tone: tight, terminal voice. No emoji. Write in the third person ` +
+    `about the work itself, not "the agent did X". Output ONLY the ` +
+    `three paragraphs.`
+  );
+}
+
 const ROLES_ALL: AgentRole[] = ['pm', 'researcher', 'coder', 'qa', 'devops', 'security'];
 const STATUSES_ALL: AgentStatus[] = [
   'running',
@@ -68,6 +126,49 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
     rows: PlanRow[];
     prefillName: string;
   } | null>(null);
+  /**
+   * P12 + P16 — Tracks an in-flight distill spawn so we can disable
+   * the row's buttons during the round-trip. Keyed by (rowId, kind)
+   * so a "changelog" click can't briefly tick the "recap" busy state
+   * on the same row.
+   */
+  const [distilling, setDistilling] = useState<
+    { rowId: string; kind: 'changelog' | 'recap' } | null
+  >(null);
+
+  /**
+   * P12 + P16 — Spawn a one-shot researcher with a tailored prompt
+   * and, on success, navigate the user to the new agent so they see
+   * the result. The workspace comes from the source row's project so
+   * the spawn lands in the right tree (the row may be from a project
+   * that's not currently active).
+   */
+  const spawnDistiller = async (
+    row: HistoryRow,
+    kind: 'changelog' | 'recap',
+  ): Promise<void> => {
+    const project = projects.find((p) => p.id === row.projectId);
+    if (!project || !project.workspace) return;
+    setDistilling({ rowId: row.id, kind });
+    try {
+      const task =
+        kind === 'changelog' ? buildChangelogPrompt() : buildRecapPrompt(row);
+      const res = await window.api.spawnAgent({
+        projectId: row.projectId,
+        role: 'researcher',
+        workspace: project.workspace,
+        task,
+      });
+      onOpenAgent(row.projectId, res.agentId);
+    } catch (e) {
+      // Spawn errors are rare (security guard / cli missing) — surface
+      // them via console; the user is about to switch screens so a
+      // toast would be lost mid-transition anyway.
+      console.error('[history] distiller spawn failed:', e);
+    } finally {
+      setDistilling(null);
+    }
+  };
 
   const load = async () => {
     setReloading(true);
@@ -291,6 +392,48 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
                       }}
                     >
                       <Icon name="templates" size={11} />
+                    </button>
+                    {/* P12 — generate a CHANGELOG.md entry from recent git state. */}
+                    <button
+                      className="icon-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void spawnDistiller(r, 'changelog');
+                      }}
+                      disabled={
+                        distilling?.rowId === r.id &&
+                        distilling.kind === 'changelog'
+                      }
+                      title="Generate a CHANGELOG.md entry from recent workspace git state (spawns a one-shot researcher)"
+                      style={{
+                        width: 18,
+                        height: 18,
+                        marginLeft: 4,
+                        opacity: 0.6,
+                      }}
+                    >
+                      <Icon name="file" size={11} />
+                    </button>
+                    {/* P16 — narrative recap of this row's run. */}
+                    <button
+                      className="icon-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void spawnDistiller(r, 'recap');
+                      }}
+                      disabled={
+                        distilling?.rowId === r.id &&
+                        distilling.kind === 'recap'
+                      }
+                      title="Generate a 3-paragraph recap of this run (spawns a one-shot researcher with the task + result already in its prompt)"
+                      style={{
+                        width: 18,
+                        height: 18,
+                        marginLeft: 4,
+                        opacity: 0.6,
+                      }}
+                    >
+                      <Icon name="logs" size={11} />
                     </button>
                     {r.forkedFromName && (
                       <span
