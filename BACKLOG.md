@@ -301,10 +301,13 @@ higher creativity.
   happened / loose ends). Tight terminal tone; no git lookup needed.
   Combined slice with P12.
 
-- **P17.** `[ ]` **Dependency auditor preset for security role** —
-  one-click "Audit deps" button on security spawn form; runs npm/pip/cargo
-  audit + CVE cross-ref + report to `SECURITY_AUDIT.md`. Promote to P1
-  template once shipped.
+- **P17.** `[x]` **Dependency auditor preset for security role** — shipped 2026-05-20 (`314634c`).
+  "Presets" row on SpawnAgentForm appears only when role=security; one
+  button ("Dependency audit") fills the task textarea with a verbatim
+  prompt covering npm/python/rust/go manifest detection, the matching
+  audit command per ecosystem, optional CVE cross-ref via WebFetch,
+  and `SECURITY_AUDIT.md` output at the workspace root. Explicit
+  "don't `npm audit fix`" — report only, fixes later.
 
 ---
 
