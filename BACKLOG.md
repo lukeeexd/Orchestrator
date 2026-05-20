@@ -189,17 +189,26 @@ higher creativity.
   workspace open; produces `WORKSPACE.md`; Director auto-receives it as
   context. Banner offer + "Re-run onboarding" in workspace-pill dropdown.
 
-- **P3.** `[ ]` **Spend Optimizer Panel** — rule-based recommendations on
-  Spend screen using existing `modelUsage` data. Role-share / cache-hit /
-  idle-skill / wallclock-outlier rules. No LLM; cheap.
+- **P3.** `[x]` **Spend Optimizer Panel** — shipped 2026-05-20 (`08260cf`).
+  Recommendations section on Spend screen between Totals and the daily
+  chart. Four rules: role-share dominance (>50% of 30d), expensive
+  single agent (>25% of 7d), failed expensive (errored agents
+  >$0.10 in 7d), idle subscription (subscribed bundle with 0 fires
+  lifetime + >7d old). Cards have optional deep-link buttons.
+  Pure rule eval main-side; no LLM.
 
 - **P4.** `[ ]` **Per-project per-role prompt overrides** — extend Tools
   screen with a Prompt tab; diff against `roles.ts` defaults; last-10
   edit history; `resolveRolePrompt(role, projectId)` in runner.
 
-- **P5.** `[ ]` **Ship Gate on plan acceptance** — checkbox on PlanCard
-  appends qa + security rows that must pass before Director receives
-  completion handoff. Hardcoded prompts; per-project persisted toggle.
+- **P5.** `[x]` **Ship Gate on plan acceptance** — shipped 2026-05-20 (`b48aa25`).
+  Checkbox in the PlanCard header next to Spawn; when on, appends a
+  qa + security row to the user-accepted plan. The synthetic rows go
+  through the existing sequential-spawn loop, so a failing gate stops
+  the chain via the per-row error handler — no new plumbing.
+  Toggle persists globally via localStorage; Spawn button switches
+  between "Spawn N" and "Spawn N + 2" so the user sees the extra
+  rows before they fire.
 
 - **P6.** `[ ]` **Self-improving loadouts** — use v0.9 `skill_fire_counts`
   to nudge: idle-skill unsubscribe / hot-skill promotion / loadout-drift
