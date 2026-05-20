@@ -47,6 +47,27 @@ jobs:
           # edit` after every release. Asking for tags explicitly fixes it.
           fetch-tags: true
 
+      - name: Force-refetch tags
+        # Belt-and-suspenders against an intermittent fetch-tags hiccup
+        # in actions/checkout@v5. v0.7.0–v0.10.0 picked up annotated tag
+        # bodies fine, but v0.11.0's run reported tagType='commit' for
+        # the firing tag — meaning the local repo had the tag as a
+        # lightweight commit-pointer instead of the annotated-tag
+        # OBJECT we pushed. The diagnostic printed
+        # `annotated-length=0` and the release notes fell through to
+        # the auto-generated commit list.
+        #
+        # An explicit `git fetch --tags --force origin` after checkout
+        # rebuilds the local tag database from the remote — if the
+        # firing tag is annotated on the remote (which is how we
+        # always create it), this step guarantees the local repo
+        # sees it as an annotated tag. Cheap (~1s); runs every build.
+        shell: pwsh
+        run: |
+          git fetch origin --tags --force --no-recurse-submodules
+          $type = (git tag -l --format='%(objecttype)' "${{ github.ref_name }}") -join "`n"
+          Write-Host "Post-fetch tag type for ${{ github.ref_name }}: '$($type.Trim())'"
+
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
