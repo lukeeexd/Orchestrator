@@ -1831,6 +1831,13 @@ body.resizing * { cursor: col-resize !important; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* min-width: 0 is required for the truncation to actually kick in
+     when this element is a flex child of `.agent-stream`. Without it
+     the task line expands to fit the long agent.task string instead
+     of shrinking + ellipsis-ing, and the panel's text reads as
+     "glitched" because the text bleeds outside the visible box. */
+  min-width: 0;
+  flex: 0 0 auto;
 }
 .agent-stream-log {
   max-height: 280px;
@@ -1842,6 +1849,10 @@ body.resizing * { cursor: col-resize !important; }
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
+  /* Same flex-child shrink rule as above. The wrapped log lines need
+     their own width constraint or long unbroken strings (URLs, code
+     paths) overflow the panel. */
+  min-width: 0;
 }
 .agent-stream-empty {
   padding: 8px 0;

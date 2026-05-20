@@ -41,6 +41,11 @@ export function AgentStreamPanel({
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [stickToBottom, setStickToBottom] = useState(true);
+  // Local collapse state. Mirrors the chevron-toggle UX from the compact
+  // view's AgentRow — clicking the chevron in the header hides the task
+  // + log so a long-running agent's panel can be folded out of the way
+  // without losing its place in the agents list.
+  const [collapsed, setCollapsed] = useState(false);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -62,6 +67,17 @@ export function AgentStreamPanel({
       onClick={onSelect}
     >
       <div className="agent-stream-head">
+        <button
+          className="icon-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            setCollapsed((c) => !c);
+          }}
+          title={collapsed ? 'Expand' : 'Collapse'}
+          style={{ width: 20, height: 20 }}
+        >
+          <Icon name={collapsed ? 'chevron' : 'chevron-down'} size={11} />
+        </button>
         <span className={'dotled ' + agent.status}>
           <i />
         </span>
@@ -104,31 +120,35 @@ export function AgentStreamPanel({
           </button>
         )}
       </div>
-      <div className="agent-stream-task">
-        <span className="dim">›</span> {agent.task}
-      </div>
-      <div
-        className="agent-stream-log"
-        ref={scrollRef}
-        onScroll={onScroll}
-      >
-        {agent.log.length === 0 ? (
-          <div className="dim agent-stream-empty">
-            {isRunning ? 'Awaiting first response…' : 'No log entries.'}
+      {!collapsed && (
+        <>
+          <div className="agent-stream-task" title={agent.task}>
+            <span className="dim">›</span> {agent.task}
           </div>
-        ) : (
-          // M11: composite key so a memoised StreamLine survives
-          // re-renders driven by sibling log appends.
-          agent.log.map((line, i) => (
-            <StreamLine key={`${line.ts}-${line.kind}-${i}`} line={line} />
-          ))
-        )}
-        {isRunning && (
-          <span className="log-cursor" aria-hidden="true">
-            ▍
-          </span>
-        )}
-      </div>
+          <div
+            className="agent-stream-log"
+            ref={scrollRef}
+            onScroll={onScroll}
+          >
+            {agent.log.length === 0 ? (
+              <div className="dim agent-stream-empty">
+                {isRunning ? 'Awaiting first response…' : 'No log entries.'}
+              </div>
+            ) : (
+              // M11: composite key so a memoised StreamLine survives
+              // re-renders driven by sibling log appends.
+              agent.log.map((line, i) => (
+                <StreamLine key={`${line.ts}-${line.kind}-${i}`} line={line} />
+              ))
+            )}
+            {isRunning && (
+              <span className="log-cursor" aria-hidden="true">
+                ▍
+              </span>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
