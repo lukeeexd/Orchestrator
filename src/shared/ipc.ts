@@ -72,6 +72,7 @@ export const IpcChannels = {
   AppShowSettingsFile: 'app:showSettingsFile',
   AppCliStatusByProvider: 'app:cliStatusByProvider',
   AppOpenUsage: 'app:openUsage',
+  AppHasWorkspaceMd: 'app:hasWorkspaceMd',
   SpendGet: 'spend:get',
   SpendRecommendations: 'spend:recommendations',
   HistoryList: 'history:list',
@@ -794,6 +795,12 @@ export interface OrchestratorApi {
     provider: import('./types').Provider,
   ) => Promise<{ available: boolean; version: string | null }>;
   openClaudeUsage: () => Promise<{ ok: boolean }>;
+  /**
+   * True when a `WORKSPACE.md` exists at the workspace root. Used by
+   * the renderer's onboarding banner to decide whether the
+   * codebase-onboarding nudge should appear for this project.
+   */
+  hasWorkspaceMd: (workspace: string) => Promise<boolean>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   /** Rule-based cost / loadout recommendations recomputed each call. */
   getSpendRecommendations: () => Promise<

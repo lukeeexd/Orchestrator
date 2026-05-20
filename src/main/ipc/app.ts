@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { app, ipcMain, shell } from 'electron';
 import {
   IpcChannels,
@@ -5,6 +7,7 @@ import {
 } from '../../shared/ipc';
 import { getCliStatus } from '../cli/status';
 import { settingsFilePath, writeSettings } from '../settings';
+import { assertValidWorkspacePath } from '../security/workspace';
 
 const startedAt = Date.now();
 
@@ -47,12 +50,32 @@ export function registerAppHandlers(): void {
       // shell.showItemInFolder requires the file to exist; create on first
       // open if a user clicks before saving anything.
       try {
-        const fs = await import('node:fs');
-        if (!fs.existsSync(p)) writeSettings({});
+        const fsMod = await import('node:fs');
+        if (!fsMod.existsSync(p)) writeSettings({});
         shell.showItemInFolder(p);
         return { ok: true };
       } catch {
         return { ok: false };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.AppHasWorkspaceMd,
+    (_event, workspace: string): boolean => {
+      // P2: onboarding banner trigger. We validate the workspace
+      // through the same path-safety guard the spawn handlers use
+      // so a compromised renderer can't probe arbitrary disk paths
+      // by asking "does this file exist?". Invalid workspace →
+      // return false (no banner shown).
+      if (typeof workspace !== 'string' || workspace.length === 0) {
+        return false;
+      }
+      try {
+        const validated = assertValidWorkspacePath(workspace);
+        return fs.existsSync(path.join(validated, 'WORKSPACE.md'));
+      } catch {
+        return false;
       }
     },
   );

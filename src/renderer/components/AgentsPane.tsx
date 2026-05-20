@@ -5,6 +5,7 @@ import { AgentRow } from './AgentRow';
 import { AgentStreamPanel } from './AgentStreamPanel';
 import { SpawnAgentForm } from './SpawnAgentForm';
 import { FocusedFixDialog } from './FocusedFixDialog';
+import { OnboardingBanner } from './OnboardingBanner';
 import type { ViewMode } from './TopBar';
 
 interface Props {
@@ -18,6 +19,16 @@ interface Props {
   spawning: boolean;
   viewMode: ViewMode;
   provider: Provider;
+  /**
+   * When set, renders the P2 onboarding banner at the top of the pane.
+   * Computed in the parent (App.tsx) so the trigger logic lives next
+   * to the rest of the project / workspace state.
+   */
+  onboardingBanner?: {
+    busy: boolean;
+    onRun: () => void;
+    onSkip: () => void;
+  };
   setSpawning: (next: boolean) => void;
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
@@ -34,6 +45,7 @@ export function AgentsPane({
   spawning,
   viewMode,
   provider,
+  onboardingBanner,
   setSpawning,
   onSelect,
   onToggle,
@@ -69,6 +81,14 @@ export function AgentsPane({
           <span className="kbd">⌘N</span>
         </button>
       </div>
+
+      {onboardingBanner && (
+        <OnboardingBanner
+          busy={onboardingBanner.busy}
+          onRun={onboardingBanner.onRun}
+          onSkip={onboardingBanner.onSkip}
+        />
+      )}
 
       {agents.length === 0 ? (
         <EmptyAgents onNew={() => setSpawning(true)} />

@@ -78,6 +78,11 @@ export function App() {
     null,
   );
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // P2 — onboarding banner state. `needed` reflects the result of the
+  // hasWorkspaceMd probe + the per-project dismiss flag in localStorage;
+  // `busy` covers the round-trip while the template spawn is in flight.
+  const [onboardingNeeded, setOnboardingNeeded] = useState(false);
+  const [onboardingBusy, setOnboardingBusy] = useState(false);
   const [agentCountByProject, setAgentCountByProject] = useState<
     Record<string, number>
   >({});
@@ -275,6 +280,76 @@ export function App() {
     handledPlans.current = new Set();
     handledRedirects.current = new Set();
   }, [activeProjectId]);
+
+  // P2 — recompute the onboarding banner state whenever the active
+  // project or its workspace changes. Two reasons to NOT show:
+  //   1. user dismissed the banner for this project (localStorage flag)
+  //   2. WORKSPACE.md already exists in the workspace (main-side check)
+  // Both run in parallel; we only flip needed=true when both checks
+  // come back negative.
+  useEffect(() => {
+    let cancelled = false;
+    setOnboardingNeeded(false);
+    if (!activeProjectId || !workspace) return;
+    const dismissed = (() => {
+      try {
+        return (
+          localStorage.getItem(
+            `orchestrator.onboardingDismissed.${activeProjectId}`,
+          ) === '1'
+        );
+      } catch {
+        return false;
+      }
+    })();
+    if (dismissed) return;
+    void window.api.hasWorkspaceMd(workspace).then((has) => {
+      if (cancelled) return;
+      if (!has) setOnboardingNeeded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId, workspace]);
+
+  const runOnboarding = async () => {
+    if (!activeProjectId) return;
+    setOnboardingBusy(true);
+    try {
+      const res = await window.api.useTemplate(
+        activeProjectId,
+        'builtin-codebase-onboarding',
+      );
+      if (res.ok) {
+        // The synthetic Director message lands via the broadcast; the
+        // PlanCard renders inside the chat. Hide the banner — the
+        // user has acknowledged it, and if WORKSPACE.md ends up not
+        // being produced (Director-paused, agent failed, etc) the
+        // banner re-shows next project open.
+        setOnboardingNeeded(false);
+        // Switch the rail to agents so the user sees the spawned
+        // researcher rather than staying on whichever rail prompted
+        // this. Director chat is where the plan card lives, so the
+        // user might also want that — leaving rail unchanged so the
+        // user keeps context.
+      }
+    } finally {
+      setOnboardingBusy(false);
+    }
+  };
+
+  const skipOnboarding = () => {
+    if (!activeProjectId) return;
+    try {
+      localStorage.setItem(
+        `orchestrator.onboardingDismissed.${activeProjectId}`,
+        '1',
+      );
+    } catch {
+      /* private window / quota — banner returns next session, fine */
+    }
+    setOnboardingNeeded(false);
+  };
 
   const spawnPlan = async (
     msg: DirectorMessage,
@@ -543,6 +618,15 @@ export function App() {
               spawning={spawning}
               viewMode={viewMode}
               provider={activeProject?.provider ?? 'claude'}
+              onboardingBanner={
+                onboardingNeeded
+                  ? {
+                      busy: onboardingBusy,
+                      onRun: () => void runOnboarding(),
+                      onSkip: skipOnboarding,
+                    }
+                  : undefined
+              }
               setSpawning={setSpawning}
               onSelect={setSelectedId}
               onToggle={toggle}

@@ -338,6 +338,11 @@ const api: OrchestratorApi = {
     ) as Promise<{ available: boolean; version: string | null }>,
   openClaudeUsage: () =>
     ipcRenderer.invoke(IpcChannels.AppOpenUsage) as Promise<{ ok: boolean }>,
+  hasWorkspaceMd: (workspace) =>
+    ipcRenderer.invoke(
+      IpcChannels.AppHasWorkspaceMd,
+      workspace,
+    ) as Promise<boolean>,
   getSpendSummary: () =>
     ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
       import('../shared/types').SpendSummary
