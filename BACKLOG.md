@@ -141,17 +141,24 @@ users sit on stale versions indefinitely.
 self-hosted manifest (S3 + signed JSON). Try primary, fall back to secondary
 on failure. Doesn't replace the current channel — it's a hedge.
 
-### S7. `[ ]` agents/runner.ts split
+### S7. `[x]` agents/runner.ts split — shipped 2026-05-20 (post-v0.10.0)
 
-**Measurement:** `src/main/agents/runner.ts` is 1,190 lines;
-`src/main/director/runner.ts` is another 614.
+**Measurement:** `src/main/agents/runner.ts` was 1,196 lines after P14
+added the handoff-payload integration.
 
-**Rationale:** Commit `e5ab6a7` already started carving with the `buildQuery`
-helper. Natural follow-up.
+**Rationale:** Same shape as S1 (marketplace) and S2 (ipc). The
+`buildQuery` helper from commit `e5ab6a7` started the carving; this
+finished it.
 
-**Sketch:** split into event-classifier / budget-enforcer / fork-redirect /
-persistence-hooks. The hardening pass already added `agent-lock.ts` —
-follow that pattern (small, focused modules around `runner.ts`).
+**Shipped as:** new modules under `src/main/agents/` — `internal.ts`
+(217, shared helpers + budget timer), `skillFires.ts` (118,
+telemetry), `query.ts` (419, buildQuery + consumeQuery — the heart),
+`spawn.ts` (192), `fork.ts` (193), `redirect.ts` (162), `abort.ts`
+(28). `runner.ts` shrinks to a 27-line barrel preserving the public
+API (spawnAgent / forkAgent / redirectAgent / abortAgent /
+awaitCompletion / RunnerSinks / registry namespace). Largest module
+is now `query.ts` at 419 — well under project_architect's 500-line
+threshold. No behaviour change; tsc clean.
 
 ### S8. `[ ]` End-to-end test harness
 
@@ -260,9 +267,12 @@ higher creativity.
   capture is a future P11.1 (needs either a `planId` field on
   agents or fuzzy timestamp grouping).
 
-- **P12.** `[ ]` **Changelog generator from session** — button on Runs;
-  one-shot researcher reads diff, emits a `CHANGELOG.md` entry, lands in a
-  copyable modal.
+- **P12.** `[x]` **Changelog generator from session** — shipped 2026-05-20 (`dc8f6e6`).
+  Per-row `file` icon button on the Runs list spawns a one-shot
+  researcher with a `git log` + `git diff` + READ-existing-CHANGELOG
+  prompt. Result lands on the spawned agent (auto-navigates) for the
+  user to copy. Doesn't modify the file — user pastes where they
+  want. Combined slice with P16.
 
 - **P13.** `[ ]` **Per-agent worktree re-spike** — re-investigate the M2
   dropped decision. Spike doc only, no code yet. Read git-worktree-manager
@@ -284,14 +294,20 @@ higher creativity.
   `orchestrator-prd` block instead of a plan. Useful for inherited
   projects.
 
-- **P16.** `[ ]` **Session recap generator** — button on Runs; one-shot
-  researcher writes a narrative recap suitable for PR descriptions or
-  teammate sharing.
+- **P16.** `[x]` **Session recap generator** — shipped 2026-05-20 (`dc8f6e6`).
+  Per-row `logs` icon button on the Runs list spawns a one-shot
+  researcher with the source row's task / status / cost / duration
+  baked into the prompt; produces a 3-paragraph recap (intent / what
+  happened / loose ends). Tight terminal tone; no git lookup needed.
+  Combined slice with P12.
 
-- **P17.** `[ ]` **Dependency auditor preset for security role** —
-  one-click "Audit deps" button on security spawn form; runs npm/pip/cargo
-  audit + CVE cross-ref + report to `SECURITY_AUDIT.md`. Promote to P1
-  template once shipped.
+- **P17.** `[x]` **Dependency auditor preset for security role** — shipped 2026-05-20 (`314634c`).
+  "Presets" row on SpawnAgentForm appears only when role=security; one
+  button ("Dependency audit") fills the task textarea with a verbatim
+  prompt covering npm/python/rust/go manifest detection, the matching
+  audit command per ecosystem, optional CVE cross-ref via WebFetch,
+  and `SECURITY_AUDIT.md` output at the workspace root. Explicit
+  "don't `npm audit fix`" — report only, fixes later.
 
 ---
 

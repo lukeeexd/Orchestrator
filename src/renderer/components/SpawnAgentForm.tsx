@@ -41,6 +41,55 @@ interface Props {
   provider: Provider;
 }
 
+/**
+ * P17 — security-role preset. One-click dependency audit task that
+ * detects every supported manifest type, runs the matching audit
+ * tool, cross-references CVEs, and writes SECURITY_AUDIT.md at the
+ * workspace root. The agent is asked NOT to modify dependency files
+ * (no \`npm audit fix\`) — the user wants the report first.
+ *
+ * Kept as a verbatim string so users can also inspect it / edit it
+ * after clicking the preset; the agent then sees whatever the user
+ * leaves in the textarea, not the canonical version.
+ */
+const DEPENDENCY_AUDIT_PRESET =
+  `Run a dependency audit on this workspace.\n` +
+  `\n` +
+  `Steps:\n` +
+  `1. Detect package manifests at the workspace root:\n` +
+  `   - npm:    package.json (+ package-lock.json or yarn.lock)\n` +
+  `   - python: requirements.txt, pyproject.toml, Pipfile.lock, poetry.lock\n` +
+  `   - rust:   Cargo.toml (+ Cargo.lock)\n` +
+  `   - go:     go.mod (+ go.sum)\n` +
+  `   Skip manifests that aren't present. If multiple ecosystems are\n` +
+  `   in the same repo, audit each in turn and report them together.\n` +
+  `\n` +
+  `2. For each detected manifest, run the appropriate audit:\n` +
+  `   - npm:    \`npm audit --json\` (parse JSON for vulnerabilities)\n` +
+  `   - python: \`pip-audit -f json\` if available; otherwise note\n` +
+  `             "pip-audit not installed" and fall back to listing\n` +
+  `             direct dependencies + versions.\n` +
+  `   - rust:   \`cargo audit --json\` if cargo-audit is installed.\n` +
+  `   - go:     \`govulncheck ./...\` if govulncheck is installed.\n` +
+  `\n` +
+  `3. For each reported CVE, cross-reference the GitHub Advisory\n` +
+  `   Database via WebFetch where possible — fill in fixed-in\n` +
+  `   versions + severity if the local tool didn't include them.\n` +
+  `\n` +
+  `4. Write findings to SECURITY_AUDIT.md at the workspace root:\n` +
+  `   - Header: date, manifests audited, tools used.\n` +
+  `   - Per-vuln table: package · current version · CVE · severity ·\n` +
+  `     fix version · advisory link.\n` +
+  `   - Triage section: ranked recommendations (upgrade now vs.\n` +
+  `     monitor) with one-line reasoning per item.\n` +
+  `\n` +
+  `Do NOT modify dependency files. Do NOT run \`npm audit fix\` or\n` +
+  `equivalent — the user wants the report; the fixes come later.\n` +
+  `\n` +
+  `Output your final message as a one-line summary like "3 critical,\n` +
+  `5 high, 12 medium across npm + python — full report in\n` +
+  `SECURITY_AUDIT.md".`;
+
 interface AttachmentChip {
   path: string;
   name: string;
@@ -253,6 +302,23 @@ export function SpawnAgentForm({
             <div className="field">
               <span className="lbl">Reasoning effort</span>
               <EffortPicker value={effort} onChange={setEffort} />
+            </div>
+          )}
+
+          {role === 'security' && (
+            <div className="field">
+              <span className="lbl">Presets</span>
+              <span className="v" style={{ display: 'flex', gap: 6 }}>
+                <button
+                  className="tb-btn"
+                  onClick={() => setTask(DEPENDENCY_AUDIT_PRESET)}
+                  disabled={busy}
+                  title="Fill the task field with a comprehensive dependency-audit prompt (npm/pip/cargo/go → SECURITY_AUDIT.md). You can edit before spawning."
+                  style={{ height: 22 }}
+                >
+                  Dependency audit
+                </button>
+              </span>
             </div>
           )}
 
