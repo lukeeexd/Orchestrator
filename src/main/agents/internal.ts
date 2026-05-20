@@ -1,0 +1,217 @@
+import type {
+  Agent,
+  AgentBudget,
+  AgentRole,
+  LogLine,
+} from '../../shared/types';
+import { ROLES } from '../../shared/roles';
+import * as registry from './registry';
+import { effectiveSkill } from '../skills';
+import { getProject } from '../projects';
+import { awaitCompletion as awaitLockedCompletion } from './agent-lock';
+import { nowTs } from './classifier';
+
+/**
+ * Private helpers shared across the runner's spawn / fork / redirect /
+ * abort / query modules. None of these are part of the runner's public
+ * surface; `runner.ts` is the barrel that re-exports only what other
+ * layers need.
+ */
+
+/**
+ * Build the role's effective system prompt: its hardcoded prompt plus
+ * any per-role skill body the project has authored (or the in-app
+ * default). Empty skill content is a no-op.
+ */
+export function buildSystemPromptFor(
+  role: AgentRole,
+  projectId: string,
+): string {
+  const base = ROLES[role].systemPrompt;
+  const skill = effectiveSkill(projectId, role).trim();
+  if (!skill) return base;
+  return `${base}\n\n## Project skill\n\n${skill}`;
+}
+
+/**
+ * Resolve the tool allow-list for an agent: per-project role override
+ * (if any) wins over the role's hardcoded default. Used by both initial
+ * spawn and fork; redirects already inherit their parent's allow-list
+ * via the registry's stored agent definition, so they pass through
+ * unchanged.
+ */
+export function resolveTools(role: AgentRole, projectId: string): string[] {
+  const project = getProject(projectId);
+  const override = project?.roleTools?.[role];
+  return override && override.length > 0 ? override : ROLES[role].tools;
+}
+
+export interface AuthSettings {
+  apiKey: string;
+  oauthToken: string;
+  defaultModel: string;
+}
+
+export function buildEnv(
+  settings: AuthSettings,
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...process.env };
+  if (settings.oauthToken) {
+    env.CLAUDE_CODE_OAUTH_TOKEN = settings.oauthToken;
+    delete env.ANTHROPIC_API_KEY;
+  } else if (settings.apiKey) {
+    env.ANTHROPIC_API_KEY = settings.apiKey;
+  }
+  return env;
+}
+
+export interface RunnerSinks {
+  onAgent: (agent: Agent) => void;
+  onLog: (agentId: string, line: LogLine) => void;
+  onPatch: (agentId: string, patch: Partial<Agent>) => void;
+}
+
+/**
+ * Mint the next agent name within a project. Walks the registry for
+ * existing names matching `<prefix>-NN` and returns one higher.
+ * Researchers get `research-NN` rather than `researcher-NN` because
+ * the shorter form fits the agent list better.
+ */
+export function nextName(role: AgentRole, projectId: string): string {
+  const prefix = role === 'researcher' ? 'research' : role;
+  const re = new RegExp(`^${prefix}-(\\d+)$`);
+  let max = 0;
+  for (const a of registry.listForProject(projectId)) {
+    const m = a.name.match(re);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  const n = (max + 1).toString().padStart(2, '0');
+  return `${prefix}-${n}`;
+}
+
+export function elapsed(startedAt: number): string {
+  const total = Math.floor((Date.now() - startedAt) / 1000);
+  const m = Math.floor(total / 60)
+    .toString()
+    .padStart(2, '0');
+  const s = (total % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+/**
+ * Returns a description of the first budget breach, or null if within
+ * limits. A zero limit means "unlimited" (skip that check).
+ */
+export function checkBudget(
+  budget: AgentBudget,
+  tokens: number,
+  cost: number,
+  startedAt: number,
+): string | null {
+  if (budget.usd > 0 && cost > budget.usd) {
+    return `cost $${cost.toFixed(2)} exceeds cap $${budget.usd.toFixed(2)}`;
+  }
+  if (budget.tokens > 0 && tokens > budget.tokens) {
+    return `tokens ${tokens.toLocaleString()} exceed cap ${budget.tokens.toLocaleString()}`;
+  }
+  if (budget.seconds > 0) {
+    const sec = (Date.now() - startedAt) / 1000;
+    if (sec > budget.seconds) {
+      return `wall-clock ${Math.round(sec)}s exceeds cap ${budget.seconds}s`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns a promise that resolves when the given agent reaches a
+ * terminal status (done | error | aborted). Already-completed agents
+ * resolve immediately.
+ *
+ * Backed by the generation-tagged tracker in `agent-lock.ts` so a
+ * redirect or fork replacing the in-flight entry doesn't trip the
+ * earlier cleanup timer.
+ */
+export function awaitCompletion(agentId: string): Promise<void> {
+  return awaitLockedCompletion(agentId);
+}
+
+/**
+ * Per-second tick: updates the agent's elapsed display, enforces the
+ * wall-clock budget, and clears itself when the agent leaves the
+ * registry. Returns the interval handle so the caller (run / runFork /
+ * runRedirect) can clear it on their own finally-block too.
+ */
+export function startElapsedTimer(
+  agentId: string,
+  controller: AbortController,
+  sinks: RunnerSinks,
+): NodeJS.Timeout {
+  const elapsedTimer = setInterval(() => {
+    const e = registry.get(agentId);
+    if (!e) {
+      clearInterval(elapsedTimer);
+      return;
+    }
+    const next = elapsed(e.agent.startedAt);
+    if (next !== e.agent.elapsed) {
+      registry.patch(agentId, { elapsed: next });
+      sinks.onPatch(agentId, { elapsed: next });
+    }
+    if (
+      e.agent.status === 'running' &&
+      e.agent.budget.seconds > 0 &&
+      (Date.now() - e.agent.startedAt) / 1000 > e.agent.budget.seconds
+    ) {
+      // Stop the timer FIRST so a late assistant/result event in
+      // consumeQuery can't overwrite "Budget exceeded" with a
+      // generic 'is_error' subtype label. The runFork/runRedirect/
+      // run finally-blocks also clearInterval defensively, but by
+      // then consumeQuery has already drained one more event.
+      clearInterval(elapsedTimer);
+      sinks.onLog(agentId, {
+        ts: nowTs(),
+        kind: 'error',
+        msg: `Wall-clock budget ${e.agent.budget.seconds}s exceeded. Aborting.`,
+      });
+      controller.abort();
+      registry.patch(agentId, {
+        status: 'error',
+        statusLabel: 'Budget exceeded',
+      });
+      sinks.onPatch(agentId, {
+        status: 'error',
+        statusLabel: 'Budget exceeded',
+      });
+    }
+  }, 1000);
+  return elapsedTimer;
+}
+
+/**
+ * Terminal-status set covers the post-abort patch states. Once an
+ * agent reaches one of these, consumeQuery must stop draining the
+ * CLI tail — otherwise a buffered `result` event arriving after a
+ * budget abort overwrites "Budget exceeded" with the CLI's generic
+ * is_error subtype.
+ */
+export const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  'done',
+  'error',
+  'aborted',
+]);
+
+/**
+ * H5: in-memory cap on `agent.log`. The persistence layer keeps the
+ * full history on disk; the Drawer's Logs tab pulls older slices on
+ * demand via persistence.listLogLinesForAgent. Without the cap a
+ * long-running chatty agent grows its array unbounded and
+ * `registry.listForProject` serialises the whole thing over IPC on
+ * every renderer mount.
+ *
+ * 2000 lines is well above the Drawer's last-8 view + roughly one or
+ * two assistant turns' worth of tool calls. The boundary is fuzzy by
+ * design — losing the oldest line off the in-memory tail isn't a
+ * correctness issue because the disk has it.
+ */
+export const LOG_TAIL_CAP = 2000;
