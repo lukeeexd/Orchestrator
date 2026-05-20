@@ -212,9 +212,18 @@ higher creativity.
   lifetime + >7d old). Cards have optional deep-link buttons.
   Pure rule eval main-side; no LLM.
 
-- **P4.** `[ ]` **Per-project per-role prompt overrides** — extend Tools
-  screen with a Prompt tab; diff against `roles.ts` defaults; last-10
-  edit history; `resolveRolePrompt(role, projectId)` in runner.
+- **P4.** `[x]` **Per-project per-role prompt overrides** — shipped 2026-05-20 (`e89b3c6`).
+  Discovered three of the four originally-specced pieces were already
+  in place: Tools screen "prompts" tab via `SkillsEditor`, on-disk
+  storage at `<workspace>/.orchestrator/skills/<role>.md`, and
+  runner-side resolution via `buildSystemPromptFor + effectiveSkill`.
+  The gap was the diff view — users couldn't see the base prompt
+  they were extending. New **Show base** toggle on the editor's meta
+  row reveals the role's hardcoded `systemPrompt` from
+  `src/shared/roles.ts` as a read-only panel. Deferred to P4.1:
+  full override mode (replace the base entirely via a
+  `<role>.override.md` sidecar) and last-10 edit history (disk + git
+  cover this in practice).
 
 - **P5.** `[x]` **Ship Gate on plan acceptance** — shipped 2026-05-20 (`b48aa25`).
   Checkbox in the PlanCard header next to Spawn; when on, appends a
