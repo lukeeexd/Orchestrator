@@ -575,6 +575,18 @@ trailing section.
 - **R-M12.** `[ ]` Provider-change paths inconsistent across the
   agent/Director boundary (see R-M8). Folding under R-M8.
 
+- **R-M13.** `[ ]` **README install link diverges from secondary
+  fallback `downloadUrl`** (exec-summary item, no detailed entry
+  in the review body). README points new users at the R2 `.exe`
+  URL; `latest.json`'s `downloadUrl` field built by the workflow
+  points at the GitHub Release asset URL. Same release content,
+  two different URLs — when the repo flips private the README
+  path keeps working (R2 is public) but secondary-fallback users
+  hit a 404 on the GitHub URL. **Fix:** swap the manifest's
+  `downloadUrl` builder in `release.yml` to use the R2 URL too,
+  so both new-user downloads and secondary-fallback downloads
+  resolve to the same place.
+
 ### Low severity (track / fold into adjacent work)
 
 - **R-L1.** `[ ]` StatusBar onClick closure references
@@ -667,6 +679,26 @@ trailing section.
   imports but doesn't catch "shared imports `node:fs`" — which
   would crash the renderer at runtime. Add an
   `no-restricted-imports` rule scoped to `src/shared/**`.
+
+### Process / coverage observations
+
+- **R-T1.** `[ ]` **Test coverage gap across v0.10.0 → v0.15.1**
+  (review Notes section, line 539). No tests were added for:
+  - `secondaryUpdater.isNewer` — the 4-part version comparison
+    bug (R-A6) lives here precisely because nothing exercised it.
+  - `parsePrd` — the "all-empty arrays accepted" weakness (R-A5)
+    would be one assertion away.
+  - `auditSource` — no fixture-based test, so refactors of the
+    13-pattern regex set silently drift.
+  The S8 e2e smoke (v0.12.0) only verifies the window opens —
+  every other v0.10..v0.15.1 feature was shipped untested.
+  **Fix shape:** standalone unit-test runner (jest/vitest) for
+  pure functions (`isNewer`, `parsePrd`, `auditSource` regex
+  list, `parsePlan`, `parseRedirect`, the handoff-payload
+  parsers, `parseTestsKpi`). Doesn't need Electron infra; runs in
+  CI as a separate workflow step. Lower priority than the H-tier
+  fixes but the missing coverage is what made A5+A6+M9 all live
+  in shipped code.
 
 ---
 
