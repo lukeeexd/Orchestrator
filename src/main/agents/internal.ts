@@ -2,6 +2,7 @@ import type {
   Agent,
   AgentBudget,
   AgentRole,
+  AgentSubtype,
   LogLine,
 } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
@@ -10,6 +11,37 @@ import { effectiveSkill } from '../skills';
 import { getProject } from '../projects';
 import { awaitCompletion as awaitLockedCompletion } from './agent-lock';
 import { nowTs } from './classifier';
+
+/**
+ * P10: Flavour-specific prompt blocks appended to a role's base
+ * system prompt. Today only qa.playwright is wired — adding a new
+ * flavour means dropping a key here + extending AgentSubtype in
+ * shared/types.ts.
+ *
+ * The instruction to emit `Tests: N passed / M total` on the final
+ * line is what the AgentRow's KPI chip parser scans for, so changing
+ * the wording here means changing the regex in
+ * `parseTestsKpi` (src/renderer/components/AgentRow.tsx) too.
+ */
+const SUBTYPE_PROMPTS: Partial<
+  Record<AgentRole, Partial<Record<AgentSubtype, string>>>
+> = {
+  qa: {
+    playwright: `## Playwright mode
+
+This workspace is expected to use Playwright for browser/Electron e2e tests.
+
+- Locate the Playwright config (\`playwright.config.{ts,js,mjs}\`). If none exists, scaffold a minimal one before adding tests.
+- Run tests with \`npx playwright test --reporter=line\` to keep output compact.
+- When debugging a flake, prefer \`--repeat-each\` over re-running the whole suite.
+
+When your run finishes, emit a single final line of the form:
+
+  Tests: <passed> passed / <total> total
+
+(Example: \`Tests: 14 passed / 16 total\`.) The orchestrator parses this line into a KPI chip on the agent row, so the format matters — emit it verbatim, on its own line, exactly once.`,
+  },
+};
 
 /**
  * Private helpers shared across the runner's spawn / fork / redirect /
@@ -21,16 +53,21 @@ import { nowTs } from './classifier';
 /**
  * Build the role's effective system prompt: its hardcoded prompt plus
  * any per-role skill body the project has authored (or the in-app
- * default). Empty skill content is a no-op.
+ * default) plus the flavour-specific block when an AgentSubtype is
+ * set. Empty skill content is a no-op.
  */
 export function buildSystemPromptFor(
   role: AgentRole,
   projectId: string,
+  subtype?: AgentSubtype,
 ): string {
   const base = ROLES[role].systemPrompt;
   const skill = effectiveSkill(projectId, role).trim();
-  if (!skill) return base;
-  return `${base}\n\n## Project skill\n\n${skill}`;
+  const flavour = subtype ? (SUBTYPE_PROMPTS[role]?.[subtype] ?? '').trim() : '';
+  const parts = [base];
+  if (skill) parts.push(`## Project skill\n\n${skill}`);
+  if (flavour) parts.push(flavour);
+  return parts.join('\n\n');
 }
 
 /**

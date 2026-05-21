@@ -1,7 +1,32 @@
-import type { Agent } from '../../shared/types';
+import type { Agent, LogLine } from '../../shared/types';
 import { ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { LogLineRow } from './LogLineRow';
+
+/**
+ * P10: parse the agent's log for the most-recent line matching
+ *   Tests: <passed> passed / <total> total
+ * (case-insensitive, optional whitespace around `/`). Agents with
+ * subtype 'playwright' are prompted to emit this line on completion,
+ * but any QA agent that follows the convention gets the same chip.
+ * Returns null when no matching line is found.
+ *
+ * Cheap enough to run on every render — the in-memory log is capped
+ * at LOG_TAIL_CAP (2000) lines.
+ */
+const TESTS_KPI_RE = /Tests:\s*(\d+)\s*passed\s*\/\s*(\d+)\s*total/i;
+
+function parseTestsKpi(log: LogLine[]): { passed: number; total: number } | null {
+  for (let i = log.length - 1; i >= 0; i--) {
+    const line = log[i];
+    if (typeof line.msg !== 'string') continue;
+    const m = line.msg.match(TESTS_KPI_RE);
+    if (m) {
+      return { passed: parseInt(m[1], 10), total: parseInt(m[2], 10) };
+    }
+  }
+  return null;
+}
 
 interface Props {
   agent: Agent;
@@ -23,6 +48,7 @@ export function AgentRow({
   onRemove,
 }: Props) {
   const isRunning = agent.status === 'running' || agent.status === 'waiting';
+  const tests = parseTestsKpi(agent.log);
   return (
     // H11: each row is a tabbable listitem so the AgentsPane's
     // arrow-key handler can move focus through the list and Enter
@@ -58,6 +84,7 @@ export function AgentRow({
           <span className="name">{agent.name}</span>
           <span className="role" style={{ color: ROLE_TINT[agent.role] }}>
             {agent.roleLabel}
+            {agent.subtype === 'playwright' && ' · Playwright'}
           </span>
         </span>
         <span className="agent-task">
@@ -72,6 +99,25 @@ export function AgentRow({
           <span className="label">cost</span>
           <span className="val">${agent.cost.toFixed(2)}</span>
         </span>
+        {tests && (
+          <span
+            className="metric"
+            title={`Playwright result: ${tests.passed} of ${tests.total} tests passed`}
+          >
+            <span className="label">tests</span>
+            <span
+              className="val"
+              style={{
+                color:
+                  tests.passed === tests.total
+                    ? 'var(--accent)'
+                    : 'var(--error)',
+              }}
+            >
+              {tests.passed}/{tests.total}
+            </span>
+          </span>
+        )}
         <span className="agent-actions">
           {isRunning ? (
             <button

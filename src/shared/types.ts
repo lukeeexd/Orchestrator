@@ -1,6 +1,15 @@
 export type AgentRole = 'pm' | 'researcher' | 'coder' | 'qa' | 'devops' | 'security';
 
 /**
+ * Optional flavour within an AgentRole. Currently only `qa` uses one
+ * — 'playwright' adds Playwright-specific guidance to the system
+ * prompt and unlocks the "Tests: N/M" KPI chip on the agent row.
+ * Field stays generic so other roles can grow flavours later (e.g.
+ * a `coder.refactor` subtype) without another migration.
+ */
+export type AgentSubtype = 'playwright';
+
+/**
  * What kinds of "actor" can have a skill prompt attached. Agent roles
  * plus the Director — the Director isn't an AgentRole (it's a separate
  * concept), but it has the same on-disk SKILL.md slot.
@@ -99,6 +108,14 @@ export interface Agent {
   id: string;
   projectId: string;
   role: AgentRole;
+  /**
+   * Optional flavour within the role — set at spawn time, never
+   * changes after. Today only `qa` uses it (value 'playwright'). The
+   * renderer reads it to render a flavour pill on the agent row, and
+   * `buildSystemPromptFor` reads it to append the flavour's prompt
+   * block. Undefined means "default flavour for this role".
+   */
+  subtype?: AgentSubtype;
   roleLabel: string;
   name: string;
   status: AgentStatus;
@@ -229,6 +246,13 @@ export interface DirectorMessage {
 export interface SpawnAgentRequest {
   projectId: string;
   role: AgentRole;
+  /**
+   * Optional role flavour. The renderer's spawn form surfaces a
+   * picker for roles that have flavours defined (today: `qa` →
+   * 'playwright'). Other role+subtype combos are ignored — the
+   * agent runs as the role's default flavour.
+   */
+  subtype?: AgentSubtype;
   task: string;
   workspace: string;
   /** Override the model the agent runs on. Falls back to settings.defaultModel. */

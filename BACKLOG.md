@@ -299,9 +299,23 @@ higher creativity.
   renderer auto-refresh of the McpEditor JSON textarea after
   scaffold (config IS saved; visual stale until projects reload).
 
-- **P10.** `[ ]` **Playwright QA role variant** — subtype dropdown at qa
-  spawn time; auto-subscribes `playwright-pro` skill; adds Playwright to
-  shell allow-list; KPI strip gains "Tests: N pass / M fail" tile.
+- **P10.** `[x]` **Playwright QA role variant** — shipped 2026-05-21.
+  New "Flavour" picker on the Spawn form appears when role = qa with
+  two options (Default, Playwright). Picking Playwright sets
+  `subtype: 'playwright'` on the spawned agent (new DB column via
+  migration v21 + `AgentSubtype` type). `buildSystemPromptFor` now
+  appends a Playwright-specific prompt block teaching the agent to
+  locate `playwright.config.*`, run `npx playwright test
+  --reporter=line`, and emit a final `Tests: N passed / M total`
+  line. The AgentRow scans `agent.log` for that line and surfaces
+  passed/total as a green/red "tests" KPI chip next to tokens + cost.
+  The role label shows " · Playwright" so the flavour is visible
+  before any tests have run.
+  **Deferred from the original sketch:** no separate `playwright-pro`
+  marketplace skill (the flavour prompt subsumes it), no allow-list
+  changes (`Bash` is already in CODER_TOOLS so `npx playwright` runs
+  unchanged), no "N pass / M fail" tile (we emit pass/total which is
+  the canonical Playwright reporter format).
 
 ### Smaller follow-ups (mostly depend on P1)
 

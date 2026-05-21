@@ -45,6 +45,9 @@ const agentBudget = z.object({
 export const spawnAgentRequestSchema = z.object({
   projectId: z.string().min(1),
   role: agentRole,
+  // P10: role flavour. Only 'playwright' is recognised today;
+  // other strings (or omission) → default flavour for the role.
+  subtype: z.literal('playwright').optional(),
   task: z.string().min(1),
   workspace: z.string(),
   model: z.string().optional(),

@@ -247,8 +247,8 @@ export function saveAgent(a: Agent): void {
        tokens, cost, elapsed, model, workspace,
        budget_usd, budget_tokens, budget_seconds,
        spawned_by, started_at, session_id, project_id, effort,
-       forked_from_id, forked_from_name, model_usage, provider)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       forked_from_id, forked_from_name, model_usage, provider, subtype)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     a.id,
@@ -277,6 +277,7 @@ export function saveAgent(a: Agent): void {
     a.forkedFromName ?? null,
     a.modelUsage ? JSON.stringify(a.modelUsage) : null,
     a.provider ?? null,
+    a.subtype ?? null,
   ]);
   stmt.free();
   scheduleSave();
@@ -329,7 +330,7 @@ export function loadAgents(): Agent[] {
     SELECT id, ordering, role, role_label, name, status, status_label, step, task,
            tokens, cost, elapsed, model, workspace,
            budget_usd, budget_tokens, budget_seconds, spawned_by, started_at, session_id, project_id, effort,
-           forked_from_id, forked_from_name, model_usage, provider
+           forked_from_id, forked_from_name, model_usage, provider, subtype
     FROM agents ORDER BY ordering ASC
   `);
   if (res.length === 0) return [];
@@ -341,6 +342,7 @@ export function loadAgents(): Agent[] {
     const forkedName = row[23];
     const modelUsageRaw = row[24];
     const providerRaw = row[25];
+    const subtypeRaw = row[26];
     out.push({
       id: asStr(row[0]),
       projectId: asStr(row[20]),
@@ -381,6 +383,7 @@ export function loadAgents(): Agent[] {
         providerRaw === 'claude' || providerRaw === 'codex'
           ? providerRaw
           : undefined,
+      subtype: subtypeRaw === 'playwright' ? 'playwright' : undefined,
     });
     agentOrdering = Math.max(agentOrdering, asInt(row[1]));
   }

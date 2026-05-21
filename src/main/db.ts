@@ -356,6 +356,18 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 21,
+    up: (db) => {
+      // P10: optional role flavour. Currently only qa.playwright is
+      // surfaced; the column stays generic so other roles can grow
+      // flavours later without another migration. Null = default
+      // flavour (= same behaviour as pre-v21 agents).
+      db.exec(`
+        ALTER TABLE agents ADD COLUMN subtype TEXT;
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;
