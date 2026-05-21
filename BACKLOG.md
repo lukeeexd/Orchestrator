@@ -361,9 +361,17 @@ higher creativity.
   user to copy. Doesn't modify the file — user pastes where they
   want. Combined slice with P16.
 
-- **P13.** `[ ]` **Per-agent worktree re-spike** — re-investigate the M2
-  dropped decision. Spike doc only, no code yet. Read git-worktree-manager
-  skill for patterns we may have missed.
+- **P13.** `[x]` **Per-agent worktree re-spike** — spiked 2026-05-21,
+  no code shipped. Findings in [`docs/spike-2026-05-21-per-agent-worktrees.md`](./docs/spike-2026-05-21-per-agent-worktrees.md).
+  TL;DR: the M4 reason for dropping all-agents worktrees still
+  holds (sequential artefact flow needs a shared workspace), so
+  path (a) "all agents get worktrees" stays dead. Path (b)
+  "opt-in checkbox" works but adds UX surface for modest payoff.
+  Path (c) "fork-attached worktrees" is the best fit semantically
+  but blocked on an unverified assumption about `claude --resume`
+  tolerating a `cwd` change between session resumes. Pick this
+  back up when forks see real use; first move is the resume-cwd
+  experiment, then ship path (c) as a single slice if it holds.
 
 - **P14.** `[x]` **Structured handoff payloads** — shipped 2026-05-20 (`796f2ef`).
   Each `[handoff]` body now carries a fenced `json handoff-payload` block
