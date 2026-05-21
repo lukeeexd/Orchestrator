@@ -107,20 +107,47 @@ the most common drift attempt: a renderer component importing from
 `src/main/` because the type signature looks useful (compiles, crashes
 at runtime).
 
-### S4. `[ ]` better-sqlite3 revisit
+### S4. `[ ]` better-sqlite3 revisit — spiked 2026-05-21, deferred
 
-**Measurement:** v0.9 added `skill_fire_counts` + per-turn modelUsage rows;
-write frequency is climbing.
+**Spike outcome:** the swap was implemented end-to-end behind a
+sql.js-shaped compatibility shim (CompatDb / CompatStatement
+exposing `exec`, `prepare`, `bind/step/get/getAsObject`, `run`,
+`free`) so none of the nine caller files would need to change.
+The shim compiled tsc-clean. AutoUnpackNativesPlugin was wired
+into `forge.config.ts` and `vite.main.config.ts` switched
+better-sqlite3 to an external module. `npm run package` produced
+an artifact successfully.
 
-**Rationale:** Locked decision picked sql.js because no MSVC toolchain was
-available locally. `better-sqlite3` ships prebuilt binaries via
-`prebuild-install` so the original blocker may have evaporated. The
-framework's database selection workflow points back at it for `<1M records,
-write-heavy single region`.
+**Real blocker — prebuilt binary availability:**
+Electron 42 reports module ABI **146**. better-sqlite3 v12.10.0
+(the current latest) ships Electron prebuilds up to ABI **145**
+(Electron 41). Off-by-one. Without a matching prebuild,
+`require('better-sqlite3')` from Electron's main process throws
+`NODE_MODULE_VERSION` mismatch. Local rebuild fails because no
+MSVC C++ toolchain is installed on this dev machine — exactly
+the original v0.9 blocker that the spike thought had evaporated.
+`prebuild-install --runtime=electron --target=42.1.0` returns
+"no prebuilt binaries found".
 
-**Sketch:** spike-only first — measure current write latency in a 24h
-real-usage trace, then decide. Don't ship the swap until the data justifies
-it.
+**Why we're not pushing through:**
+1. Installing VS Build Tools (~5GB) on the dev machine is heavy
+   for a swap whose perf benefit is largely theoretical on a
+   single-user app with a small DB (sql.js writes already debounce
+   to 1s + async via H6 — the export bottleneck doesn't bite in
+   practice).
+2. Pinning Electron back to 41.x to land within the prebuilt
+   range trades real security/Chromium updates for marginal
+   write-latency wins. Bad trade.
+3. `node:sqlite` (Electron 42's bundled Node 22) is experimental
+   and would mean a different rewrite. Sidesteps prebuilds but
+   introduces flag/API risk.
+
+**Conditions for resurrection:** better-sqlite3 publishes a v12.x
+or v13.x release with electron-v146 (or whatever the then-current
+Electron ABI is) prebuilds. The shim was uncommitted when the
+spike was rolled back, so the swap will need to be re-implemented
+— but the shape is well-known now (sql.js-compat wrapper class +
+AutoUnpackNatives + extern in vite.main.config.ts).
 
 ### S5. `[ ]` Crash + perf telemetry
 
