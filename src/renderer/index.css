@@ -1760,6 +1760,67 @@ body.resizing * { cursor: col-resize !important; }
   margin-left: 20px;
   margin-top: 4px;
 }
+
+/* P15: PRD card — Director's third mode emits a Product Requirements
+   Doc inline in the chat. Visually adjacent to PlanCard but read-only
+   (no spawn affordance; the only action is Copy as Markdown). */
+.prd-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--bg-2);
+  font-size: 12px;
+}
+.prd-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.prd-badge {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+.prd-title {
+  font-weight: 600;
+  color: var(--text);
+}
+.prd-section {
+  margin-top: 8px;
+}
+.prd-section-label {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.prd-section-body {
+  color: var(--text);
+}
+.prd-prose {
+  margin: 0;
+  line-height: 1.4;
+}
+.prd-list {
+  margin: 0;
+  padding-left: 16px;
+  line-height: 1.45;
+}
+.prd-list li {
+  margin: 2px 0;
+}
+.prd-empty {
+  color: var(--muted);
+  font-style: italic;
+}
 .stream-redirect {
   margin-left: 20px;
   margin-top: 4px;

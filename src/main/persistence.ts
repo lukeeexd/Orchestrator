@@ -49,8 +49,8 @@ export function saveDirectorMessage(m: DirectorMessage): void {
   messageOrdering += 1;
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO director_messages
-      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     m.id,
@@ -68,6 +68,7 @@ export function saveDirectorMessage(m: DirectorMessage): void {
     m.redirect ? JSON.stringify(m.redirect) : null,
     m.redirectFired ? 1 : 0,
     m.projectId,
+    m.prd ? JSON.stringify(m.prd) : null,
   ]);
   stmt.free();
   scheduleSave();
@@ -104,6 +105,10 @@ export function patchDirectorMessage(
     sets.push('redirect_fired = ?');
     values.push(patch.redirectFired ? 1 : 0);
   }
+  if ('prd' in patch) {
+    sets.push('prd = ?');
+    values.push(patch.prd ? JSON.stringify(patch.prd) : null);
+  }
   if (sets.length === 0) return;
   values.push(id);
   const stmt = db.prepare(
@@ -117,7 +122,7 @@ export function patchDirectorMessage(
 export function loadDirectorMessages(projectId: string): DirectorMessage[] {
   const db = getDb();
   const stmt = db.prepare(`
-    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id
+    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd
     FROM director_messages
     WHERE project_id = ?
     ORDER BY ordering ASC
@@ -156,6 +161,15 @@ export function loadDirectorMessages(projectId: string): DirectorMessage[] {
         redirect = undefined;
       }
     }
+    const prdRaw = row[13];
+    let prd: DirectorMessage['prd'];
+    if (typeof prdRaw === 'string' && prdRaw.length > 0) {
+      try {
+        prd = JSON.parse(prdRaw);
+      } catch {
+        prd = undefined;
+      }
+    }
     out.push({
       id: asStr(row[0]),
       projectId: asStr(row[12], projectId),
@@ -169,6 +183,7 @@ export function loadDirectorMessages(projectId: string): DirectorMessage[] {
       attachments,
       redirect,
       redirectFired: asInt(row[11]) === 1,
+      prd,
     });
     messageOrdering = Math.max(messageOrdering, asInt(row[1]));
   }

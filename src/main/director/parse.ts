@@ -2,6 +2,7 @@ import type {
   PlanRow,
   AgentRole,
   Provider,
+  ProjectPrd,
   RedirectInstruction,
 } from '../../shared/types';
 
@@ -23,10 +24,13 @@ interface ParseResult {
   plan: PlanRow[] | null;
   /** Parsed redirect, if a valid redirect block was found. */
   redirect: RedirectInstruction | null;
+  /** P15: Parsed PRD, if a valid `orchestrator-prd` block was found. */
+  prd: ProjectPrd | null;
 }
 
 const PLAN_RE = /```orchestrator-plan\s*\n([\s\S]*?)\n```/i;
 const REDIRECT_RE = /```orchestrator-redirect\s*\n([\s\S]*?)\n```/i;
+const PRD_RE = /```orchestrator-prd\s*\n([\s\S]*?)\n```/i;
 
 function parsePlan(raw: string): PlanRow[] | null {
   let parsed: unknown;
@@ -65,6 +69,44 @@ function parsePlan(raw: string): PlanRow[] | null {
   return rows.length > 0 ? rows : null;
 }
 
+/**
+ * Parse the JSON body of an `orchestrator-prd` block. Required fields
+ * are `problem` (non-empty string) + at least one of the four list
+ * sections. Missing list fields default to `[]` so the renderer can
+ * iterate without null-checks; the Director is encouraged to emit
+ * every section but we don't fail-closed on omissions.
+ */
+function parsePrd(raw: string): ProjectPrd | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed == null || typeof parsed !== 'object') return null;
+  const r = parsed as Record<string, unknown>;
+  const problem = typeof r.problem === 'string' ? r.problem.trim() : '';
+  if (!problem) return null;
+  const stringArray = (key: string): string[] => {
+    const v = r[key];
+    if (!Array.isArray(v)) return [];
+    const out: string[] = [];
+    for (const item of v) {
+      if (typeof item === 'string' && item.trim()) out.push(item.trim());
+    }
+    return out;
+  };
+  const title = typeof r.title === 'string' && r.title.trim() ? r.title.trim() : undefined;
+  return {
+    ...(title ? { title } : {}),
+    problem,
+    goals: stringArray('goals'),
+    non_goals: stringArray('non_goals'),
+    constraints: stringArray('constraints'),
+    open_questions: stringArray('open_questions'),
+  };
+}
+
 function parseRedirect(raw: string): RedirectInstruction | null {
   let parsed: unknown;
   try {
@@ -90,6 +132,7 @@ export function extractDirectives(body: string): ParseResult {
   let text = body;
   let plan: PlanRow[] | null = null;
   let redirect: RedirectInstruction | null = null;
+  let prd: ProjectPrd | null = null;
 
   const planMatch = PLAN_RE.exec(body);
   if (planMatch) {
@@ -109,7 +152,16 @@ export function extractDirectives(body: string): ParseResult {
     }
   }
 
-  return { text: text.trim(), plan, redirect };
+  const prdMatch = PRD_RE.exec(text);
+  if (prdMatch) {
+    const parsed = parsePrd(prdMatch[1].trim());
+    if (parsed) {
+      prd = parsed;
+      text = text.replace(PRD_RE, '');
+    }
+  }
+
+  return { text: text.trim(), plan, redirect, prd };
 }
 
 /** @deprecated Use `extractDirectives` — keeps the old single-purpose name working. */

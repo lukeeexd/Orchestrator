@@ -192,7 +192,40 @@ export interface PlanRow {
   provider?: Provider;
 }
 
-export type DirectorMode = 'auto' | 'manual';
+/**
+ * Director's three operating modes:
+ *   - `auto`   — Director emits `orchestrator-plan` blocks; the renderer
+ *                auto-spawns the fleet the moment a turn lands.
+ *   - `manual` — Director acts as an advisor; the user spawns agents
+ *                from the workspace pane.
+ *   - `prd`    — Director reads the workspace and emits an
+ *                `orchestrator-prd` block (problem / goals / non-goals /
+ *                constraints / open-questions) instead of a plan. Useful
+ *                for inherited projects where the brief isn't fully
+ *                formed yet. No spawning; the block renders as a
+ *                copy-to-clipboard PRDCard. (P15.)
+ */
+export type DirectorMode = 'auto' | 'manual' | 'prd';
+
+/**
+ * Structured product-requirements doc emitted by the Director in
+ * `[mode: prd]`. All fields except `problem` are arrays so an empty
+ * section is "no items" rather than "missing data".
+ */
+export interface ProjectPrd {
+  /** Optional one-line headline. */
+  title?: string;
+  /** Required — what's the user actually trying to solve. */
+  problem: string;
+  /** Concrete deliverables the project must hit. */
+  goals: string[];
+  /** Things deliberately out of scope (helps reviewers spot drift). */
+  non_goals: string[];
+  /** Tech / org constraints to honour (budgets, dependencies, deadlines). */
+  constraints: string[];
+  /** Unresolved questions for the user to answer before scoping. */
+  open_questions: string[];
+}
 
 export type DirectorWho = 'user' | 'director' | 'system';
 
@@ -239,6 +272,8 @@ export interface DirectorMessage {
   planAccepted?: boolean;
   redirect?: RedirectInstruction;
   redirectFired?: boolean;
+  /** P15: PRD emitted by the Director in `[mode: prd]`. Renderer shows it as a PRDCard. */
+  prd?: ProjectPrd;
   live?: boolean;
   attachments?: AttachmentRef[];
 }

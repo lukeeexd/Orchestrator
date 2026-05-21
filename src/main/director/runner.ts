@@ -414,18 +414,26 @@ class DirectorSession {
       const skillsBlock = this.buildSkillsBlock();
       const fullPrompt = `[mode: ${mode}]\n${skillsBlock}${agentBlock}${prep.textInline}${promptBody}`;
 
+      // Codex tends to skip the fenced JSON block when it thinks a
+      // task is "trivial" and just describe the answer in prose,
+      // which leaves our parser with nothing to act on. The
+      // end-of-prompt reminder pulls it back. Manual mode has no
+      // block to emit (Director acts as an advisor), so no reminder.
+      const codexReminder =
+        mode === 'auto'
+          ? '\n\n---\n\nREMINDER (auto mode): Always emit the `orchestrator-plan` fenced JSON block, even for a single-agent task. Do not describe the plan in prose only — our parser needs the block to auto-spawn anything. If the task is trivial, emit a one-row plan.'
+          : mode === 'prd'
+            ? '\n\n---\n\nREMINDER (prd mode): Always emit the `orchestrator-prd` fenced JSON block. Do not write the PRD in prose only — our parser needs the block to render the PRD card.'
+            : '';
+
       const q =
         provider === 'codex'
           ? runCodexQuery({
               cwd: app.getPath('userData'),
               env,
               // Codex has no inline system-prompt knob; prepend the
-              // Director instructions as a preamble. End-of-prompt
-              // reminder added too because Codex tends to skip the
-              // orchestrator-plan block for "trivial" tasks and just
-              // describe the plan in prose, which leaves our parser
-              // with nothing to spawn from.
-              prompt: `[director-role]\n${buildDirectorSystemPrompt(this.projectId)}\n\n---\n\n${fullPrompt}\n\n---\n\nREMINDER (auto mode): Always emit the \`orchestrator-plan\` fenced JSON block, even for a single-agent task. Do not describe the plan in prose only — our parser needs the block to auto-spawn anything. If the task is trivial, emit a one-row plan.`,
+              // Director instructions as a preamble.
+              prompt: `[director-role]\n${buildDirectorSystemPrompt(this.projectId)}\n\n---\n\n${fullPrompt}${codexReminder}`,
               model: directorModel,
               effort: directorEffort,
               // The Director only plans — it never edits files. read-only
@@ -503,14 +511,15 @@ class DirectorSession {
         }
       }
 
-      const { text, plan, redirect } = extractDirectives(bodyBuf);
+      const { text, plan, redirect, prd } = extractDirectives(bodyBuf);
       const fallbackBody = runtimeError
         ? `Error: ${runtimeError}`
         : '(empty response)';
       this.patchMessage(directorMessage.id, {
-        body: text || (plan || redirect ? '' : fallbackBody),
+        body: text || (plan || redirect || prd ? '' : fallbackBody),
         plan: plan ?? undefined,
         redirect: redirect ?? undefined,
+        prd: prd ?? undefined,
         live: false,
       });
     } catch (e) {

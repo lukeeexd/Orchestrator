@@ -376,10 +376,26 @@ higher creativity.
   it as evidence"). Backwards-incompat for `notifyAgentDone`'s
   signature, but only one caller (runner.ts).
 
-- **P15.** `[ ]` **PRD mode (Director third mode)** — alongside auto /
-  manual, add `prd` mode where Director reads the workspace and emits an
-  `orchestrator-prd` block instead of a plan. Useful for inherited
-  projects.
+- **P15.** `[x]` **PRD mode (Director third mode)** — shipped 2026-05-21.
+  Mode toggle in the Director composer gains a third pill (`prd`)
+  alongside auto + manual. Picking PRD switches the Director's
+  system prompt to a new section that teaches it to emit an
+  `orchestrator-prd` fenced JSON block instead of an
+  `orchestrator-plan` block — with required `problem` + structured
+  arrays for goals, non-goals, constraints, open questions. The
+  composer placeholder + empty-state copy branch on the mode so
+  users know what each does.
+  Renderer adds a new PRDCard component (next to PlanCard in
+  DirectorStream) that shows each section with a "Copy as Markdown"
+  affordance — output is paste-ready Markdown for an issue tracker
+  or doc tool. Migration v22 adds a nullable `prd TEXT` column on
+  director_messages; old rows are unaffected.
+  Codex's end-of-prompt reminder is mode-aware: PRD mode says
+  "always emit `orchestrator-prd`"; auto mode keeps the existing
+  "always emit `orchestrator-plan`"; manual mode emits no reminder.
+  **Out of scope:** save-PRD-to-disk (we don't know where the
+  user's docs live), inline edit of an emitted PRD (use
+  Redirect / re-prompt), multi-PRD comparison.
 
 - **P16.** `[x]` **Session recap generator** — shipped 2026-05-20 (`dc8f6e6`).
   Per-row `logs` icon button on the Runs list spawns a one-shot

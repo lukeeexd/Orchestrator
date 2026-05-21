@@ -267,7 +267,10 @@ function ModeToggle({
   onChange: (next: DirectorMode) => void;
 }) {
   return (
-    <div className="mode-toggle" title="Auto: Director plans and auto-spawns. Manual: Director advises only.">
+    <div
+      className="mode-toggle"
+      title="Auto: Director plans and auto-spawns. Manual: Director advises only. PRD: Director writes a Product Requirements Doc instead of a plan."
+    >
       <button
         className={mode === 'auto' ? 'on' : ''}
         onClick={() => onChange('auto')}
@@ -279,6 +282,13 @@ function ModeToggle({
         onClick={() => onChange('manual')}
       >
         manual
+      </button>
+      <button
+        className={mode === 'prd' ? 'on' : ''}
+        onClick={() => onChange('prd')}
+        title="PRD mode — Director emits a Product Requirements Doc instead of a plan. Useful for inherited or under-scoped projects."
+      >
+        prd
       </button>
     </div>
   );
@@ -294,7 +304,9 @@ function EmptyChat({ mode }: { mode: DirectorMode }) {
       <div className="empty-body">
         {mode === 'auto'
           ? 'Describe what you want built. The Director will plan the work and auto-spawn the agents.'
-          : 'Describe what you want built. The Director will advise on roles + approach — you spawn the agents yourself from the workspace pane.'}
+          : mode === 'prd'
+            ? 'Describe what you’ve inherited or are exploring. The Director will read the workspace and write a PRD — problem, goals, non-goals, constraints, open questions — so you can scope before building.'
+            : 'Describe what you want built. The Director will advise on roles + approach — you spawn the agents yourself from the workspace pane.'}
       </div>
       <div className="empty-hints">
         <span className="empty-hint">
@@ -756,7 +768,9 @@ function Composer({
           placeholder={
             mode === 'auto'
               ? 'Describe a task — Director will plan & auto-spawn… (/ for commands, @ for agents, paste or drop files to attach)'
-              : 'Ask the Director for advice… (/ for commands, @ for agents, paste or drop files to attach)'
+              : mode === 'prd'
+                ? 'Describe what you’re scoping — Director will emit a PRD… (/ for commands, paste or drop files for context)'
+                : 'Ask the Director for advice… (/ for commands, @ for agents, paste or drop files to attach)'
           }
           rows={3}
         />

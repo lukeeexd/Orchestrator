@@ -368,6 +368,19 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 22,
+    up: (db) => {
+      // P15: PRD mode. When the Director runs in `[mode: prd]`, the
+      // emitted orchestrator-prd JSON block is parsed into a
+      // ProjectPrd and stored here per-message. NULL on existing
+      // rows preserves the v21 behaviour (no PRD card rendered for
+      // old messages).
+      db.exec(`
+        ALTER TABLE director_messages ADD COLUMN prd TEXT;
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;
