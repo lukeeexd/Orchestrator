@@ -24,7 +24,7 @@ const agentRole = z.enum([
 
 const provider = z.enum(['claude', 'codex']);
 
-const directorMode = z.enum(['auto', 'manual']);
+const directorMode = z.enum(['auto', 'manual', 'prd']);
 
 const effortLevel = z.enum(EFFORT_LEVELS as readonly [string, ...string[]]);
 

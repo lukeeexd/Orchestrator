@@ -107,20 +107,47 @@ the most common drift attempt: a renderer component importing from
 `src/main/` because the type signature looks useful (compiles, crashes
 at runtime).
 
-### S4. `[ ]` better-sqlite3 revisit
+### S4. `[ ]` better-sqlite3 revisit — spiked 2026-05-21, deferred
 
-**Measurement:** v0.9 added `skill_fire_counts` + per-turn modelUsage rows;
-write frequency is climbing.
+**Spike outcome:** the swap was implemented end-to-end behind a
+sql.js-shaped compatibility shim (CompatDb / CompatStatement
+exposing `exec`, `prepare`, `bind/step/get/getAsObject`, `run`,
+`free`) so none of the nine caller files would need to change.
+The shim compiled tsc-clean. AutoUnpackNativesPlugin was wired
+into `forge.config.ts` and `vite.main.config.ts` switched
+better-sqlite3 to an external module. `npm run package` produced
+an artifact successfully.
 
-**Rationale:** Locked decision picked sql.js because no MSVC toolchain was
-available locally. `better-sqlite3` ships prebuilt binaries via
-`prebuild-install` so the original blocker may have evaporated. The
-framework's database selection workflow points back at it for `<1M records,
-write-heavy single region`.
+**Real blocker — prebuilt binary availability:**
+Electron 42 reports module ABI **146**. better-sqlite3 v12.10.0
+(the current latest) ships Electron prebuilds up to ABI **145**
+(Electron 41). Off-by-one. Without a matching prebuild,
+`require('better-sqlite3')` from Electron's main process throws
+`NODE_MODULE_VERSION` mismatch. Local rebuild fails because no
+MSVC C++ toolchain is installed on this dev machine — exactly
+the original v0.9 blocker that the spike thought had evaporated.
+`prebuild-install --runtime=electron --target=42.1.0` returns
+"no prebuilt binaries found".
 
-**Sketch:** spike-only first — measure current write latency in a 24h
-real-usage trace, then decide. Don't ship the swap until the data justifies
-it.
+**Why we're not pushing through:**
+1. Installing VS Build Tools (~5GB) on the dev machine is heavy
+   for a swap whose perf benefit is largely theoretical on a
+   single-user app with a small DB (sql.js writes already debounce
+   to 1s + async via H6 — the export bottleneck doesn't bite in
+   practice).
+2. Pinning Electron back to 41.x to land within the prebuilt
+   range trades real security/Chromium updates for marginal
+   write-latency wins. Bad trade.
+3. `node:sqlite` (Electron 42's bundled Node 22) is experimental
+   and would mean a different rewrite. Sidesteps prebuilds but
+   introduces flag/API risk.
+
+**Conditions for resurrection:** better-sqlite3 publishes a v12.x
+or v13.x release with electron-v146 (or whatever the then-current
+Electron ABI is) prebuilds. The shim was uncommitted when the
+spike was rolled back, so the swap will need to be re-implemented
+— but the shape is well-known now (sql.js-compat wrapper class +
+AutoUnpackNatives + extern in vite.main.config.ts).
 
 ### S5. `[ ]` Crash + perf telemetry
 
@@ -334,9 +361,17 @@ higher creativity.
   user to copy. Doesn't modify the file — user pastes where they
   want. Combined slice with P16.
 
-- **P13.** `[ ]` **Per-agent worktree re-spike** — re-investigate the M2
-  dropped decision. Spike doc only, no code yet. Read git-worktree-manager
-  skill for patterns we may have missed.
+- **P13.** `[x]` **Per-agent worktree re-spike** — spiked 2026-05-21,
+  no code shipped. Findings in [`docs/spike-2026-05-21-per-agent-worktrees.md`](./docs/spike-2026-05-21-per-agent-worktrees.md).
+  TL;DR: the M4 reason for dropping all-agents worktrees still
+  holds (sequential artefact flow needs a shared workspace), so
+  path (a) "all agents get worktrees" stays dead. Path (b)
+  "opt-in checkbox" works but adds UX surface for modest payoff.
+  Path (c) "fork-attached worktrees" is the best fit semantically
+  but blocked on an unverified assumption about `claude --resume`
+  tolerating a `cwd` change between session resumes. Pick this
+  back up when forks see real use; first move is the resume-cwd
+  experiment, then ship path (c) as a single slice if it holds.
 
 - **P14.** `[x]` **Structured handoff payloads** — shipped 2026-05-20 (`796f2ef`).
   Each `[handoff]` body now carries a fenced `json handoff-payload` block
@@ -349,10 +384,26 @@ higher creativity.
   it as evidence"). Backwards-incompat for `notifyAgentDone`'s
   signature, but only one caller (runner.ts).
 
-- **P15.** `[ ]` **PRD mode (Director third mode)** — alongside auto /
-  manual, add `prd` mode where Director reads the workspace and emits an
-  `orchestrator-prd` block instead of a plan. Useful for inherited
-  projects.
+- **P15.** `[x]` **PRD mode (Director third mode)** — shipped 2026-05-21.
+  Mode toggle in the Director composer gains a third pill (`prd`)
+  alongside auto + manual. Picking PRD switches the Director's
+  system prompt to a new section that teaches it to emit an
+  `orchestrator-prd` fenced JSON block instead of an
+  `orchestrator-plan` block — with required `problem` + structured
+  arrays for goals, non-goals, constraints, open questions. The
+  composer placeholder + empty-state copy branch on the mode so
+  users know what each does.
+  Renderer adds a new PRDCard component (next to PlanCard in
+  DirectorStream) that shows each section with a "Copy as Markdown"
+  affordance — output is paste-ready Markdown for an issue tracker
+  or doc tool. Migration v22 adds a nullable `prd TEXT` column on
+  director_messages; old rows are unaffected.
+  Codex's end-of-prompt reminder is mode-aware: PRD mode says
+  "always emit `orchestrator-prd`"; auto mode keeps the existing
+  "always emit `orchestrator-plan`"; manual mode emits no reminder.
+  **Out of scope:** save-PRD-to-disk (we don't know where the
+  user's docs live), inline edit of an emitted PRD (use
+  Redirect / re-prompt), multi-PRD comparison.
 
 - **P16.** `[x]` **Session recap generator** — shipped 2026-05-20 (`dc8f6e6`).
   Per-row `logs` icon button on the Runs list spawns a one-shot

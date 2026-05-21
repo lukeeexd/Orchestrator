@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
 import { PlanCard } from './PlanCard';
+import { PRDCard } from './PRDCard';
 import { Icon } from './Icon';
 
 /**
@@ -131,6 +132,11 @@ function StreamEntry({
             onSpawn={onSpawnPlan}
             onSaveAsTemplate={onSaveAsTemplate}
           />
+        </div>
+      )}
+      {message.prd && (
+        <div className="stream-card">
+          <PRDCard prd={message.prd} />
         </div>
       )}
       {message.redirect && (
