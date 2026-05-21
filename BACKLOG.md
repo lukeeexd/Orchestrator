@@ -85,18 +85,27 @@ prod dep (~13 KB, main-only).
 in `src/shared/ipc.ts`; (c) wrap handlers in a `validated()` helper that
 rejects with a typed error on mismatch.
 
-### S3. `[ ]` Adopt an explicit layer convention
+### S3. `[x]` Adopt an explicit layer convention — shipped 2026-05-21 (`87aa77f`)
 
-**Measurement:** `project_architect.py` returned "Unstructured (0%
-confidence)". Top-level `src/`, `out/`, `docs/` all classified as `unknown`.
+**Measurement:** `project_architect.py` originally returned "Unstructured
+(0% confidence)". After S1/S2/S7 split marketplace/ipc/runner, a clear
+sub-layer convention emerged but wasn't documented or enforced.
 
-**Rationale:** Not a refactor sprint — a `LAYERS.md` + a lightweight ESLint
-rule pinning `src/main/<domain>/` modules. Prevents the marketplace.ts
-situation from recurring elsewhere as the codebase grows.
+**Rationale:** Cheaper than a full ESLint plugin install — used
+`eslint-plugin-import`'s existing `no-restricted-paths` rule (already
+in devDeps) to gate process boundaries. Added a top-level `LAYERS.md`
+covering the four process contexts (main / preload / renderer /
+shared), the sub-layer convention within `src/main/`, when to split
+vs not, the 3-file IPC-channel pattern, and an honest "not clean yet"
+section for `director/runner.ts` + `persistence.ts` etc.
 
-**Sketch:** define 4-6 named layers (e.g., `cli-adapter`, `domain`,
-`persistence`, `ipc`, `renderer`); document the dependency direction rule;
-enforce via `eslint-plugin-boundaries` or similar.
+**Shipped as:** 9-zone `no-restricted-paths` config in
+`.eslintrc.json` enforcing every forbidden cross-boundary edge
+(renderer→main, main→preload, shared→anywhere-but-shared, etc.).
+Codebase already passed — zero new lint violations. The rule catches
+the most common drift attempt: a renderer component importing from
+`src/main/` because the type signature looks useful (compiles, crashes
+at runtime).
 
 ### S4. `[ ]` better-sqlite3 revisit
 
