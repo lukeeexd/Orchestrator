@@ -33,10 +33,11 @@ import { IpcChannels } from '../shared/ipc';
  */
 
 // Cloudflare Pages URL where the workflow publishes latest.json.
-// Empty string disables the secondary channel. Bake the real URL
-// in here once the Cloudflare project exists — until then the
-// poll loop never runs.
-const SECONDARY_FEED_URL = '';
+// Polling 404s harmlessly until the workflow has run once and
+// `latest.json` exists at this host (the release.yml "Publish to
+// Cloudflare Pages" step uploads on each tag, gated on the
+// CLOUDFLARE_PAGES_PROJECT repo variable being set).
+const SECONDARY_FEED_URL = 'https://orchestrator-updates.pages.dev';
 
 // Poll cadence — same 10-minute window as the primary updater, so
 // a user with both channels active sees roughly the same signal.
