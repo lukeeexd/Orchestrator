@@ -46,6 +46,9 @@ export function Drawer({
   onToggleCollapsed,
 }: Props) {
   const [tab, setTab] = useState<TabId>('logs');
+  // Must run before any early return below (hooks-order rule).
+  // Passes through to a no-op count when `agent` is undefined.
+  const memoryCount = usePendingMemoryCount(agent);
 
   // Collapsed: thin vertical strip with an expand button. Stays present
   // (rather than disappearing entirely) so the affordance to bring the
@@ -91,7 +94,6 @@ export function Drawer({
   }
 
   const toolCount = countUsedTools(agent);
-  const memoryCount = usePendingMemoryCount(agent);
 
   return (
     <div className="drawer" style={{ width }}>
@@ -948,25 +950,37 @@ function namespaceFor(name: string): string {
  * deltas come from the `onMemoryProposal` event so the Memory tab's
  * count badge stays live without polling.
  *
+ * Accepts `undefined` so the Drawer can call it unconditionally
+ * before its "no agent selected" early-return (hooks must run in
+ * the same order on every render). When agent is undefined the
+ * effect body skips the IPC subscription and the returned count
+ * stays at 0.
+ *
  * Approval/rejection happen inside `MemoryTab` and don't broadcast
  * a removal event; the tab handles its own UI state. The count
- * here will lag by one click — accepted: matches the same lag the
- * other tab counts have (they all derive from agent.log which
- * isn't decremented either).
+ * here will lag by one click — matches the same lag the other tab
+ * counts have (they all derive from agent.log which isn't
+ * decremented either).
  */
-function usePendingMemoryCount(agent: Agent): number {
+function usePendingMemoryCount(agent: Agent | null | undefined): number {
   const [count, setCount] = useState(0);
+  const projectId = agent?.projectId;
+  const role = agent?.role;
   useEffect(() => {
+    if (!projectId || !role) {
+      setCount(0);
+      return;
+    }
     let alive = true;
     void window.api
-      .listMemoryProposals(agent.projectId, agent.role, 'pending')
+      .listMemoryProposals(projectId, role, 'pending')
       .then((list) => {
         if (alive) setCount(list.length);
       });
     const off = window.api.onMemoryProposal((p) => {
       if (
-        p.projectId === agent.projectId &&
-        p.role === agent.role &&
+        p.projectId === projectId &&
+        p.role === role &&
         p.status === 'pending'
       ) {
         setCount((c) => c + 1);
@@ -976,6 +990,6 @@ function usePendingMemoryCount(agent: Agent): number {
       alive = false;
       off();
     };
-  }, [agent.projectId, agent.role]);
+  }, [projectId, role]);
   return count;
 }
