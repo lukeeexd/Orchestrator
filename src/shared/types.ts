@@ -1,6 +1,15 @@
 export type AgentRole = 'pm' | 'researcher' | 'coder' | 'qa' | 'devops' | 'security';
 
 /**
+ * Optional flavour within an AgentRole. Currently only `qa` uses one
+ * — 'playwright' adds Playwright-specific guidance to the system
+ * prompt and unlocks the "Tests: N/M" KPI chip on the agent row.
+ * Field stays generic so other roles can grow flavours later (e.g.
+ * a `coder.refactor` subtype) without another migration.
+ */
+export type AgentSubtype = 'playwright';
+
+/**
  * What kinds of "actor" can have a skill prompt attached. Agent roles
  * plus the Director — the Director isn't an AgentRole (it's a separate
  * concept), but it has the same on-disk SKILL.md slot.
@@ -99,6 +108,14 @@ export interface Agent {
   id: string;
   projectId: string;
   role: AgentRole;
+  /**
+   * Optional flavour within the role — set at spawn time, never
+   * changes after. Today only `qa` uses it (value 'playwright'). The
+   * renderer reads it to render a flavour pill on the agent row, and
+   * `buildSystemPromptFor` reads it to append the flavour's prompt
+   * block. Undefined means "default flavour for this role".
+   */
+  subtype?: AgentSubtype;
   roleLabel: string;
   name: string;
   status: AgentStatus;
@@ -229,6 +246,13 @@ export interface DirectorMessage {
 export interface SpawnAgentRequest {
   projectId: string;
   role: AgentRole;
+  /**
+   * Optional role flavour. The renderer's spawn form surfaces a
+   * picker for roles that have flavours defined (today: `qa` →
+   * 'playwright'). Other role+subtype combos are ignored — the
+   * agent runs as the role's default flavour.
+   */
+  subtype?: AgentSubtype;
   task: string;
   workspace: string;
   /** Override the model the agent runs on. Falls back to settings.defaultModel. */
@@ -352,6 +376,35 @@ export interface LoadoutInsight {
   title: string;
   body: string;
   action?: LoadoutInsightAction;
+}
+
+/**
+ * P7 — one entry per audited skill that triggered at least one
+ * pattern match. Empty findings → skill omitted from the report
+ * (clean skills are implied by the bundle count vs report count).
+ */
+export interface SkillAuditReport {
+  sourceId: string;
+  bundleId: string;
+  skillId: string;
+  /** Human label from frontmatter `name:`, falls back to skill id. */
+  skillName: string;
+  /** Highest severity across this skill's findings — drives the badge. */
+  worstSeverity: SkillAuditFinding['severity'];
+  findings: SkillAuditFinding[];
+}
+
+export interface SkillAuditFinding {
+  /** Pattern id ("net-curl", "cred-keychain", etc) for stable refs. */
+  patternId: string;
+  category: 'network' | 'credentials' | 'fs-escape' | 'eval';
+  severity: 'red' | 'yellow' | 'green';
+  /** One-line explanation surfaced next to the snippet. */
+  reason: string;
+  /** Representative line (trimmed, capped at 200 chars) that triggered the match. */
+  snippet: string;
+  /** Line number within SKILL.md, 1-indexed. */
+  lineNumber: number;
 }
 
 /**

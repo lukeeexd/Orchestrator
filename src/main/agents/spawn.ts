@@ -96,6 +96,7 @@ export async function spawnAgent(
     budget,
     spawnedBy: req.spawnedBy ?? 'user',
     provider: spawnProvider,
+    ...(req.subtype ? { subtype: req.subtype } : {}),
     log: [],
     startedAt: Date.now(),
   };

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Project, SkillKey } from '../../shared/types';
+import type { AgentRole, Project, SkillKey } from '../../shared/types';
 import type { SkillEntry } from '../../shared/ipc';
 import { ROLES, ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
@@ -38,6 +38,11 @@ interface Draft {
 export function SkillsEditor({ project }: Props) {
   const [drafts, setDrafts] = useState<Record<SkillKey, Draft> | null>(null);
   const [active, setActive] = useState<SkillKey>('coder');
+  // P4 — toggle for the "Base prompt" reveal. Off by default so the
+  // textarea stays the focus; users who want to write a coherent
+  // extension can flip it open to see what the role's hardcoded
+  // prompt actually says.
+  const [showBase, setShowBase] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -169,12 +174,58 @@ export function SkillsEditor({ project }: Props) {
         <span className="spacer" />
         <button
           className="tb-btn"
+          onClick={() => setShowBase((v) => !v)}
+          title={
+            active === 'director'
+              ? 'Director base prompt is defined in src/main/director/prompt.ts — not viewable from here yet.'
+              : 'Show the role\'s hardcoded base prompt (read-only). Your extension above is appended to this at spawn time.'
+          }
+          disabled={active === 'director'}
+        >
+          <Icon name={showBase ? 'chevron-down' : 'chevron'} size={11} />{' '}
+          {showBase ? 'Hide base' : 'Show base'}
+        </button>
+        <button
+          className="tb-btn"
           onClick={() => void reloadFromDisk()}
           title="Re-read all skill files from disk (picks up external edits)."
         >
           <Icon name="redirect" size={11} /> Reload
         </button>
       </div>
+
+      {showBase && active !== 'director' && (
+        <div
+          className="skills-base"
+          style={{
+            background: 'var(--sub-2)',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            padding: '8px 10px',
+            margin: '8px 0',
+            fontSize: 11,
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-2)',
+            whiteSpace: 'pre-wrap',
+            maxHeight: 220,
+            overflowY: 'auto',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              color: 'var(--muted-2)',
+              marginBottom: 6,
+            }}
+          >
+            Base prompt · {labelFor(active)} · from{' '}
+            <code style={{ fontSize: 10 }}>src/shared/roles.ts</code>
+          </div>
+          {ROLES[active as AgentRole].systemPrompt}
+        </div>
+      )}
 
       <textarea
         className="text-input skills-textarea"

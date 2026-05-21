@@ -61,6 +61,7 @@ export const IpcChannels = {
   MarketplaceResolveLoadout: 'marketplace:resolveLoadout',
   MarketplaceListFireCounts: 'marketplace:listFireCounts',
   MarketplaceGetLoadoutInsights: 'marketplace:getLoadoutInsights',
+  MarketplaceAuditSource: 'marketplace:auditSource',
   MarketplaceSetSkills: 'marketplace:setSkills',
   MarketplaceGetChangelog: 'marketplace:getChangelog',
   MarketplaceEventSourcesChanged: 'marketplace:event:sourcesChanged',
@@ -73,6 +74,7 @@ export const IpcChannels = {
   AppCliStatusByProvider: 'app:cliStatusByProvider',
   AppOpenUsage: 'app:openUsage',
   AppHasWorkspaceMd: 'app:hasWorkspaceMd',
+  ProjectScaffoldMcpServer: 'project:scaffoldMcpServer',
   SpendGet: 'spend:get',
   SpendRecommendations: 'spend:recommendations',
   HistoryList: 'history:list',
@@ -404,6 +406,28 @@ export interface SkillEntry {
   content: string;
   hasFile: boolean;
   path: string | null;
+}
+
+export interface McpScaffoldRequest {
+  projectId: string;
+  language: 'typescript' | 'python';
+  /** Server id used in mcpConfig and as the directory name. */
+  name: string;
+  description: string;
+  capabilities: {
+    tools: boolean;
+    resources: boolean;
+    prompts: boolean;
+  };
+}
+
+export interface McpScaffoldResult {
+  ok: boolean;
+  /** Absolute path of the destination directory on success. */
+  destination?: string;
+  /** Workspace-relative paths of the files written. */
+  filesWritten?: string[];
+  error?: string;
 }
 
 export interface TemplateCreateRequest {
@@ -746,6 +770,15 @@ export interface OrchestratorApi {
     projectId: string,
   ) => Promise<import('./types').LoadoutInsight[]>;
   /**
+   * P7 — static heuristic audit of every SKILL.md in a freshly-synced
+   * marketplace source. Returns one report per skill that triggered
+   * at least one pattern match; clean skills are omitted. Default
+   * source returns an empty array (the seed is vetted).
+   */
+  auditMarketplaceSource: (
+    sourceId: string,
+  ) => Promise<import('./types').SkillAuditReport[]>;
+  /**
    * Set the per-skill subset for a subscription. Three forms:
    *   - `null` — all skills load for every enabled role (default).
    *   - `string[]` — these skills load for every enabled role (legacy
@@ -801,6 +834,12 @@ export interface OrchestratorApi {
    * codebase-onboarding nudge should appear for this project.
    */
   hasWorkspaceMd: (workspace: string) => Promise<boolean>;
+  /**
+   * P9 — scaffold a new MCP server in the project's workspace + auto-
+   * register it in the project's mcpConfig. Returns the destination
+   * path on success or a descriptive error.
+   */
+  scaffoldMcpServer: (input: McpScaffoldRequest) => Promise<McpScaffoldResult>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   /** Rule-based cost / loadout recommendations recomputed each call. */
   getSpendRecommendations: () => Promise<

@@ -11,6 +11,7 @@ import {
   type McpServerEntry,
 } from '../../shared/mcpPresets';
 import { Icon } from './Icon';
+import { McpScaffoldWizard } from './McpScaffoldWizard';
 import { SkillsEditor } from './SkillsEditor';
 
 interface Props {
@@ -314,6 +315,8 @@ function McpEditor({
     preset: McpPreset;
     initial: Record<string, string>;
   } | null>(null);
+  // P9 — scaffold wizard open state.
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   // Resync when the upstream project changes (e.g. switching projects).
   useEffect(() => {
@@ -498,6 +501,50 @@ function McpEditor({
           margin: '6px 0',
         }}
       >
+        Build a custom server
+      </h4>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '8px 12px',
+          background: 'var(--sub-1)',
+          border: '1px solid var(--border)',
+          borderRadius: 4,
+          marginBottom: 14,
+        }}
+      >
+        <div style={{ flex: 1, fontSize: 11, color: 'var(--text-2)' }}>
+          Scaffold a TypeScript or Python MCP server under{' '}
+          <code>{`<workspace>/.mcp-servers/<name>`}</code> with stub
+          handlers for the capabilities you want, and auto-register
+          it in this project&apos;s MCP config.
+        </div>
+        <button
+          className="tb-btn primary"
+          onClick={() => setWizardOpen(true)}
+          disabled={busy || !project.workspace}
+          title={
+            !project.workspace
+              ? 'Set a workspace folder first.'
+              : 'Open the scaffold wizard'
+          }
+        >
+          <Icon name="plus" size={11} /> Scaffold server
+        </button>
+      </div>
+
+      <h4
+        className="settings-help"
+        style={{
+          fontSize: 11,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+          color: 'var(--muted-2)',
+          margin: '6px 0',
+        }}
+      >
         JSON config (advanced)
       </h4>
       <textarea
@@ -564,6 +611,13 @@ function McpEditor({
           initial={modal.initial}
           onCancel={() => setModal(null)}
           onSubmit={handleModalSubmit}
+        />
+      )}
+      {wizardOpen && (
+        <McpScaffoldWizard
+          projectId={project.id}
+          onCancel={() => setWizardOpen(false)}
+          onDone={() => setWizardOpen(false)}
         />
       )}
     </section>

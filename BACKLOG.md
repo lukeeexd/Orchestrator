@@ -85,18 +85,27 @@ prod dep (~13 KB, main-only).
 in `src/shared/ipc.ts`; (c) wrap handlers in a `validated()` helper that
 rejects with a typed error on mismatch.
 
-### S3. `[ ]` Adopt an explicit layer convention
+### S3. `[x]` Adopt an explicit layer convention — shipped 2026-05-21 (`87aa77f`)
 
-**Measurement:** `project_architect.py` returned "Unstructured (0%
-confidence)". Top-level `src/`, `out/`, `docs/` all classified as `unknown`.
+**Measurement:** `project_architect.py` originally returned "Unstructured
+(0% confidence)". After S1/S2/S7 split marketplace/ipc/runner, a clear
+sub-layer convention emerged but wasn't documented or enforced.
 
-**Rationale:** Not a refactor sprint — a `LAYERS.md` + a lightweight ESLint
-rule pinning `src/main/<domain>/` modules. Prevents the marketplace.ts
-situation from recurring elsewhere as the codebase grows.
+**Rationale:** Cheaper than a full ESLint plugin install — used
+`eslint-plugin-import`'s existing `no-restricted-paths` rule (already
+in devDeps) to gate process boundaries. Added a top-level `LAYERS.md`
+covering the four process contexts (main / preload / renderer /
+shared), the sub-layer convention within `src/main/`, when to split
+vs not, the 3-file IPC-channel pattern, and an honest "not clean yet"
+section for `director/runner.ts` + `persistence.ts` etc.
 
-**Sketch:** define 4-6 named layers (e.g., `cli-adapter`, `domain`,
-`persistence`, `ipc`, `renderer`); document the dependency direction rule;
-enforce via `eslint-plugin-boundaries` or similar.
+**Shipped as:** 9-zone `no-restricted-paths` config in
+`.eslintrc.json` enforcing every forbidden cross-boundary edge
+(renderer→main, main→preload, shared→anywhere-but-shared, etc.).
+Codebase already passed — zero new lint violations. The rule catches
+the most common drift attempt: a renderer component importing from
+`src/main/` because the type signature looks useful (compiles, crashes
+at runtime).
 
 ### S4. `[ ]` better-sqlite3 revisit
 
@@ -160,18 +169,29 @@ awaitCompletion / RunnerSinks / registry namespace). Largest module
 is now `query.ts` at 419 — well under project_architect's 500-line
 threshold. No behaviour change; tsc clean.
 
-### S8. `[ ]` End-to-end test harness
+### S8. `[x]` End-to-end test harness — shipped 2026-05-21
 
-**Measurement:** No e2e harness detected; `tech-stack-evaluator` flagged this
-against the cadence (release every ~2 days).
+**What landed:** `@playwright/test` devDep + a single smoke spec at
+`tests/e2e/smoke.spec.ts`. The spec launches the packaged
+`out/Orchestrator-win32-x64/Orchestrator.exe` with an isolated
+`--user-data-dir` and connects via Chromium CDP
+(`--remote-debugging-port`), bypassing Playwright's `_electron.launch`
+which would otherwise need `--inspect` — blocked by our
+`EnableNodeCliInspectArguments: false` fuse. Two assertions: window
+title is `Orchestrator`, and `#root` has rendered content. Runs in
+~1.5s locally.
 
-**Rationale:** The v0.4.0 ASAR-fuses regression (silent install failure) and
-the v0.5.x codex Fork issues would have been caught by a "installer launches
-+ renderer renders" smoke test in CI.
+**CI wiring:** `release.yml` runs `npm run test:e2e` after `npm run
+make` and before "Verify installer artifact" — failure blocks the
+GitHub Release publication, so a v0.4.0-style silent-launch regression
+would leave the tag without a published binary instead of shipping a
+broken installer.
 
-**Sketch:** Playwright-on-Electron with one smoke scenario — launch packaged
-installer in a clean container, verify renderer mounts, verify Director chat
-accepts input. Wire into `release.yml` as a gate before tag publication.
+**Deliberately out of scope:**
+- Multi-window scenarios, deep IPC roundtrips, real Claude CLI
+  invocations. These are unit/integration territory.
+- macOS / Linux runners (this is a Windows-only app today).
+- Visual regression. No screenshot diffs.
 
 ---
 
@@ -212,9 +232,18 @@ higher creativity.
   lifetime + >7d old). Cards have optional deep-link buttons.
   Pure rule eval main-side; no LLM.
 
-- **P4.** `[ ]` **Per-project per-role prompt overrides** — extend Tools
-  screen with a Prompt tab; diff against `roles.ts` defaults; last-10
-  edit history; `resolveRolePrompt(role, projectId)` in runner.
+- **P4.** `[x]` **Per-project per-role prompt overrides** — shipped 2026-05-20 (`e89b3c6`).
+  Discovered three of the four originally-specced pieces were already
+  in place: Tools screen "prompts" tab via `SkillsEditor`, on-disk
+  storage at `<workspace>/.orchestrator/skills/<role>.md`, and
+  runner-side resolution via `buildSystemPromptFor + effectiveSkill`.
+  The gap was the diff view — users couldn't see the base prompt
+  they were extending. New **Show base** toggle on the editor's meta
+  row reveals the role's hardcoded `systemPrompt` from
+  `src/shared/roles.ts` as a read-only panel. Deferred to P4.1:
+  full override mode (replace the base entirely via a
+  `<role>.override.md` sidecar) and last-10 edit history (disk + git
+  cover this in practice).
 
 - **P5.** `[x]` **Ship Gate on plan acceptance** — shipped 2026-05-20 (`b48aa25`).
   Checkbox in the PlanCard header next to Spawn; when on, appends a
@@ -234,10 +263,18 @@ higher creativity.
   loadout-drift reset are valid P6.1 follow-ups; v1 ships the
   highest-signal rule.
 
-- **P7.** `[ ]` **Marketplace source security audit** — static heuristic
-  audit on new GitHub source subscription (network calls, fs writes outside
-  workspace, credential-store access). Red/yellow/green per skill before
-  user confirms. Default source skips the check.
+- **P7.** `[x]` **Marketplace source security audit** — shipped 2026-05-20 (`b6e5a4f`).
+  New `src/main/skillAudit.ts` walks every SKILL.md in a freshly-added
+  non-default source and pattern-matches against 13 regex defs across
+  four categories: network (curl/wget/fetch + exfil services),
+  credentials (gh-auth/aws/keychain/1password/sensitive-env),
+  fs-escape (home/appdata/tmp/.ssh), and eval (eval-exec/pipe-to-sh).
+  Findings surface in a `SourceAuditModal` after AddSource succeeds;
+  user picks Keep or Remove. Default source skips audit (vetted seed).
+  Audit IS NOT a sandbox — informational only. Per-pattern dedupe
+  per skill keeps the modal readable. Out of scope: auditing
+  non-markdown files inside skill dirs (v1.1); per-pattern user
+  allow-list ("don't show this again").
 
 - **P8.** `[x]` **Focused-fix quick spawn** — shipped 2026-05-20 (`cd09cff`).
   "Focused fix" button on AgentsPane next to "New agent" opens a tight
@@ -249,13 +286,36 @@ higher creativity.
   allow-list override is P8.1 if the soft constraint stops being
   enough.
 
-- **P9.** `[ ]` **MCP server builder wizard** — scaffold a new MCP server
-  in workspace (TS or Python), auto-register in `.mcp.json`. Pairs with
-  v0.8's MCP support.
+- **P9.** `[x]` **MCP server builder wizard** — shipped 2026-05-21 (post-S3).
+  New "Scaffold server" button under Tools › MCP opens a single-page
+  wizard (language: TS/Python, name, description, capabilities:
+  tools/resources/prompts, destination preview). Main side writes
+  package.json/pyproject.toml + index.ts/main.py with one example
+  handler per checked capability + README + .gitignore under
+  `<workspace>/.mcp-servers/<name>`, then patches the project's
+  mcpConfig to register the new server in stdio mode. Path-safety
+  via `assertValidWorkspacePath` + `realpathSync` containment check.
+  Out of scope: editable destination, auto-install of deps,
+  renderer auto-refresh of the McpEditor JSON textarea after
+  scaffold (config IS saved; visual stale until projects reload).
 
-- **P10.** `[ ]` **Playwright QA role variant** — subtype dropdown at qa
-  spawn time; auto-subscribes `playwright-pro` skill; adds Playwright to
-  shell allow-list; KPI strip gains "Tests: N pass / M fail" tile.
+- **P10.** `[x]` **Playwright QA role variant** — shipped 2026-05-21.
+  New "Flavour" picker on the Spawn form appears when role = qa with
+  two options (Default, Playwright). Picking Playwright sets
+  `subtype: 'playwright'` on the spawned agent (new DB column via
+  migration v21 + `AgentSubtype` type). `buildSystemPromptFor` now
+  appends a Playwright-specific prompt block teaching the agent to
+  locate `playwright.config.*`, run `npx playwright test
+  --reporter=line`, and emit a final `Tests: N passed / M total`
+  line. The AgentRow scans `agent.log` for that line and surfaces
+  passed/total as a green/red "tests" KPI chip next to tokens + cost.
+  The role label shows " · Playwright" so the flavour is visible
+  before any tests have run.
+  **Deferred from the original sketch:** no separate `playwright-pro`
+  marketplace skill (the flavour prompt subsumes it), no allow-list
+  changes (`Bash` is already in CODER_TOOLS so `npx playwright` runs
+  unchanged), no "N pass / M fail" tile (we emit pass/total which is
+  the canonical Playwright reporter format).
 
 ### Smaller follow-ups (mostly depend on P1)
 

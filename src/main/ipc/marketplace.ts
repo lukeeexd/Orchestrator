@@ -9,7 +9,11 @@ import {
 } from '../../shared/ipc';
 import * as marketplace from '../marketplace';
 import { getLoadoutInsights } from '../loadoutInsights';
-import type { LoadoutInsight } from '../../shared/types';
+import { auditSource } from '../skillAudit';
+import type {
+  LoadoutInsight,
+  SkillAuditReport,
+} from '../../shared/types';
 import type { IpcContext } from './_shared';
 
 function sourceView(row: marketplace.SkillSourceRow): MarketplaceSourceView {
@@ -305,6 +309,11 @@ export function registerMarketplaceHandlers(ctx: IpcContext): void {
     IpcChannels.MarketplaceGetLoadoutInsights,
     (_event, projectId: string): LoadoutInsight[] =>
       getLoadoutInsights(projectId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MarketplaceAuditSource,
+    (_event, sourceId: string): SkillAuditReport[] => auditSource(sourceId),
   );
 
   ipcMain.handle(

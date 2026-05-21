@@ -12,5 +12,59 @@
     "plugin:import/electron",
     "plugin:import/typescript"
   ],
-  "parser": "@typescript-eslint/parser"
+  "parser": "@typescript-eslint/parser",
+  "rules": {
+    "import/no-restricted-paths": [
+      "error",
+      {
+        "zones": [
+          {
+            "target": "./src/renderer",
+            "from": "./src/main",
+            "message": "Renderer cannot import from main. Cross the process boundary via the preload bridge (window.api / IpcChannels)."
+          },
+          {
+            "target": "./src/renderer",
+            "from": "./src/preload",
+            "message": "Renderer cannot import from preload directly. Preload's bindings reach the renderer through contextBridge as window.api."
+          },
+          {
+            "target": "./src/main",
+            "from": "./src/renderer",
+            "message": "Main cannot import from renderer. Renderer code is React + DOM and won't load in the main process."
+          },
+          {
+            "target": "./src/main",
+            "from": "./src/preload",
+            "message": "Main cannot import from preload. Preload is a separate sandbox with its own entry; main composes IPC handlers and broadcasts."
+          },
+          {
+            "target": "./src/preload",
+            "from": "./src/main",
+            "message": "Preload cannot import from main. Preload runs in a sandboxed renderer-adjacent context; it bridges via ipcRenderer.invoke against channels declared in shared/ipc."
+          },
+          {
+            "target": "./src/preload",
+            "from": "./src/renderer",
+            "message": "Preload cannot import from renderer. Preload mounts before the renderer and can't depend on React code."
+          },
+          {
+            "target": "./src/shared",
+            "from": "./src/main",
+            "message": "Shared cannot import from main. shared/ is process-agnostic and must stay reachable from both sides."
+          },
+          {
+            "target": "./src/shared",
+            "from": "./src/renderer",
+            "message": "Shared cannot import from renderer. shared/ is process-agnostic and must stay reachable from both sides."
+          },
+          {
+            "target": "./src/shared",
+            "from": "./src/preload",
+            "message": "Shared cannot import from preload. shared/ is process-agnostic and must stay reachable from both sides."
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -15,7 +15,12 @@ import {
   MARKETPLACE_DEFAULT_SOURCE_ID,
   MARKETPLACE_RECOMMENDED_DEFAULTS,
 } from '../../shared/ipc';
-import type { LoadoutInsight, Provider } from '../../shared/types';
+import type {
+  LoadoutInsight,
+  Provider,
+  SkillAuditFinding,
+  SkillAuditReport,
+} from '../../shared/types';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { useMarketplace } from '../hooks/useMarketplace';
@@ -48,6 +53,15 @@ export function MarketplaceScreen({
   const [addOpen, setAddOpen] = useState(false);
   const [recommendedOpen, setRecommendedOpen] = useState(false);
   const [viewTab, setViewTab] = useState<'browse' | 'agents'>('browse');
+  // P7 — audit modal state. Populated after a successful AddSource +
+  // sync when the auditor returns at least one finding. `null` means
+  // no audit pending; the audit completed clean for the just-added
+  // source (we don't surface a "clean" toast — the absence of the
+  // modal is the signal).
+  const [auditPending, setAuditPending] = useState<{
+    sourceId: string;
+    reports: SkillAuditReport[];
+  } | null>(null);
 
   // "Already applied" = every recommended bundle is subscribed at the
   // global scope with the same per-role skill map. Any deviation (a
@@ -315,8 +329,36 @@ export function MarketplaceScreen({
           onCancel={() => setAddOpen(false)}
           onAdd={async (repo, branch) => {
             const res = await mp.addSource(repo, branch);
-            if (res.ok) setAddOpen(false);
+            if (res.ok) {
+              setAddOpen(false);
+              // P7 — kick off the audit. If it finds anything, the
+              // review modal opens; if it comes back clean, the
+              // user just sees the source land normally.
+              if (res.sourceId) {
+                void window.api
+                  .auditMarketplaceSource(res.sourceId)
+                  .then((reports) => {
+                    if (reports.length > 0 && res.sourceId) {
+                      setAuditPending({
+                        sourceId: res.sourceId,
+                        reports,
+                      });
+                    }
+                  });
+              }
+            }
             return res;
+          }}
+        />
+      )}
+      {auditPending && (
+        <SourceAuditModal
+          sourceId={auditPending.sourceId}
+          reports={auditPending.reports}
+          onKeep={() => setAuditPending(null)}
+          onRemove={async () => {
+            await mp.removeSource(auditPending.sourceId);
+            setAuditPending(null);
           }}
         />
       )}
@@ -1577,6 +1619,26 @@ function SourceSection({
   ) => Promise<MarketplaceChangelogEntry[]>;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // Per-source collapsed state, persisted via localStorage so a
+  // catalogue the user keeps folded (rarely-touched skills they
+  // don't want crowding the browse view) stays that way across
+  // reloads. Key has a stable prefix so future migrations can find
+  // it.
+  const collapseKey = `orchestrator.sourceCollapsed.${source.id}`;
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(collapseKey) === '1';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(collapseKey, collapsed ? '1' : '0');
+    } catch {
+      /* private window / quota — collapse state resets next session, fine */
+    }
+  }, [collapseKey, collapsed]);
   const subByBundle = useMemo(() => {
     const m = new Map<string, MarketplaceSubscriptionView>();
     for (const s of subscriptions) m.set(s.bundleId, s);
@@ -1633,13 +1695,24 @@ function SourceSection({
           marginBottom: 8,
         }}
       >
+        <button
+          className="icon-btn"
+          onClick={() => setCollapsed((c) => !c)}
+          title={collapsed ? 'Expand source' : 'Collapse source'}
+          style={{ width: 20, height: 20 }}
+        >
+          <Icon name={collapsed ? 'chevron' : 'chevron-down'} size={11} />
+        </button>
         <code
           style={{
             fontSize: 12,
             color: 'var(--text)',
             background: 'transparent',
             padding: 0,
+            cursor: 'pointer',
           }}
+          onClick={() => setCollapsed((c) => !c)}
+          title="Click to toggle"
         >
           {source.repo}
         </code>
@@ -1766,7 +1839,19 @@ function SourceSection({
         </div>
       )}
 
-      {bundles.length === 0 ? (
+      {collapsed ? (
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--muted)',
+            paddingLeft: 28,
+            fontStyle: 'italic',
+          }}
+        >
+          {bundles.length} bundle{bundles.length === 1 ? '' : 's'}
+          {installedCount > 0 ? `, ${installedCount} installed` : ''} — hidden
+        </div>
+      ) : bundles.length === 0 ? (
         <div className="inline-empty" style={{ padding: 14 }}>
           {source.lastSyncAt
             ? 'No bundles found in this source.'
@@ -2492,6 +2577,184 @@ function LoadoutInsightCard({
       </div>
       <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.4 }}>
         {insight.body}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * P7 — Source audit review modal. Shown once after AddSource for any
+ * non-default source whose audit returned at least one finding.
+ * Lists every flagged skill with its worst-severity badge + per-
+ * finding details (category, reason, snippet, line number). The
+ * user decides whether to keep the source subscribed or remove
+ * it; removing is destructive but cheap (the source has just been
+ * added — no project has subscriptions yet).
+ */
+function SourceAuditModal({
+  sourceId,
+  reports,
+  onKeep,
+  onRemove,
+}: {
+  sourceId: string;
+  reports: SkillAuditReport[];
+  onKeep: () => void;
+  onRemove: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const counts = reports.reduce(
+    (acc, r) => {
+      acc[r.worstSeverity] = (acc[r.worstSeverity] ?? 0) + 1;
+      return acc;
+    },
+    {} as Record<SkillAuditFinding['severity'], number | undefined>,
+  );
+  return (
+    <Modal
+      title={<b>Audit findings for {sourceId}</b>}
+      onClose={busy ? undefined : onKeep}
+      maxWidth={680}
+      footer={
+        <>
+          <button
+            className="tb-btn"
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await onRemove();
+              } finally {
+                setBusy(false);
+              }
+            }}
+            disabled={busy}
+            title="Remove this source — the audit's flags are dealbreakers"
+          >
+            Remove source
+          </button>
+          <button
+            className="tb-btn primary"
+            onClick={onKeep}
+            disabled={busy}
+            title="Keep the source subscribed despite the findings"
+          >
+            Keep — I've reviewed
+          </button>
+        </>
+      }
+    >
+      <div style={{ fontSize: 12, marginBottom: 12, color: 'var(--text-2)' }}>
+        Static heuristic check flagged{' '}
+        <strong>{reports.length}</strong>{' '}
+        {reports.length === 1 ? 'skill' : 'skills'} in this source:{' '}
+        {counts.red ? (
+          <>
+            <span style={{ color: 'var(--error)' }}>{counts.red} red</span>
+            {(counts.yellow ?? 0) > 0 && ', '}
+          </>
+        ) : null}
+        {counts.yellow ? (
+          <span style={{ color: 'var(--waiting)' }}>
+            {counts.yellow} yellow
+          </span>
+        ) : null}
+        . Review each finding below — these are pattern matches over
+        the SKILL.md content, not proof of malicious intent. False
+        positives are common; the audit favours sensitivity over
+        precision.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {reports.map((r) => (
+          <SourceAuditReportCard key={`${r.bundleId}-${r.skillId}`} report={r} />
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+function SourceAuditReportCard({ report }: { report: SkillAuditReport }) {
+  const tint =
+    report.worstSeverity === 'red'
+      ? 'var(--error)'
+      : report.worstSeverity === 'yellow'
+      ? 'var(--waiting)'
+      : 'var(--accent)';
+  return (
+    <div
+      style={{
+        border: '1px solid var(--border)',
+        borderLeft: `3px solid ${tint}`,
+        borderRadius: 4,
+        background: 'var(--sub-1)',
+        padding: '8px 12px',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          fontSize: 12,
+          fontWeight: 600,
+          marginBottom: 6,
+        }}
+      >
+        <span style={{ color: tint }}>
+          {report.worstSeverity === 'red' ? '!' : 'i'}
+        </span>
+        <span>{report.skillName}</span>
+        <span
+          className="badge"
+          style={{
+            background: 'var(--sub-2)',
+            color: 'var(--text-2)',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          {report.bundleId}/{report.skillId}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {report.findings.map((f, i) => (
+          <div
+            key={`${f.patternId}-${i}`}
+            style={{
+              fontSize: 11,
+              color: 'var(--text-2)',
+              lineHeight: 1.4,
+              paddingLeft: 8,
+              borderLeft: '1px solid var(--border)',
+            }}
+          >
+            <div
+              style={{
+                color:
+                  f.severity === 'red'
+                    ? 'var(--error)'
+                    : f.severity === 'yellow'
+                    ? 'var(--waiting)'
+                    : 'var(--text-2)',
+              }}
+            >
+              <strong>{f.category}</strong> · {f.reason} (line{' '}
+              {f.lineNumber})
+            </div>
+            <code
+              style={{
+                display: 'block',
+                marginTop: 2,
+                fontSize: 10,
+                background: 'var(--sub-2)',
+                padding: '2px 6px',
+                borderRadius: 2,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+              }}
+            >
+              {f.snippet}
+            </code>
+          </div>
+        ))}
       </div>
     </div>
   );

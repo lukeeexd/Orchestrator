@@ -107,6 +107,12 @@ export function SpawnAgentForm({
   provider,
 }: Props) {
   const [role, setRole] = useState<AgentRole>('coder');
+  // P10: optional qa flavour. Hidden until role === 'qa'. Reset to
+  // 'default' on role change so a stale Playwright selection doesn't
+  // leak to a non-qa role.
+  const [qaFlavour, setQaFlavour] = useState<'default' | 'playwright'>(
+    'default',
+  );
   const [workspace, setWorkspace] = useState(defaultWorkspace);
   // Provider starts at the project's default; user can flip for one
   // spawn without changing the project itself. When the provider
@@ -197,6 +203,9 @@ export function SpawnAgentForm({
         ...(agentProvider !== provider ? { provider: agentProvider } : {}),
         ...(hasBudget ? { budget } : {}),
         ...(okAttachments.length > 0 ? { attachments: okAttachments } : {}),
+        ...(role === 'qa' && qaFlavour === 'playwright'
+          ? { subtype: 'playwright' as const }
+          : {}),
       });
       onSpawned();
     } catch (e) {
@@ -232,7 +241,12 @@ export function SpawnAgentForm({
                 <button
                   key={r.id}
                   className={'role-chip' + (role === r.id ? ' on' : '')}
-                  onClick={() => setRole(r.id)}
+                  onClick={() => {
+                    setRole(r.id);
+                    // P10: reset flavour whenever the role changes —
+                    // a Playwright pick only makes sense under qa.
+                    if (r.id !== 'qa') setQaFlavour('default');
+                  }}
                   style={{ borderColor: role === r.id ? r.tint : undefined }}
                   aria-pressed={role === r.id}
                 >
@@ -246,6 +260,24 @@ export function SpawnAgentForm({
               ))}
             </div>
           </div>
+
+          {role === 'qa' && (
+            <div className="field">
+              <span className="lbl">Flavour</span>
+              <select
+                className="text-input"
+                value={qaFlavour}
+                onChange={(e) =>
+                  setQaFlavour(e.target.value as 'default' | 'playwright')
+                }
+              >
+                <option value="default">Default — run any test runner</option>
+                <option value="playwright">
+                  Playwright — e2e/browser tests, emits a Tests: N/M KPI
+                </option>
+              </select>
+            </div>
+          )}
 
           <div className="field">
             <span className="lbl">Workspace folder</span>

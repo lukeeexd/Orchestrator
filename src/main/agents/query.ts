@@ -85,7 +85,7 @@ export function buildQuery(args: BuildQueryArgs): AsyncIterable<unknown> {
   const resolved = resolveModel(model);
   const effectiveTools = resolveTools(agent.role, agent.projectId);
   const projectId = agent.projectId;
-  const systemPrompt = buildSystemPromptFor(agent.role, projectId);
+  const systemPrompt = buildSystemPromptFor(agent.role, projectId, agent.subtype);
 
   if (emitPluginDirsNote && provider === 'claude') {
     const pluginDirs = pluginDirsForProject(projectId, agent.role);
