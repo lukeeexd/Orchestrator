@@ -370,6 +370,34 @@ const api: OrchestratorApi = {
       IpcChannels.CrashesRecordRenderer,
       payload,
     ) as Promise<{ ok: boolean }>,
+  listMemoryProposals: (projectId, role, status) =>
+    ipcRenderer.invoke(
+      IpcChannels.MemoryListProposals,
+      projectId,
+      role,
+      status,
+    ) as Promise<import('../shared/types').MemoryProposal[]>,
+  approveMemoryProposal: (id) =>
+    ipcRenderer.invoke(
+      IpcChannels.MemoryApproveProposal,
+      id,
+    ) as Promise<
+      | { ok: true; proposal: import('../shared/types').MemoryProposal }
+      | { ok: false; error: string }
+    >,
+  rejectMemoryProposal: (id) =>
+    ipcRenderer.invoke(
+      IpcChannels.MemoryRejectProposal,
+      id,
+    ) as Promise<
+      | { ok: true; proposal: import('../shared/types').MemoryProposal }
+      | { ok: false; error: string }
+    >,
+  onMemoryProposal: (cb) =>
+    subscribe<import('../shared/types').MemoryProposal>(
+      IpcChannels.MemoryEventProposal,
+      cb,
+    ),
   getSpendSummary: () =>
     ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
       import('../shared/types').SpendSummary

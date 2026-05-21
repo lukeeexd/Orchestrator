@@ -12,6 +12,16 @@ import {
   getCrashesFolder,
   recordRendererCrash,
 } from '../crashes';
+import {
+  listProposals as listMemoryProposals,
+  approveProposal as approveMemoryProposal,
+  rejectProposal as rejectMemoryProposal,
+} from '../memoryProposals';
+import type {
+  AgentRole,
+  MemoryProposal,
+  MemoryProposalStatus,
+} from '../../shared/types';
 
 /**
  * Single-channel handlers that don't justify their own module —
@@ -129,5 +139,40 @@ export function registerMiscHandlers(): void {
       recordRendererCrash(payload);
       return { ok: true };
     },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MemoryListProposals,
+    (
+      _event,
+      projectId: string,
+      role?: AgentRole,
+      status?: MemoryProposalStatus,
+    ): MemoryProposal[] =>
+      listMemoryProposals({
+        projectId,
+        ...(role ? { role } : {}),
+        ...(status ? { status } : {}),
+      }),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MemoryApproveProposal,
+    (
+      _event,
+      id: string,
+    ):
+      | { ok: true; proposal: MemoryProposal }
+      | { ok: false; error: string } => approveMemoryProposal(id),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MemoryRejectProposal,
+    (
+      _event,
+      id: string,
+    ):
+      | { ok: true; proposal: MemoryProposal }
+      | { ok: false; error: string } => rejectMemoryProposal(id),
   );
 }

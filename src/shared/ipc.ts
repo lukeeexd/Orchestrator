@@ -79,6 +79,14 @@ export const IpcChannels = {
   CrashesClear: 'crashes:clear',
   CrashesOpenFolder: 'crashes:openFolder',
   CrashesRecordRenderer: 'crashes:recordRenderer',
+  /** List memory proposals filterable by project + role + status. */
+  MemoryListProposals: 'memory:listProposals',
+  /** Approve a proposal — appends body to the per-role skill file, marks approved. */
+  MemoryApproveProposal: 'memory:approveProposal',
+  /** Reject a proposal — marks rejected, doesn't touch the per-role skill. */
+  MemoryRejectProposal: 'memory:rejectProposal',
+  /** Renderer-bound: fired when an agent emits a new orchestrator-memory block. */
+  MemoryEventProposal: 'memory:event:proposal',
   SpendGet: 'spend:get',
   SpendRecommendations: 'spend:recommendations',
   HistoryList: 'history:list',
@@ -875,6 +883,37 @@ export interface OrchestratorApi {
     componentStack?: string;
     url?: string;
   }) => Promise<{ ok: boolean }>;
+  /**
+   * List memory proposals for a project. Optionally filter by role
+   * (the Memory tab uses the agent's role) and status (the queue
+   * shows pending; history can show approved/rejected).
+   */
+  listMemoryProposals: (
+    projectId: string,
+    role?: import('./types').AgentRole,
+    status?: import('./types').MemoryProposalStatus,
+  ) => Promise<import('./types').MemoryProposal[]>;
+  /**
+   * Approve a proposal — appends body to the per-role skill file
+   * (existing P4 storage) and marks the proposal approved.
+   */
+  approveMemoryProposal: (
+    id: string,
+  ) => Promise<
+    | { ok: true; proposal: import('./types').MemoryProposal }
+    | { ok: false; error: string }
+  >;
+  /** Reject a proposal — marks it rejected, leaves the per-role skill untouched. */
+  rejectMemoryProposal: (
+    id: string,
+  ) => Promise<
+    | { ok: true; proposal: import('./types').MemoryProposal }
+    | { ok: false; error: string }
+  >;
+  /** Subscribe to new memory proposals as they're emitted by agents. */
+  onMemoryProposal: (
+    cb: (p: import('./types').MemoryProposal) => void,
+  ) => () => void;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   /** Rule-based cost / loadout recommendations recomputed each call. */
   getSpendRecommendations: () => Promise<

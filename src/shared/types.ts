@@ -523,3 +523,29 @@ export interface CrashEntry {
   /** Free-form context — render URL, exit code, component stack, etc. */
   context?: Record<string, unknown>;
 }
+
+/**
+ * An agent's proposal to add something to its role's persistent memory.
+ * Emitted via an `orchestrator-memory` fenced block in the agent's
+ * assistant text; landed as a pending proposal until the user
+ * approves or rejects via the Drawer's Memory tab.
+ *
+ * Approval appends `body` to the per-role skill file (P4 storage), so
+ * subsequent spawns of that role see the memory through the existing
+ * `effectiveSkill` path. No new prompt-loading mechanism — just a new
+ * way for the prompt to grow over time.
+ */
+export type MemoryProposalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface MemoryProposal {
+  id: string;
+  projectId: string;
+  role: AgentRole;
+  /** The proposed memory body — appended verbatim to the per-role skill on approve. */
+  body: string;
+  /** Originating agent — kept after approve/reject for provenance. */
+  sourceAgentId?: string;
+  sourceAgentName?: string;
+  createdAt: number;
+  status: MemoryProposalStatus;
+}

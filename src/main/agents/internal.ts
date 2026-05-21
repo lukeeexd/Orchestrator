@@ -51,10 +51,50 @@ When your run finishes, emit a single final line of the form:
  */
 
 /**
+ * Universal "how to propose memory" block. Appended to every role's
+ * system prompt by `buildSystemPromptFor`. Teaches the agent to emit
+ * an `orchestrator-memory` fenced JSON block when it discovers
+ * something worth pinning for future spawns of this role.
+ *
+ * The body of each block lands as a pending proposal in the
+ * `memory_proposals` table; the user approves or rejects from the
+ * Drawer's Memory tab; approved bodies are appended to the
+ * project's per-role skill file, which `effectiveSkill` already
+ * surfaces above on every future spawn.
+ *
+ * Keep the format aligned with the parser
+ * (`src/main/agents/memoryParse.ts`) — the fenced-block tag MUST be
+ * `orchestrator-memory`; changing it here means changing the regex
+ * there too.
+ */
+const PROPOSE_MEMORY_PROMPT = `## Proposing memory for future agents
+
+If you discover something genuinely worth remembering about *this project* — a non-obvious constraint, a convention that future agents of your role should know, a gotcha that cost you time — propose it for memory by emitting a fenced block in your final message:
+
+\`\`\`orchestrator-memory
+<short, self-contained text that any future agent of this role should know>
+\`\`\`
+
+The user reviews each proposal from the Memory tab. Approved bodies are appended to this project's per-role prompt; the next time a fresh agent of your role spawns, they'll see your note before they start work.
+
+When to propose:
+- "We use sql.js (not better-sqlite3) because no MSVC toolchain is available locally."
+- "The marketplace module was split into focused submodules in v0.10.0 — don't read marketplace.ts."
+- "Auto-update polls Cloudflare R2 in v0.15.0+, not update.electronjs.org."
+
+When NOT to propose:
+- Notes about *this specific run* (those belong in your final summary, not in memory).
+- Restating what's already in CLAUDE.md or the role's existing prompt.
+- Vague observations ("the code is complex"). Memory pins should be actionable.
+
+Emit at most one or two memory blocks per run. Each is a long-term commitment to future spawns — be selective.`;
+
+/**
  * Build the role's effective system prompt: its hardcoded prompt plus
  * any per-role skill body the project has authored (or the in-app
  * default) plus the flavour-specific block when an AgentSubtype is
- * set. Empty skill content is a no-op.
+ * set plus the universal "propose memory" instructions. Empty skill
+ * content is a no-op.
  */
 export function buildSystemPromptFor(
   role: AgentRole,
@@ -67,6 +107,7 @@ export function buildSystemPromptFor(
   const parts = [base];
   if (skill) parts.push(`## Project skill\n\n${skill}`);
   if (flavour) parts.push(flavour);
+  parts.push(PROPOSE_MEMORY_PROMPT);
   return parts.join('\n\n');
 }
 
