@@ -2,15 +2,28 @@ import { app, autoUpdater, BrowserWindow } from 'electron';
 import { updateElectronApp, UpdateSourceType } from 'update-electron-app';
 
 /**
- * Wire Squirrel.Windows auto-update via update.electronjs.org (which acts
- * as a Squirrel-compatible feed proxy over our GitHub Releases). The
- * `update-electron-app` package is the official wrapper: it polls the
- * feed every 10 minutes by default, downloads new nupkgs in the
- * background, and fires `update-downloaded` on autoUpdater when ready.
+ * v0.15.0: auto-update now polls a self-hosted Squirrel feed on
+ * Cloudflare R2 instead of `update.electronjs.org`. The latter is
+ * public-repo-only — pointing at our R2 bucket lets us flip the
+ * GitHub repo private later without breaking auto-update.
  *
- * No-ops in dev mode (process.defaultApp / non-packaged) so dev sessions
- * don't accidentally apply updates over the working copy.
+ * The feed bucket lives at this baseUrl and contains:
+ *   - RELEASES                                  (Squirrel text index)
+ *   - Orchestrator-<version>-full.nupkg         (the update package)
+ *   - Orchestrator-Setup.exe                    (first-install link)
+ *
+ * `release.yml` uploads all three to R2 on every tag via
+ * `wrangler r2 object put`. `update-electron-app`'s built-in
+ * `StaticStorage` source pattern fetches RELEASES from baseUrl +
+ * platform suffix; Electron's autoUpdater then handles the
+ * nupkg download + install hand-off.
+ *
+ * No-ops in dev mode (process.defaultApp / non-packaged) so dev
+ * sessions don't accidentally apply updates over the working copy.
  */
+const UPDATE_FEED_BASE_URL =
+  'https://pub-8063218cce2949b1b3259affce2c51e2.r2.dev';
+
 export function setupAutoUpdater(): void {
   if (!app.isPackaged) {
     // Dev/unpackaged build — autoUpdater isn't available and we don't
@@ -21,8 +34,8 @@ export function setupAutoUpdater(): void {
   try {
     updateElectronApp({
       updateSource: {
-        type: UpdateSourceType.ElectronPublicUpdateService,
-        repo: 'lukeeexd/Orchestrator',
+        type: UpdateSourceType.StaticStorage,
+        baseUrl: UPDATE_FEED_BASE_URL,
       },
       // 10 minutes is the package default; explicit so it's easy to tune.
       updateInterval: '10 minutes',
@@ -38,9 +51,8 @@ export function setupAutoUpdater(): void {
       },
     });
   } catch (err) {
-    // If update.electronjs.org returns a 404 (no release yet for this
-    // platform/version pair) the wrapper throws. Swallow so app start
-    // doesn't fail in that case — auto-update is best-effort.
+    // Feed unreachable or RELEASES not yet uploaded for this version —
+    // swallow so app start doesn't fail. Auto-update is best-effort.
     console.error('[updater] setup failed:', err);
     return;
   }
