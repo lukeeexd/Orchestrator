@@ -10,6 +10,7 @@ import * as director from '../director/runner';
 import * as marketplace from '../marketplace';
 import { extractMcpCommands } from '../security/mcp';
 import { assertValidWorkspacePath } from '../security/workspace';
+import { scaffoldMcpServer } from '../mcpScaffold';
 import {
   createProject,
   deleteProject,
@@ -210,6 +211,16 @@ export function registerProjectsHandlers(ctx: IpcContext): void {
       } catch {
         return { commands: [] };
       }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.ProjectScaffoldMcpServer,
+    (
+      _event,
+      input: import('../../shared/ipc').McpScaffoldRequest,
+    ): import('../../shared/ipc').McpScaffoldResult => {
+      return scaffoldMcpServer(input);
     },
   );
   ipcMain.handle(

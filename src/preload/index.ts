@@ -348,6 +348,11 @@ const api: OrchestratorApi = {
       IpcChannels.AppHasWorkspaceMd,
       workspace,
     ) as Promise<boolean>,
+  scaffoldMcpServer: (input) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectScaffoldMcpServer,
+      input,
+    ) as Promise<import('../shared/ipc').McpScaffoldResult>,
   getSpendSummary: () =>
     ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
       import('../shared/types').SpendSummary

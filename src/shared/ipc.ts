@@ -74,6 +74,7 @@ export const IpcChannels = {
   AppCliStatusByProvider: 'app:cliStatusByProvider',
   AppOpenUsage: 'app:openUsage',
   AppHasWorkspaceMd: 'app:hasWorkspaceMd',
+  ProjectScaffoldMcpServer: 'project:scaffoldMcpServer',
   SpendGet: 'spend:get',
   SpendRecommendations: 'spend:recommendations',
   HistoryList: 'history:list',
@@ -405,6 +406,28 @@ export interface SkillEntry {
   content: string;
   hasFile: boolean;
   path: string | null;
+}
+
+export interface McpScaffoldRequest {
+  projectId: string;
+  language: 'typescript' | 'python';
+  /** Server id used in mcpConfig and as the directory name. */
+  name: string;
+  description: string;
+  capabilities: {
+    tools: boolean;
+    resources: boolean;
+    prompts: boolean;
+  };
+}
+
+export interface McpScaffoldResult {
+  ok: boolean;
+  /** Absolute path of the destination directory on success. */
+  destination?: string;
+  /** Workspace-relative paths of the files written. */
+  filesWritten?: string[];
+  error?: string;
 }
 
 export interface TemplateCreateRequest {
@@ -811,6 +834,12 @@ export interface OrchestratorApi {
    * codebase-onboarding nudge should appear for this project.
    */
   hasWorkspaceMd: (workspace: string) => Promise<boolean>;
+  /**
+   * P9 — scaffold a new MCP server in the project's workspace + auto-
+   * register it in the project's mcpConfig. Returns the destination
+   * path on success or a descriptive error.
+   */
+  scaffoldMcpServer: (input: McpScaffoldRequest) => Promise<McpScaffoldResult>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   /** Rule-based cost / loadout recommendations recomputed each call. */
   getSpendRecommendations: () => Promise<
