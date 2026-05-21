@@ -102,28 +102,28 @@ jobs:
           Write-Host "Installer size: $($size.ToString('F1')) MB"
 
       - name: Stage Cloudflare upload directory
-        # S6: builds the directory that gets pushed to Cloudflare
-        # Pages as the secondary update channel. Contains:
-        #   - Orchestrator-Setup.exe  (the public download link)
-        #   - latest.json             (manifest the secondary
-        #                              updater polls every 10 mins)
-        # Always runs (no secret gate) so we know whether the
-        # staging itself works even before Cloudflare is wired up.
+        # S6: builds the manifest-only directory that gets pushed to
+        # Cloudflare Pages as the secondary update channel.
+        #
+        # Pages has a hard 25 MB per-file limit (the installer is
+        # ~140 MB), so the .exe stays on GitHub Releases for now;
+        # `latest.json` points `downloadUrl` at the public Release
+        # asset URL. When the repo eventually flips private the
+        # downloadUrl pattern moves to Cloudflare R2 (or another
+        # object store) — that's a follow-up slice.
+        #
+        # latest.json shape:
+        #   { "version": "0.14.1",
+        #     "downloadUrl": "https://github.com/<owner>/<repo>/releases/download/v0.14.1/Orchestrator-Setup.exe",
+        #     "releasedAt": "..." }
         shell: pwsh
         run: |
           $stage = "cloudflare-stage"
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          Copy-Item `
-            "out/make/squirrel.windows/x64/Orchestrator-Setup.exe" `
-            "$stage/Orchestrator-Setup.exe"
-          $version = "${{ github.ref_name }}".TrimStart('v')
-          $downloadUrl = "https://${{ vars.CLOUDFLARE_PAGES_HOST }}/Orchestrator-Setup.exe"
-          if ([string]::IsNullOrWhiteSpace("${{ vars.CLOUDFLARE_PAGES_HOST }}")) {
-            # Placeholder while Cloudflare isn't yet provisioned.
-            # Picked up by the secondary updater only when this
-            # vars.CLOUDFLARE_PAGES_HOST repo variable is set.
-            $downloadUrl = "https://example.invalid/Orchestrator-Setup.exe"
-          }
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart('v')
+          $repo = "${{ github.repository }}"
+          $downloadUrl = "https://github.com/$repo/releases/download/$tag/Orchestrator-Setup.exe"
           $manifest = [PSCustomObject]@{
             version     = $version
             downloadUrl = $downloadUrl
@@ -136,25 +136,29 @@ jobs:
           Get-ChildItem $stage | Format-Table Name, Length
 
       - name: Publish to Cloudflare Pages
-        # S6: pushes the staged dir to Cloudflare Pages. Soft-skipped
+        # S6: pushes latest.json to Cloudflare Pages. Soft-skipped
         # while the secondary channel isn't yet provisioned — once
         # the repo variable CLOUDFLARE_PAGES_PROJECT is set in
         # GitHub → Settings → Variables, this step activates and
-        # the staged dir lands at the project's pages.dev URL.
+        # the manifest lands at the project's pages.dev URL.
+        #
+        # `continue-on-error: true` so any Cloudflare hiccup
+        # (transient API failure, misconfigured secrets, future
+        # Pages-side incident) never blocks the GitHub Release
+        # publish — the v0.14.0 lesson: a single CI plumbing step
+        # should never kill the entire release.
         #
         # Variables (Settings → Secrets and variables → Actions →
         # Variables tab):
-        #   CLOUDFLARE_PAGES_PROJECT  — pages project name (e.g.
-        #                               orchestrator-updates)
-        #   CLOUDFLARE_PAGES_HOST     — public hostname the
-        #                               manifest's downloadUrl
-        #                               points at (e.g.
-        #                               orchestrator-updates.pages.dev)
+        #   CLOUDFLARE_PAGES_PROJECT  — pages project name
+        #                               (e.g. orchestrator-updates)
         #
         # Secrets (same screen, Secrets tab):
-        #   CLOUDFLARE_API_TOKEN      — token with Pages edit perms
+        #   CLOUDFLARE_API_TOKEN      — token from "Edit Cloudflare
+        #                               Workers" template
         #   CLOUDFLARE_ACCOUNT_ID     — Cloudflare account id
         if: ${{ vars.CLOUDFLARE_PAGES_PROJECT != '' }}
+        continue-on-error: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
