@@ -275,9 +275,18 @@ higher creativity.
   allow-list override is P8.1 if the soft constraint stops being
   enough.
 
-- **P9.** `[ ]` **MCP server builder wizard** — scaffold a new MCP server
-  in workspace (TS or Python), auto-register in `.mcp.json`. Pairs with
-  v0.8's MCP support.
+- **P9.** `[x]` **MCP server builder wizard** — shipped 2026-05-21 (post-S3).
+  New "Scaffold server" button under Tools › MCP opens a single-page
+  wizard (language: TS/Python, name, description, capabilities:
+  tools/resources/prompts, destination preview). Main side writes
+  package.json/pyproject.toml + index.ts/main.py with one example
+  handler per checked capability + README + .gitignore under
+  `<workspace>/.mcp-servers/<name>`, then patches the project's
+  mcpConfig to register the new server in stdio mode. Path-safety
+  via `assertValidWorkspacePath` + `realpathSync` containment check.
+  Out of scope: editable destination, auto-install of deps,
+  renderer auto-refresh of the McpEditor JSON textarea after
+  scaffold (config IS saved; visual stale until projects reload).
 
 - **P10.** `[ ]` **Playwright QA role variant** — subtype dropdown at qa
   spawn time; auto-subscribes `playwright-pro` skill; adds Playwright to
