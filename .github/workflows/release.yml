@@ -80,6 +80,16 @@ jobs:
       - name: Build installer
         run: npm run make
 
+      - name: E2E smoke (Playwright on packaged app)
+        # S8: launches `out/Orchestrator-win32-x64/Orchestrator.exe`
+        # (left behind by `npm run make` alongside the installer) and
+        # asserts that the renderer mounts. If this fails the release
+        # is blocked — better to leave the tag without an artifact
+        # than ship a build that refuses to start (cf. the v0.4.0
+        # asar-integrity silent-fail bug, which would have been
+        # caught here).
+        run: npm run test:e2e
+
       - name: Verify installer artifact
         shell: pwsh
         run: |

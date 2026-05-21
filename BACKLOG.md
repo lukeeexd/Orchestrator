@@ -169,18 +169,29 @@ awaitCompletion / RunnerSinks / registry namespace). Largest module
 is now `query.ts` at 419 — well under project_architect's 500-line
 threshold. No behaviour change; tsc clean.
 
-### S8. `[ ]` End-to-end test harness
+### S8. `[x]` End-to-end test harness — shipped 2026-05-21
 
-**Measurement:** No e2e harness detected; `tech-stack-evaluator` flagged this
-against the cadence (release every ~2 days).
+**What landed:** `@playwright/test` devDep + a single smoke spec at
+`tests/e2e/smoke.spec.ts`. The spec launches the packaged
+`out/Orchestrator-win32-x64/Orchestrator.exe` with an isolated
+`--user-data-dir` and connects via Chromium CDP
+(`--remote-debugging-port`), bypassing Playwright's `_electron.launch`
+which would otherwise need `--inspect` — blocked by our
+`EnableNodeCliInspectArguments: false` fuse. Two assertions: window
+title is `Orchestrator`, and `#root` has rendered content. Runs in
+~1.5s locally.
 
-**Rationale:** The v0.4.0 ASAR-fuses regression (silent install failure) and
-the v0.5.x codex Fork issues would have been caught by a "installer launches
-+ renderer renders" smoke test in CI.
+**CI wiring:** `release.yml` runs `npm run test:e2e` after `npm run
+make` and before "Verify installer artifact" — failure blocks the
+GitHub Release publication, so a v0.4.0-style silent-launch regression
+would leave the tag without a published binary instead of shipping a
+broken installer.
 
-**Sketch:** Playwright-on-Electron with one smoke scenario — launch packaged
-installer in a clean container, verify renderer mounts, verify Director chat
-accepts input. Wire into `release.yml` as a gate before tag publication.
+**Deliberately out of scope:**
+- Multi-window scenarios, deep IPC roundtrips, real Claude CLI
+  invocations. These are unit/integration territory.
+- macOS / Linux runners (this is a Windows-only app today).
+- Visual regression. No screenshot diffs.
 
 ---
 
