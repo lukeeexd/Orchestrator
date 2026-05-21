@@ -1821,6 +1821,60 @@ body.resizing * { cursor: col-resize !important; }
   color: var(--muted);
   font-style: italic;
 }
+
+/* S5: fallback rendered by ErrorBoundary when the renderer throws.
+   Intentionally minimal — the React tree below is in an unknown
+   state by the time we get here, so the only useful affordance is
+   reload + reveal the crashes folder. */
+.error-boundary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--text);
+}
+.error-boundary-card {
+  max-width: 720px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px 24px;
+  background: var(--bg-2);
+}
+.error-boundary-card h2 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: var(--error);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.error-boundary-msg {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0 0 12px 0;
+}
+.error-boundary-stack {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text);
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.error-boundary-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  justify-content: flex-end;
+}
 .stream-redirect {
   margin-left: 20px;
   margin-top: 4px;

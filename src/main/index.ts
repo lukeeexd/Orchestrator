@@ -1,6 +1,15 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import { installCrashHandlers } from './crashes';
+
+// S5: install crash handlers BEFORE any other import does real work.
+// Boot-time crashes (e.g. a corrupt sqlite file, a broken migration,
+// a thrown native module) used to silently kill the app with no UI;
+// now they land on disk under `userData/crashes/` and the Settings
+// "Crashes" tile counts them on the next launch.
+installCrashHandlers();
+
 import { registerIpcHandlers } from './ipc';
 import { openDb, closeDb } from './db';
 import { markRunningAgentsAsInterrupted } from './persistence';

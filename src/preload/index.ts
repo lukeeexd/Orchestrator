@@ -353,6 +353,23 @@ const api: OrchestratorApi = {
       IpcChannels.ProjectScaffoldMcpServer,
       input,
     ) as Promise<import('../shared/ipc').McpScaffoldResult>,
+  listCrashes: () =>
+    ipcRenderer.invoke(IpcChannels.CrashesList) as Promise<
+      import('../shared/types').CrashEntry[]
+    >,
+  clearCrashes: () =>
+    ipcRenderer.invoke(IpcChannels.CrashesClear) as Promise<{
+      removed: number;
+    }>,
+  openCrashesFolder: () =>
+    ipcRenderer.invoke(IpcChannels.CrashesOpenFolder) as Promise<{
+      ok: boolean;
+    }>,
+  recordRendererCrash: (payload) =>
+    ipcRenderer.invoke(
+      IpcChannels.CrashesRecordRenderer,
+      payload,
+    ) as Promise<{ ok: boolean }>,
   getSpendSummary: () =>
     ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
       import('../shared/types').SpendSummary

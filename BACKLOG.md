@@ -149,19 +149,35 @@ spike was rolled back, so the swap will need to be re-implemented
 — but the shape is well-known now (sql.js-compat wrapper class +
 AutoUnpackNatives + extern in vite.main.config.ts).
 
-### S5. `[ ]` Crash + perf telemetry
+### S5. `[x]` Crash capture — shipped 2026-05-21
 
-**Measurement:** Stack has zero observability — `tech-stack-evaluator`
-flagged this as a tier gap.
+**What landed:** local-only crash capture. Main-process handlers
+catch `uncaughtException`, `unhandledRejection`,
+`child-process-gone`, and `render-process-gone`; renderer-side
+errors land via a React `ErrorBoundary` that IPCs to the same
+pipeline. Each crash writes a single JSON file to
+`userData/crashes/<ts>-<short uuid>.json` with
+app/Electron/platform versions, the error name+message+stack,
+and any contextual data (e.g. exit code, component stack).
+Handlers install at the very top of `src/main/index.ts` so
+boot-time throws are captured.
 
-**Rationale:** Releases ship every couple of days. When a release crashes on
-someone else's machine (or your own renderer process), there's no signal at
-all — you find out only if a user notices and reports.
+Settings gets a new **Crashes** section showing the count + the
+latest crash's timestamp, plus an **Open folder** button (reveals
+the folder in Explorer) and a **Clear all** button.
+ErrorBoundary's fallback renders a minimal recovery card with a
+**Reload window** button + **Open crashes folder**.
 
-**Sketch:** opt-in only (single-user app, privacy matters). Local structured
-log to `userData/crashes/` on `uncaughtException` + renderer error boundary;
-optional manual upload via a "Send crash report" button. Pairs with the
-hypothetical Spend optimizer panel (P3) — both want the same telemetry.
+**Why no upload + no opt-in:** local-only data, never leaves the
+device. The same `userData/` directory already holds the agent DB
+and marketplace cache, so a crash log isn't a fresh privacy
+surface. If you want to share a crash for a bug report, reveal
+the folder in Settings and copy the JSON yourself.
+
+**Out of scope (deliberately):** perf telemetry (the BACKLOG's
+"perf" half — harder to make actionable in v1), automatic upload,
+a Sentry-style network reporter, per-crash UI inside the app
+(the JSON is for forensics, not browsing).
 
 ### S6. `[ ]` Self-hosted update channel fallback
 

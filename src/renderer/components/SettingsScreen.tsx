@@ -12,7 +12,14 @@ export function SettingsScreen() {
   const [revealOauth, setRevealOauth] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [version, setVersion] = useState<string>('');
+  const [crashes, setCrashes] = useState<
+    import('../../shared/types').CrashEntry[] | null
+  >(null);
   const savedTimer = useRef<number | null>(null);
+
+  const refreshCrashes = () => {
+    void window.api.listCrashes().then(setCrashes);
+  };
 
   useEffect(() => {
     void window.api.getSettings().then((s) => {
@@ -20,6 +27,7 @@ export function SettingsScreen() {
       setOriginal(s);
     });
     void window.api.ping().then((p) => setVersion(p.version));
+    refreshCrashes();
     return () => {
       if (savedTimer.current) window.clearTimeout(savedTimer.current);
     };
@@ -281,6 +289,59 @@ export function SettingsScreen() {
                 </div>
               </div>
             </label>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3 className="settings-h">Crashes</h3>
+          <div className="field">
+            <span className="lbl">Captured</span>
+            <div className="settings-input-row">
+              <span className="v" style={{ flex: 1 }}>
+                {crashes === null ? (
+                  '—'
+                ) : crashes.length === 0 ? (
+                  <span className="dim">No crashes captured.</span>
+                ) : (
+                  <>
+                    <code>{crashes.length}</code> crash
+                    {crashes.length === 1 ? '' : 'es'}
+                    {crashes[0] && (
+                      <span className="dim" style={{ marginLeft: 8 }}>
+                        latest: {crashes[0].kind} ·{' '}
+                        {new Date(crashes[0].ts).toLocaleString()}
+                      </span>
+                    )}
+                  </>
+                )}
+              </span>
+              <button
+                className="tb-btn"
+                onClick={() => void window.api.openCrashesFolder()}
+                title="Reveal the crashes folder in Explorer"
+              >
+                <Icon name="file" size={11} /> Open folder
+              </button>
+              <button
+                className="tb-btn"
+                onClick={async () => {
+                  if (!crashes || crashes.length === 0) return;
+                  await window.api.clearCrashes();
+                  refreshCrashes();
+                }}
+                disabled={!crashes || crashes.length === 0}
+                title="Delete every crash JSON in the crashes folder"
+              >
+                <Icon name="x" size={11} /> Clear all
+              </button>
+            </div>
+          </div>
+          <div className="field">
+            <span className="lbl"></span>
+            <span className="v dim" style={{ fontSize: 11 }}>
+              Captured locally; nothing is uploaded. Reveal the folder
+              if you need to copy a crash into a bug report.
+            </span>
           </div>
         </section>
 

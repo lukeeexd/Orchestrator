@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { IpcChannels } from '../../shared/ipc';
 import { getSpendSummary } from '../spend';
 import { getSpendRecommendations } from '../spendRecommendations';
@@ -6,6 +6,12 @@ import { listHistory } from '../history';
 import { listSlashCommands } from '../commands';
 import { listSkills, writeSkill } from '../skills';
 import { quitAndInstallUpdate } from '../updater';
+import {
+  listCrashes,
+  clearCrashes,
+  getCrashesFolder,
+  recordRendererCrash,
+} from '../crashes';
 
 /**
  * Single-channel handlers that don't justify their own module —
@@ -65,4 +71,42 @@ export function registerMiscHandlers(): void {
   ipcMain.handle(IpcChannels.UpdaterRestart, (): void => {
     quitAndInstallUpdate();
   });
+
+  ipcMain.handle(
+    IpcChannels.CrashesList,
+    (): import('../../shared/types').CrashEntry[] => listCrashes(),
+  );
+
+  ipcMain.handle(IpcChannels.CrashesClear, (): { removed: number } => ({
+    removed: clearCrashes(),
+  }));
+
+  ipcMain.handle(
+    IpcChannels.CrashesOpenFolder,
+    async (): Promise<{ ok: boolean }> => {
+      try {
+        await shell.openPath(getCrashesFolder());
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.CrashesRecordRenderer,
+    (
+      _event,
+      payload: {
+        name?: string;
+        message?: string;
+        stack?: string;
+        componentStack?: string;
+        url?: string;
+      },
+    ): { ok: boolean } => {
+      recordRendererCrash(payload);
+      return { ok: true };
+    },
+  );
 }

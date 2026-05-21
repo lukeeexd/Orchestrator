@@ -75,6 +75,10 @@ export const IpcChannels = {
   AppOpenUsage: 'app:openUsage',
   AppHasWorkspaceMd: 'app:hasWorkspaceMd',
   ProjectScaffoldMcpServer: 'project:scaffoldMcpServer',
+  CrashesList: 'crashes:list',
+  CrashesClear: 'crashes:clear',
+  CrashesOpenFolder: 'crashes:openFolder',
+  CrashesRecordRenderer: 'crashes:recordRenderer',
   SpendGet: 'spend:get',
   SpendRecommendations: 'spend:recommendations',
   HistoryList: 'history:list',
@@ -840,6 +844,28 @@ export interface OrchestratorApi {
    * path on success or a descriptive error.
    */
   scaffoldMcpServer: (input: McpScaffoldRequest) => Promise<McpScaffoldResult>;
+  /**
+   * S5: list the most recent crashes captured to userData/crashes/.
+   * Local-only — there is no network upload. The Settings UI uses
+   * this to render the Crashes section's count + last-crash preview.
+   */
+  listCrashes: () => Promise<import('./types').CrashEntry[]>;
+  /** Delete every crash JSON in `userData/crashes/`. Returns the count removed. */
+  clearCrashes: () => Promise<{ removed: number }>;
+  /** Reveal `userData/crashes/` in the OS file explorer. */
+  openCrashesFolder: () => Promise<{ ok: boolean }>;
+  /**
+   * Renderer-side React error boundary forwards captured errors
+   * here. Main writes through the same pipeline as process-level
+   * crashes.
+   */
+  recordRendererCrash: (payload: {
+    name?: string;
+    message?: string;
+    stack?: string;
+    componentStack?: string;
+    url?: string;
+  }) => Promise<{ ok: boolean }>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   /** Rule-based cost / loadout recommendations recomputed each call. */
   getSpendRecommendations: () => Promise<
