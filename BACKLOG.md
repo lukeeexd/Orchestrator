@@ -700,6 +700,133 @@ trailing section.
   fixes but the missing coverage is what made A5+A6+M9 all live
   in shipped code.
 
+### Review-findings clusters (2026-05-21 plan)
+
+40 outstanding items grouped by shared code path + thematic
+affinity so they ship as cohesive slices instead of one-at-a-
+time fixes. Each cluster picks up multiple items that touch the
+same file or surface; ordering inside a cluster is sequential
+within one commit.
+
+Effort estimates are deliberately rough — "one slice" not
+calendar time.
+
+**Cluster 1 — PRD pipeline fixes** *(3 items, ~30 min, HIGH)*
+
+- **Items:** R-H1, R-A5, R-M7
+- **Scope:** `DirectorPane.tsx` + `director/parse.ts`. Render
+  site for PRD card in classic chat view, tighten parsePrd
+  contract (reject all-empty arrays + comment matches behaviour),
+  reject co-emitted plan blocks in PRD mode.
+- **Why bundle:** all three are P15 pipeline gaps the same
+  session shipped — one parser, one renderer, one contract.
+
+**Cluster 2 — Secondary updater hardening** *(5 items, ~1 hr, MEDIUM)*
+
+- **Items:** R-M9, R-A1, R-A6, R-L5, R-A11
+- **Scope:** `secondaryUpdater.ts` + `UpdaterOpenSecondaryDownload`
+  IPC handler + `StatusBar.tsx`.
+- **Fixes:** pin downloadUrl host (allowlist github.com + R2),
+  cap fetch body via content-length, repair 4-part isNewer,
+  track first-poll setTimeout, expose grace period as a constant.
+
+**Cluster 3 — MCP scaffold safety net** *(3-4 items, ~45 min, MEDIUM)*
+
+- **Items:** R-M2, R-M5, R-M10, optionally R-A7
+- **Scope:** `mcpScaffold.ts`.
+- **Fixes:** roll back files when registration fails, route
+  through the IPC handler so the Director-chat audit trail fires,
+  resolve symlinks at the destination before the path-escape
+  check.
+
+**Cluster 4 — Crash pipeline hardening** *(4 items, ~45 min, MEDIUM)*
+
+- **Items:** R-M4, R-A3, R-A4, R-A2
+- **Scope:** `crashes.ts`, `ErrorBoundary.tsx`,
+  `crashListeners.ts`, `index.ts`.
+- **Fixes:** zod-validate the `recordRendererCrash` payload, cap
+  componentStack size + per-process write cap, dedupe
+  ErrorBoundary + window.error double-record, either move install
+  earlier (into squirrel-startup hook) or honest-up the "BEFORE
+  any other import" comment.
+
+**Cluster 5 — R2 + repo-private readiness** *(3 items, ~1-2 hr + 1 strategic call, HIGH)*
+
+- **Items:** R-M13, R-L10, R-H2
+- **Scope:** `release.yml`, `updater.ts`, possibly a new signing
+  config.
+- **Fixes:** flip `latest.json.downloadUrl` to the R2 URL, add a
+  sha256 verify step that the published R2 nupkg matches the
+  freshly-built one, **resolve the R-H2 strategic call** (sign
+  the installer, verify nupkg sigs, or drop R2 to signal-only).
+- **Sequencing:** resolve before flipping the repo private.
+
+**Cluster 6 — Director session + trust boundaries** *(2-3 items, ~45 min, MEDIUM)*
+
+- **Items:** R-M8 (+R-M12 folds in), R-A8
+- **Scope:** `ipc/projects.ts`, `director/runner.ts`.
+- **Fixes:** symmetric session reset on `setProjectProvider`,
+  strip `orchestrator-*` fences from agent summaries before
+  queueing into the Director's next-turn input.
+
+**Cluster 7 — Quick-wins polish pass** *(8 items, ~30-45 min, LOW but trivial)*
+
+- **Items:** R-M3, R-M6, R-M11+R-A9, R-A10, R-M1, R-L1, R-L4
+- **Scope:** scattered — `updater.ts`, `index.ts`,
+  `agents/query.ts`, `release.yml`, `StatusBar.tsx`,
+  `MarketplaceScreen.tsx`.
+- **Fixes:** string literal → enum constant; stale comment fix;
+  appQuitting gating consistency; `--commit-dirty=true` →
+  `--commit-hash <sha>`; rename shadowed `model` var; closure
+  narrowing; missing `.catch` on audit IPC.
+- **Why bundle:** eight near-trivial fixes that don't deserve
+  their own slice each.
+
+**Cluster 8 — Schema boundary tightening** *(3 items, ~30 min, LOW)*
+
+- **Items:** R-L7, R-L8, R-A12
+- **Scope:** `_schemas.ts`, `SpawnAgentForm.tsx`, `.eslintrc.json`.
+- **Fixes:** tighten partial-budget zod shape, clamp Settings
+  budget schema to nonnegative, add `no-restricted-imports` rule
+  banning `node:*` in `src/shared/**`.
+
+**Cluster 9 — Test infrastructure** *(2 items, ~2-3 hr, MEDIUM)*
+
+- **Items:** R-T1, R-L9
+- **Scope:** new test runner (jest/vitest), `tests/` tree,
+  `release.yml` CI step.
+- **Fixes:** bootstrap a pure-function unit test runner; write
+  baseline tests for `isNewer`, `parsePrd`, `auditSource`,
+  `parsePlan`, `parseRedirect`, handoff parsers, `parseTestsKpi`;
+  fix the hardcoded CDP port when adding more e2e tests.
+- **Why standalone:** R-T1 ships test infra; subsequent clusters
+  get to write regression tests for whatever they touch.
+
+**Cluster 10 — Defer / Won't-fix** *(3 items, no action)*
+
+- **Items:** R-L6, R-L2, S4
+- **Reasoning:** R-L6 (ALTER TABLE no rollback) is consistent
+  with the project's forward-only migration shape. R-L2 (history
+  distillers assume git) is a documentation comment, not a
+  behaviour change. S4 (better-sqlite3) is blocked on external
+  prebuild availability.
+
+#### Suggested sequencing
+
+1. **Cluster 1 (PRD)** first — High-tier, smallest scope,
+   closes a visible bug.
+2. **Cluster 9 (tests)** before any other defensive cluster —
+   gives 2/3/4/6 a place to write regression tests for the
+   parsers they touch.
+3. **Cluster 5 (R2 + private)** when ready to talk through R-H2 —
+   the strategic decision gates flipping the repo private.
+4. **Clusters 2 / 3 / 4 / 6** in any order — defensive hardening
+   passes, independent of each other.
+5. **Cluster 7 (polish)** as a finisher / mop-up commit.
+6. **Cluster 8 (schema tightening)** — last because the lint
+   rule + zod tightening may surface other issues that pull more
+   items in.
+
 ---
 
 ## Cross-references and overlaps
