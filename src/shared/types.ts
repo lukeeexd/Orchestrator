@@ -549,3 +549,32 @@ export interface MemoryProposal {
   createdAt: number;
   status: MemoryProposalStatus;
 }
+
+/**
+ * Tree entry for the Docs rail-screen browser. The renderer renders
+ * directories (sorted first) + `.md` / `.markdown` files; non-markdown
+ * files are filtered out by main-side `markdownBrowser.listDirectory`.
+ */
+export interface MarkdownDirEntry {
+  name: string;
+  /** Absolute path on disk — round-trips back to main for navigation / read. */
+  path: string;
+  isDirectory: boolean;
+  /** True for `.md` / `.markdown` files (case-insensitive). */
+  isMarkdown: boolean;
+}
+
+export interface MarkdownListing {
+  /** Absolute path of the directory that was listed. */
+  path: string;
+  /** Parent's absolute path; null when we're at the filesystem root. */
+  parent: string | null;
+  entries: MarkdownDirEntry[];
+}
+
+export interface MarkdownFileContent {
+  path: string;
+  content: string;
+  /** True if the file exceeded 5 MiB and `content` is a head-of-file slice. */
+  truncated: boolean;
+}

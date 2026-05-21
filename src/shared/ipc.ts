@@ -87,6 +87,12 @@ export const IpcChannels = {
   MemoryRejectProposal: 'memory:rejectProposal',
   /** Renderer-bound: fired when an agent emits a new orchestrator-memory block. */
   MemoryEventProposal: 'memory:event:proposal',
+  /** List a directory for the Docs rail screen — directories + .md files only. */
+  DocsListDirectory: 'docs:listDirectory',
+  /** Read a single .md file for the Docs rail screen viewer. */
+  DocsReadFile: 'docs:readFile',
+  /** Open a folder picker to choose the Docs rail screen's root. */
+  DocsPickFolder: 'docs:pickFolder',
   SpendGet: 'spend:get',
   SpendRecommendations: 'spend:recommendations',
   HistoryList: 'history:list',
@@ -914,6 +920,27 @@ export interface OrchestratorApi {
   onMemoryProposal: (
     cb: (p: import('./types').MemoryProposal) => void,
   ) => () => void;
+  /**
+   * List a directory's contents for the Docs rail screen. Returns
+   * directories (sorted alpha, common build/VCS dirs filtered) and
+   * `.md` / `.markdown` files (sorted alpha after dirs); non-markdown
+   * files are filtered out. Throws on non-existent paths.
+   */
+  docsListDirectory: (
+    absPath: string,
+  ) => Promise<{
+    ok: true;
+    listing: import('./types').MarkdownListing;
+  } | { ok: false; error: string }>;
+  /** Read a single markdown file's content (5 MiB cap; larger files come back truncated). */
+  docsReadFile: (
+    absPath: string,
+  ) => Promise<{
+    ok: true;
+    file: import('./types').MarkdownFileContent;
+  } | { ok: false; error: string }>;
+  /** Open a folder picker for the Docs rail screen's root. */
+  docsPickFolder: () => Promise<{ path: string | null }>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   /** Rule-based cost / loadout recommendations recomputed each call. */
   getSpendRecommendations: () => Promise<

@@ -398,6 +398,20 @@ const api: OrchestratorApi = {
       IpcChannels.MemoryEventProposal,
       cb,
     ),
+  docsListDirectory: (absPath) =>
+    ipcRenderer.invoke(IpcChannels.DocsListDirectory, absPath) as Promise<
+      | { ok: true; listing: import('../shared/types').MarkdownListing }
+      | { ok: false; error: string }
+    >,
+  docsReadFile: (absPath) =>
+    ipcRenderer.invoke(IpcChannels.DocsReadFile, absPath) as Promise<
+      | { ok: true; file: import('../shared/types').MarkdownFileContent }
+      | { ok: false; error: string }
+    >,
+  docsPickFolder: () =>
+    ipcRenderer.invoke(IpcChannels.DocsPickFolder) as Promise<{
+      path: string | null;
+    }>,
   getSpendSummary: () =>
     ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
       import('../shared/types').SpendSummary
