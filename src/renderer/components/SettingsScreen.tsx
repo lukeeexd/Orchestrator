@@ -343,6 +343,29 @@ export function SettingsScreen() {
               if you need to copy a crash into a bug report.
             </span>
           </div>
+          <div className="field">
+            <span className="lbl">Debug</span>
+            <div className="settings-input-row">
+              <button
+                className="tb-btn"
+                onClick={() => {
+                  // setTimeout escape so the throw lands in
+                  // window.onerror (proving the global listener)
+                  // rather than tearing down the React tree via the
+                  // boundary.
+                  setTimeout(() => {
+                    throw new Error('S5 test crash from Settings');
+                  }, 0);
+                  // The IPC write is async — refresh after a short
+                  // delay so the new file shows up in the count.
+                  setTimeout(refreshCrashes, 300);
+                }}
+                title="Throw a renderer error to verify the capture pipeline. Lands in window.onerror, not the React boundary, so the UI stays mounted."
+              >
+                <Icon name="play" size={11} /> Trigger test crash
+              </button>
+            </div>
+          </div>
         </section>
 
         <section className="settings-section">
