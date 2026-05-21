@@ -19,6 +19,7 @@ import { ensureDefaultProject, listProjects } from './projects';
 import { probeCli } from './cli/spawn';
 import { setCliStatus } from './cli/status';
 import { setupAutoUpdater } from './updater';
+import { setupSecondaryUpdater } from './secondaryUpdater';
 import { cleanupPastedImagesAtStart, pasteTempDir } from './attachments';
 import * as marketplace from './marketplace';
 import { seedBuiltins as seedBuiltinTemplates } from './templates';
@@ -126,6 +127,10 @@ app.whenReady().then(async () => {
     registry.hydrate();
     registerIpcHandlers();
     setupAutoUpdater();
+    // S6: secondary channel polls a hosted latest.json. No-op until
+    // SECONDARY_FEED_URL is set in `secondaryUpdater.ts` (once
+    // Cloudflare Pages is provisioned).
+    setupSecondaryUpdater();
     // Seed the default skill marketplace (idempotent — INSERT OR
     // IGNORE) and fire async syncs for any source that hasn't been
     // refreshed in 24h. Fire-and-forget — git clone takes a moment

@@ -433,6 +433,16 @@ const api: OrchestratorApi = {
       IpcChannels.UpdaterEventDownloaded,
       cb,
     ),
+  onSecondaryUpdateAvailable: (cb) =>
+    subscribe<{ version: string; downloadUrl: string; releasedAt?: string }>(
+      IpcChannels.UpdaterEventSecondaryAvailable,
+      cb,
+    ),
+  openSecondaryDownload: (url: string) =>
+    ipcRenderer.invoke(
+      IpcChannels.UpdaterOpenSecondaryDownload,
+      url,
+    ) as Promise<{ ok: boolean }>,
 
   onAgent: (cb) => subscribe<AgentEventAgentPayload>(IpcChannels.AgentEventAgent, cb),
   onLog: (cb) => subscribe<AgentEventLogPayload>(IpcChannels.AgentEventLog, cb),

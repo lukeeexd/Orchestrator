@@ -101,6 +101,70 @@ jobs:
           $size = (Get-Item $exe).Length / 1MB
           Write-Host "Installer size: $($size.ToString('F1')) MB"
 
+      - name: Stage Cloudflare upload directory
+        # S6: builds the directory that gets pushed to Cloudflare
+        # Pages as the secondary update channel. Contains:
+        #   - Orchestrator-Setup.exe  (the public download link)
+        #   - latest.json             (manifest the secondary
+        #                              updater polls every 10 mins)
+        # Always runs (no secret gate) so we know whether the
+        # staging itself works even before Cloudflare is wired up.
+        shell: pwsh
+        run: |
+          $stage = "cloudflare-stage"
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item `
+            "out/make/squirrel.windows/x64/Orchestrator-Setup.exe" `
+            "$stage/Orchestrator-Setup.exe"
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          $downloadUrl = "https://${{ vars.CLOUDFLARE_PAGES_HOST }}/Orchestrator-Setup.exe"
+          if ([string]::IsNullOrWhiteSpace("${{ vars.CLOUDFLARE_PAGES_HOST }}")) {
+            # Placeholder while Cloudflare isn't yet provisioned.
+            # Picked up by the secondary updater only when this
+            # vars.CLOUDFLARE_PAGES_HOST repo variable is set.
+            $downloadUrl = "https://example.invalid/Orchestrator-Setup.exe"
+          }
+          $manifest = [PSCustomObject]@{
+            version     = $version
+            downloadUrl = $downloadUrl
+            releasedAt  = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+          }
+          $manifest | ConvertTo-Json | Out-File `
+            -FilePath "$stage/latest.json" `
+            -Encoding utf8 -NoNewline
+          Write-Host "Staged for Cloudflare:"
+          Get-ChildItem $stage | Format-Table Name, Length
+
+      - name: Publish to Cloudflare Pages
+        # S6: pushes the staged dir to Cloudflare Pages. Soft-skipped
+        # while the secondary channel isn't yet provisioned — once
+        # the repo variable CLOUDFLARE_PAGES_PROJECT is set in
+        # GitHub → Settings → Variables, this step activates and
+        # the staged dir lands at the project's pages.dev URL.
+        #
+        # Variables (Settings → Secrets and variables → Actions →
+        # Variables tab):
+        #   CLOUDFLARE_PAGES_PROJECT  — pages project name (e.g.
+        #                               orchestrator-updates)
+        #   CLOUDFLARE_PAGES_HOST     — public hostname the
+        #                               manifest's downloadUrl
+        #                               points at (e.g.
+        #                               orchestrator-updates.pages.dev)
+        #
+        # Secrets (same screen, Secrets tab):
+        #   CLOUDFLARE_API_TOKEN      — token with Pages edit perms
+        #   CLOUDFLARE_ACCOUNT_ID     — Cloudflare account id
+        if: ${{ vars.CLOUDFLARE_PAGES_PROJECT != '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: pwsh
+        run: |
+          npx wrangler@latest pages deploy cloudflare-stage `
+            --project-name "${{ vars.CLOUDFLARE_PAGES_PROJECT }}" `
+            --branch main `
+            --commit-dirty=true
+
       - name: Generate release notes
         id: notes
         shell: pwsh

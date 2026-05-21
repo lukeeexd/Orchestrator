@@ -92,6 +92,15 @@ export const IpcChannels = {
   TemplatesUse: 'templates:use',
   UpdaterRestart: 'updater:restart',
   UpdaterEventDownloaded: 'updater:event:update-downloaded',
+  /**
+   * S6: secondary update channel reports a newer version than the
+   * running app. Payload includes a public downloadUrl the renderer
+   * can open via shell.openExternal — manual install, not in-app
+   * auto-update.
+   */
+  UpdaterEventSecondaryAvailable: 'updater:event:secondary-available',
+  /** S6: opens the secondary channel's public download URL in the user's browser. */
+  UpdaterOpenSecondaryDownload: 'updater:openSecondaryDownload',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
@@ -909,6 +918,21 @@ export interface OrchestratorApi {
   onUpdateDownloaded: (
     cb: (p: { version: string; notes: string }) => void,
   ) => () => void;
+  /**
+   * S6: subscribes to the secondary update channel. Payload arrives
+   * whenever the hosted `latest.json` reports a newer version than
+   * the running app. The renderer surfaces a banner with a button
+   * that calls `openSecondaryDownload(downloadUrl)`.
+   */
+  onSecondaryUpdateAvailable: (
+    cb: (p: {
+      version: string;
+      downloadUrl: string;
+      releasedAt?: string;
+    }) => void,
+  ) => () => void;
+  /** S6: opens the secondary channel's download URL via the OS's default browser. */
+  openSecondaryDownload: (url: string) => Promise<{ ok: boolean }>;
   // Streams
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;

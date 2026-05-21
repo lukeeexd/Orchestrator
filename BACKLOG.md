@@ -179,19 +179,48 @@ the folder in Settings and copy the JSON yourself.
 a Sentry-style network reporter, per-crash UI inside the app
 (the JSON is for forensics, not browsing).
 
-### S6. `[ ]` Self-hosted update channel fallback
+### S6. `[x]` Self-hosted update channel fallback — shipped 2026-05-21
 
-**Measurement:** `update-electron-app` polls `update.electronjs.org` every
-10 min — single-point-of-failure dep flagged by the framework's
-dependency-risk axis.
+**What landed (code + workflow):**
+- `src/main/secondaryUpdater.ts` polls a hosted `latest.json`
+  every 10 minutes. When the manifest reports a newer version
+  than the running app, broadcasts
+  `UpdaterEventSecondaryAvailable` to the renderer.
+- StatusBar renders a "Update vX.Y.Z available · Download"
+  button next to the existing "Restart" pill. Clicking calls
+  `shell.openExternal(downloadUrl)` — manual install, not in-app
+  auto-update. Two updaters fighting over the same install is
+  brittle, so the secondary's job is purely **signalling**.
+- `release.yml` stages an upload directory (`Orchestrator-Setup.exe`
+  + `latest.json`) on every tag, then runs a Wrangler step that
+  publishes to Cloudflare Pages. The Wrangler step is gated on the
+  repo variable `CLOUDFLARE_PAGES_PROJECT` being non-empty so the
+  workflow keeps passing while Cloudflare is being provisioned.
 
-**Rationale:** `update.electronjs.org` is public-repo-only. If the repo ever
-flips back to private (or moves off GitHub), auto-update breaks silently and
-users sit on stale versions indefinitely.
+**To activate (user provisions Cloudflare):**
+1. Cloudflare → Workers & Pages → upload a placeholder static
+   file. Note the assigned `*.pages.dev` URL.
+2. GitHub → Settings → Secrets and variables → Actions:
+   - Variables: `CLOUDFLARE_PAGES_PROJECT` (project name) +
+     `CLOUDFLARE_PAGES_HOST` (the `*.pages.dev` hostname)
+   - Secrets: `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`
+3. Update `SECONDARY_FEED_URL` in `src/main/secondaryUpdater.ts`
+   to the same `pages.dev` URL.
+4. Tag a release. The CI step now pushes to Cloudflare; the
+   secondary channel starts polling next time the app boots.
 
-**Sketch:** add a second-channel fallback using `electron-updater` against a
-self-hosted manifest (S3 + signed JSON). Try primary, fall back to secondary
-on failure. Doesn't replace the current channel — it's a hedge.
+**Out of scope (deliberately):**
+- Auto-install from secondary channel. Two competing updaters →
+  brittle. Signal + manual install is enough for the failure mode
+  S6 targets ("primary is dead, here's where to get the new
+  version").
+- Cutover to Cloudflare-primary or flipping the repo private.
+  That's a separate follow-up slice once the secondary channel is
+  verified end-to-end.
+- Signing. The .exe at the Cloudflare URL is still unsigned (H7
+  from May 18 review remains deferred). SmartScreen warnings are
+  more prominent without GitHub-Releases social proof; worth
+  knowing before any private-repo cutover.
 
 ### S7. `[x]` agents/runner.ts split — shipped 2026-05-20 (post-v0.10.0)
 

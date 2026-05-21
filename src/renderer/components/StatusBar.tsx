@@ -11,9 +11,24 @@ export function StatusBar({ agentCount }: Props) {
     version: string;
     notes: string;
   } | null>(null);
+  // S6: payload from the secondary channel — public download URL the
+  // user opens in their browser when the primary auto-update isn't
+  // delivering. Independent of `updateReady` (which is the in-app
+  // auto-installed path).
+  const [secondaryUpdate, setSecondaryUpdate] = useState<{
+    version: string;
+    downloadUrl: string;
+  } | null>(null);
 
   useEffect(() => {
-    return window.api.onUpdateDownloaded((p) => setUpdateReady(p));
+    const off1 = window.api.onUpdateDownloaded((p) => setUpdateReady(p));
+    const off2 = window.api.onSecondaryUpdateAvailable((p) =>
+      setSecondaryUpdate({ version: p.version, downloadUrl: p.downloadUrl }),
+    );
+    return () => {
+      off1();
+      off2();
+    };
   }, []);
 
   return (
@@ -42,6 +57,18 @@ export function StatusBar({ agentCount }: Props) {
         >
           <Icon name="check" size={11} />
           <span>Update {updateReady.version || 'ready'} · Restart</span>
+        </button>
+      )}
+      {!updateReady && secondaryUpdate && (
+        <button
+          className="statusbar-update"
+          onClick={() =>
+            void window.api.openSecondaryDownload(secondaryUpdate.downloadUrl)
+          }
+          title="The primary auto-update channel isn't delivering this version. Click to open the public download URL in your browser and install manually."
+        >
+          <Icon name="file" size={11} />
+          <span>Update {secondaryUpdate.version} available · Download</span>
         </button>
       )}
       <div className="seg">

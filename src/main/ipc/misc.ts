@@ -73,6 +73,27 @@ export function registerMiscHandlers(): void {
   });
 
   ipcMain.handle(
+    IpcChannels.UpdaterOpenSecondaryDownload,
+    async (_event, url: string): Promise<{ ok: boolean }> => {
+      // S6: the URL comes from the secondary updater's broadcast,
+      // which fires only for URLs we put into latest.json. Belt-
+      // and-suspenders: only honour http/https schemes so a
+      // tampered manifest can't trick us into shell-opening a
+      // file://, javascript:, or other scheme.
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+          return { ok: false };
+        }
+        await shell.openExternal(url);
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
+    },
+  );
+
+  ipcMain.handle(
     IpcChannels.CrashesList,
     (): import('../../shared/types').CrashEntry[] => listCrashes(),
   );
