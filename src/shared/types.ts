@@ -490,3 +490,36 @@ export interface LoadoutInsightAction {
   /** Skills that would be removed — surfaced in the button's tooltip / confirmation. */
   pruneSkillIds: string[];
 }
+
+/**
+ * S5: a captured crash. Written one JSON file per crash to
+ * `userData/crashes/` by the main-process handler in
+ * `src/main/crashes.ts`. The Settings UI lists the most recent
+ * entries; nothing leaves the device unless the user explicitly
+ * shares the JSON.
+ */
+export type CrashKind =
+  | 'main-uncaught'
+  | 'main-rejection'
+  | 'main-child-gone'
+  | 'renderer-process-gone'
+  | 'renderer-error-boundary';
+
+export interface CrashEntry {
+  /** Filesystem basename (timestamp + short uuid). Stable id for "open this one". */
+  id: string;
+  ts: string;
+  kind: CrashKind;
+  appVersion: string;
+  electronVersion: string;
+  platform: string;
+  arch: string;
+  nodeVersion: string;
+  error: {
+    name: string;
+    message: string;
+    stack?: string;
+  };
+  /** Free-form context — render URL, exit code, component stack, etc. */
+  context?: Record<string, unknown>;
+}

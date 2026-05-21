@@ -75,6 +75,10 @@ export const IpcChannels = {
   AppOpenUsage: 'app:openUsage',
   AppHasWorkspaceMd: 'app:hasWorkspaceMd',
   ProjectScaffoldMcpServer: 'project:scaffoldMcpServer',
+  CrashesList: 'crashes:list',
+  CrashesClear: 'crashes:clear',
+  CrashesOpenFolder: 'crashes:openFolder',
+  CrashesRecordRenderer: 'crashes:recordRenderer',
   SpendGet: 'spend:get',
   SpendRecommendations: 'spend:recommendations',
   HistoryList: 'history:list',
@@ -88,6 +92,15 @@ export const IpcChannels = {
   TemplatesUse: 'templates:use',
   UpdaterRestart: 'updater:restart',
   UpdaterEventDownloaded: 'updater:event:update-downloaded',
+  /**
+   * S6: secondary update channel reports a newer version than the
+   * running app. Payload includes a public downloadUrl the renderer
+   * can open via shell.openExternal — manual install, not in-app
+   * auto-update.
+   */
+  UpdaterEventSecondaryAvailable: 'updater:event:secondary-available',
+  /** S6: opens the secondary channel's public download URL in the user's browser. */
+  UpdaterOpenSecondaryDownload: 'updater:openSecondaryDownload',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
@@ -840,6 +853,28 @@ export interface OrchestratorApi {
    * path on success or a descriptive error.
    */
   scaffoldMcpServer: (input: McpScaffoldRequest) => Promise<McpScaffoldResult>;
+  /**
+   * S5: list the most recent crashes captured to userData/crashes/.
+   * Local-only — there is no network upload. The Settings UI uses
+   * this to render the Crashes section's count + last-crash preview.
+   */
+  listCrashes: () => Promise<import('./types').CrashEntry[]>;
+  /** Delete every crash JSON in `userData/crashes/`. Returns the count removed. */
+  clearCrashes: () => Promise<{ removed: number }>;
+  /** Reveal `userData/crashes/` in the OS file explorer. */
+  openCrashesFolder: () => Promise<{ ok: boolean }>;
+  /**
+   * Renderer-side React error boundary forwards captured errors
+   * here. Main writes through the same pipeline as process-level
+   * crashes.
+   */
+  recordRendererCrash: (payload: {
+    name?: string;
+    message?: string;
+    stack?: string;
+    componentStack?: string;
+    url?: string;
+  }) => Promise<{ ok: boolean }>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   /** Rule-based cost / loadout recommendations recomputed each call. */
   getSpendRecommendations: () => Promise<
@@ -883,6 +918,21 @@ export interface OrchestratorApi {
   onUpdateDownloaded: (
     cb: (p: { version: string; notes: string }) => void,
   ) => () => void;
+  /**
+   * S6: subscribes to the secondary update channel. Payload arrives
+   * whenever the hosted `latest.json` reports a newer version than
+   * the running app. The renderer surfaces a banner with a button
+   * that calls `openSecondaryDownload(downloadUrl)`.
+   */
+  onSecondaryUpdateAvailable: (
+    cb: (p: {
+      version: string;
+      downloadUrl: string;
+      releasedAt?: string;
+    }) => void,
+  ) => () => void;
+  /** S6: opens the secondary channel's download URL via the OS's default browser. */
+  openSecondaryDownload: (url: string) => Promise<{ ok: boolean }>;
   // Streams
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;
