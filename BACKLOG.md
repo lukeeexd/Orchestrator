@@ -829,6 +829,48 @@ calendar time.
 
 ---
 
+## Product proposals (2026-05-21)
+
+Senior-PM + senior-architect pass over the v0.15.1 codebase + this
+BACKLOG. The full proposal lives at
+[`docs/product/feature-proposals.md`](./docs/product/feature-proposals.md);
+this section is a pointer + the overlap map so the two docs stay
+linked.
+
+**Two lenses, two ID schemes:**
+- **F1–F15**: PM-lens feature proposals (UX polish, power-user
+  productivity, observability, collaboration, platform).
+- **A1–A7**: architect-lens capability gaps + re-costs. A1
+  ("event-source the agent run") is the highest-leverage entry —
+  F4 / F5 / F8 / F11 / F12 collapse onto it as projections.
+
+**Overlap with existing BACKLOG items:**
+
+| Proposal | Maps to | Notes |
+|---|---|---|
+| F3 (PRDCard in classic chat view) | R-H1 | Same fix. Track in R-H1; F3 can be dropped from the proposals doc once R-H1 lands. |
+| F4 (Parallel-lane execution) | blocks-on P13 | Hard-blocked on the `claude --resume` cwd-tolerance experiment from [`docs/spike-2026-05-21-per-agent-worktrees.md`](./docs/spike-2026-05-21-per-agent-worktrees.md). A6 re-costs as XL not L. |
+| F11 (Run-bundle export `.orun`) | depends-on A1 | A7 re-costs: needs event-sourcing first or the heuristic handoff parser becomes a public contract. |
+| F14 (Git auto-branch / auto-PR) | sequences-after F4 | F14 builds on the workspace model F4 is about to change. |
+| F15 (Cross-platform builds) | depends-on H7 (code signing, PLAN.md "Decisions locked") | macOS notarisation requires the H7 follow-up. |
+| A1 (event-source) | enables F4 / F5 / F8 / F11 / F12 | Largest-leverage abstraction. Five PM features fall out for free. |
+| A2 (Workspace as interface) | re-opens M4 "no per-agent isolation" decision | Pairs with F4 / F14 / P13. |
+
+**Quick-wins (PM lens):** F3, F7 (cost forecast on PlanCard), F9
+(crash → shareable .zip). All independent of any abstraction
+above; can ship from the existing surface at any time.
+
+**Bold bets:** F4 (parallel lanes) and F13 (provider plug-in) —
+both architecturally expensive; sequence after A1 + A2.
+
+For honest sequencing across BOTH this section and the
+review-findings clusters above, see the
+[`feature-proposals.md`](./docs/product/feature-proposals.md)
+"Sequencing the architect's lens against the PM's list" block
+at the bottom of that doc.
+
+---
+
 ## Cross-references and overlaps
 
 - **S2 ↔ P4**: both touch the IPC + per-project overrides surface. Do S2
