@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   Agent,
   EffortLevel,
+  MemoryProposal,
   Provider,
 } from '../../shared/types';
 import { ROLES, ROLE_TINT } from '../../shared/roles';
@@ -45,6 +46,9 @@ export function Drawer({
   onToggleCollapsed,
 }: Props) {
   const [tab, setTab] = useState<TabId>('logs');
+  // Must run before any early return below (hooks-order rule).
+  // Passes through to a no-op count when `agent` is undefined.
+  const memoryCount = usePendingMemoryCount(agent);
 
   // Collapsed: thin vertical strip with an expand button. Stays present
   // (rather than disappearing entirely) so the affordance to bring the
@@ -122,7 +126,7 @@ export function Drawer({
       >
         <TabHead id="logs" label="Logs" count={agent.log.length} active={tab} onSelect={setTab} />
         <TabHead id="tools" label="Tools" count={toolCount} active={tab} onSelect={setTab} />
-        <TabHead id="memory" label="Memory" count={0} active={tab} onSelect={setTab} />
+        <TabHead id="memory" label="Memory" count={memoryCount} active={tab} onSelect={setTab} />
         <TabHead id="context" label="Context" active={tab} onSelect={setTab} />
         <TabHead id="config" label="Config" active={tab} onSelect={setTab} />
       </div>
@@ -130,7 +134,7 @@ export function Drawer({
       <div className="drawer-body">
         {tab === 'logs' && <LogsTab agent={agent} />}
         {tab === 'tools' && <ToolsTab agent={agent} />}
-        {tab === 'memory' && <MemoryTab />}
+        {tab === 'memory' && <MemoryTab agent={agent} />}
         {tab === 'context' && <ContextTab agent={agent} />}
         {tab === 'config' && <ConfigTab agent={agent} provider={provider} />}
       </div>
@@ -568,12 +572,95 @@ function ToolsTab({ agent }: { agent: Agent }) {
   );
 }
 
-function MemoryTab() {
+function MemoryTab({ agent }: { agent: Agent }) {
+  const [pending, setPending] = useState<MemoryProposal[]>([]);
+  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = () => {
+    void window.api
+      .listMemoryProposals(agent.projectId, agent.role, 'pending')
+      .then(setPending);
+  };
+
+  useEffect(() => {
+    refresh();
+    const off = window.api.onMemoryProposal((p) => {
+      if (p.projectId !== agent.projectId || p.role !== agent.role) return;
+      if (p.status !== 'pending') return;
+      setPending((prev) => [p, ...prev.filter((x) => x.id !== p.id)]);
+    });
+    return () => off();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.projectId, agent.role]);
+
+  const decide = async (id: string, approve: boolean) => {
+    setBusy((b) => ({ ...b, [id]: true }));
+    setError(null);
+    const result = approve
+      ? await window.api.approveMemoryProposal(id)
+      : await window.api.rejectMemoryProposal(id);
+    setBusy((b) => {
+      const next = { ...b };
+      delete next[id];
+      return next;
+    });
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setPending((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  if (pending.length === 0 && !error) {
+    return (
+      <div className="inline-empty">
+        No pending memory proposals for the <code>{agent.role}</code> role.
+        Agents propose memory by emitting an{' '}
+        <code>orchestrator-memory</code> fenced block; approved pins are
+        appended to this project&apos;s per-role prompt and seen by every
+        future spawn of this role.
+      </div>
+    );
+  }
+
   return (
-    <div className="inline-empty">
-      Memory pins via the SDK&apos;s memory tool aren&apos;t wired up yet
-      (deferred from v1). For now an agent&apos;s working notes live only in
-      its log.
+    <div className="memory-tab">
+      {error && <div className="memory-error">{error}</div>}
+      {pending.map((p) => (
+        <div key={p.id} className="memory-proposal">
+          <div className="memory-meta">
+            <span className="memory-from">
+              from{' '}
+              <code>
+                {p.sourceAgentName ?? p.sourceAgentId ?? 'unknown'}
+              </code>
+            </span>
+            <span className="memory-ts">
+              {new Date(p.createdAt).toLocaleString()}
+            </span>
+          </div>
+          <pre className="memory-body">{p.body}</pre>
+          <div className="memory-actions">
+            <button
+              className="tb-btn"
+              onClick={() => void decide(p.id, false)}
+              disabled={!!busy[p.id]}
+              title="Discard this proposal; the per-role prompt is not changed."
+            >
+              <Icon name="x" size={11} /> Reject
+            </button>
+            <button
+              className="tb-btn primary"
+              onClick={() => void decide(p.id, true)}
+              disabled={!!busy[p.id]}
+              title="Append this body to the per-role prompt. Future spawns of this role will see it."
+            >
+              <Icon name="check" size={11} /> Approve
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -855,4 +942,54 @@ function namespaceFor(name: string): string {
     return 'fs';
   }
   return 'tool';
+}
+
+/**
+ * Tracks pending memory proposals for the agent's (project, role)
+ * scope. Initial count comes from `listMemoryProposals`; subsequent
+ * deltas come from the `onMemoryProposal` event so the Memory tab's
+ * count badge stays live without polling.
+ *
+ * Accepts `undefined` so the Drawer can call it unconditionally
+ * before its "no agent selected" early-return (hooks must run in
+ * the same order on every render). When agent is undefined the
+ * effect body skips the IPC subscription and the returned count
+ * stays at 0.
+ *
+ * Approval/rejection happen inside `MemoryTab` and don't broadcast
+ * a removal event; the tab handles its own UI state. The count
+ * here will lag by one click — matches the same lag the other tab
+ * counts have (they all derive from agent.log which isn't
+ * decremented either).
+ */
+function usePendingMemoryCount(agent: Agent | null | undefined): number {
+  const [count, setCount] = useState(0);
+  const projectId = agent?.projectId;
+  const role = agent?.role;
+  useEffect(() => {
+    if (!projectId || !role) {
+      setCount(0);
+      return;
+    }
+    let alive = true;
+    void window.api
+      .listMemoryProposals(projectId, role, 'pending')
+      .then((list) => {
+        if (alive) setCount(list.length);
+      });
+    const off = window.api.onMemoryProposal((p) => {
+      if (
+        p.projectId === projectId &&
+        p.role === role &&
+        p.status === 'pending'
+      ) {
+        setCount((c) => c + 1);
+      }
+    });
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [projectId, role]);
+  return count;
 }

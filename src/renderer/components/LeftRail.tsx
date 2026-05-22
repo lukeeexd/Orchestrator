@@ -7,6 +7,7 @@ export type RailScreen =
   | 'marketplace'
   | 'cost'
   | 'history'
+  | 'docs'
   | 'settings';
 
 interface RailItem {
@@ -47,6 +48,7 @@ export function LeftRail({
     },
     { id: 'cost', icon: 'cost', label: 'Spend' },
     { id: 'history', icon: 'history', label: 'Runs' },
+    { id: 'docs', icon: 'file', label: 'Docs' },
   ];
 
   return (

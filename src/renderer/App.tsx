@@ -29,6 +29,7 @@ import { MarketplaceScreen } from './components/MarketplaceScreen';
 import { SpendScreen } from './components/SpendScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { TemplatesScreen } from './components/TemplatesScreen';
+import { DocsScreen } from './components/DocsScreen';
 import { SaveTemplateDialog } from './components/SaveTemplateDialog';
 import { CliMissingGate } from './components/CliMissingGate';
 import type { BuiltinAction } from '../shared/builtinCommands';
@@ -41,7 +42,7 @@ import {
 const PLACEHOLDERS: Record<
   Exclude<
     RailScreen,
-    'agents' | 'settings' | 'tools' | 'cost' | 'history' | 'marketplace'
+    'agents' | 'settings' | 'tools' | 'cost' | 'history' | 'marketplace' | 'docs'
   >,
   { title: string; icon: Parameters<typeof PlaceholderScreen>[0]['icon']; body: string }
 > = {
@@ -689,6 +690,8 @@ export function App() {
             projectId={activeProjectId}
             onTemplateUsed={() => setActive('agents')}
           />
+        ) : active === 'docs' ? (
+          <DocsScreen activeProject={activeProject} />
         ) : (
           <PlaceholderScreen
             {...(active === 'agents'

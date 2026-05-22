@@ -28,6 +28,35 @@ if (started) {
   app.quit();
 }
 
+// Single-instance lock. Without this, a user double-clicking the
+// installed shortcut twice (or relaunching while a slow shutdown is
+// still completing) starts a second Electron process that races the
+// first for the userData directory. Chromium's disk cache locks fail
+// with "Unable to move the cache: Access is denied. (0x5)" and the
+// renderer hangs on a black screen for ~30s until the loser gives up.
+//
+// `requestSingleInstanceLock` atomically claims the userData dir; if
+// the call returns false we're the second instance — quit immediately
+// so the first instance keeps its cache lock. If it returns true we
+// register a `second-instance` handler that focuses our window when
+// the user tries to launch us again, matching macOS dock-click UX.
+//
+// Must run before `app.whenReady()` registers any work. The handlers
+// stay attached for the lifetime of the process.
+const gotInstanceLock = app.requestSingleInstanceLock();
+if (!gotInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    const windows = BrowserWindow.getAllWindows();
+    if (windows.length > 0) {
+      const win = windows[0];
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+  });
+}
+
 /**
  * Flipped in `before-quit` so the fire-and-forget marketplace sync can
  * bail before it touches a closed DB. A clone takes seconds; if the

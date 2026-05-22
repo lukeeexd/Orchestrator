@@ -28,6 +28,7 @@ import {
   detectAndBumpSkillFires,
   safeResolveLoadout,
 } from './skillFires';
+import { extractMemoryProposalsFromEvent } from './memoryParse';
 
 /**
  * Heart of the agent runner: builds the CLI invocation (`buildQuery`)
@@ -239,6 +240,21 @@ export async function consumeQuery(
         entry0.agent.projectId,
         entry0.agent.role,
       );
+    }
+
+    // Memory proposals — agents emit `orchestrator-memory` fenced
+    // blocks during their run; we land each one as a pending
+    // proposal that the user approves/rejects from the Drawer's
+    // Memory tab. Skipped for Director events (Director runs a
+    // different parse pipeline) — this function is only ever called
+    // with spawned-agent events.
+    if (ev.type === 'assistant') {
+      extractMemoryProposalsFromEvent(ev, {
+        projectId: entry0.agent.projectId,
+        role: entry0.agent.role,
+        agentId: entry0.agent.id,
+        agentName: entry0.agent.name,
+      });
     }
 
     if (ev.type === 'assistant') {

@@ -381,6 +381,36 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 23,
+    up: (db) => {
+      // Agent-proposed memory pins (Option A from the memory design):
+      // an agent emits an `orchestrator-memory` fenced block; we land
+      // a pending proposal here; the user approves/rejects from the
+      // Drawer's Memory tab; approve appends to the per-role skill
+      // file (P4 storage), so future spawns of that role see it
+      // through the existing effectiveSkill path.
+      //
+      // status: 'pending' | 'approved' | 'rejected'
+      // source_agent_id: which agent emitted this (denormalised so
+      //   the row survives the agent being removed).
+      db.exec(`
+        CREATE TABLE memory_proposals (
+          id              TEXT PRIMARY KEY,
+          project_id      TEXT NOT NULL,
+          role            TEXT NOT NULL,
+          body            TEXT NOT NULL,
+          source_agent_id TEXT,
+          source_agent_name TEXT,
+          created_at      INTEGER NOT NULL,
+          status          TEXT NOT NULL DEFAULT 'pending'
+        );
+
+        CREATE INDEX idx_memory_proposals_project_role
+          ON memory_proposals (project_id, role, status);
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

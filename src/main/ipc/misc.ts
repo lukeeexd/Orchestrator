@@ -1,4 +1,4 @@
-import { ipcMain, shell } from 'electron';
+import { ipcMain, shell, BrowserWindow, dialog } from 'electron';
 import { IpcChannels } from '../../shared/ipc';
 import { getSpendSummary } from '../spend';
 import { getSpendRecommendations } from '../spendRecommendations';
@@ -12,6 +12,22 @@ import {
   getCrashesFolder,
   recordRendererCrash,
 } from '../crashes';
+import {
+  listProposals as listMemoryProposals,
+  approveProposal as approveMemoryProposal,
+  rejectProposal as rejectMemoryProposal,
+} from '../memoryProposals';
+import {
+  listDirectory as docsListDirectory,
+  readMarkdownFile as docsReadFile,
+} from '../markdownBrowser';
+import type {
+  AgentRole,
+  MarkdownFileContent,
+  MarkdownListing,
+  MemoryProposal,
+  MemoryProposalStatus,
+} from '../../shared/types';
 
 /**
  * Single-channel handlers that don't justify their own module —
@@ -128,6 +144,95 @@ export function registerMiscHandlers(): void {
     ): { ok: boolean } => {
       recordRendererCrash(payload);
       return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.MemoryListProposals,
+    (
+      _event,
+      projectId: string,
+      role?: AgentRole,
+      status?: MemoryProposalStatus,
+    ): MemoryProposal[] =>
+      listMemoryProposals({
+        projectId,
+        ...(role ? { role } : {}),
+        ...(status ? { status } : {}),
+      }),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MemoryApproveProposal,
+    (
+      _event,
+      id: string,
+    ):
+      | { ok: true; proposal: MemoryProposal }
+      | { ok: false; error: string } => approveMemoryProposal(id),
+  );
+
+  ipcMain.handle(
+    IpcChannels.MemoryRejectProposal,
+    (
+      _event,
+      id: string,
+    ):
+      | { ok: true; proposal: MemoryProposal }
+      | { ok: false; error: string } => rejectMemoryProposal(id),
+  );
+
+  ipcMain.handle(
+    IpcChannels.DocsListDirectory,
+    (
+      _event,
+      absPath: string,
+    ):
+      | { ok: true; listing: MarkdownListing }
+      | { ok: false; error: string } => {
+      try {
+        return { ok: true, listing: docsListDirectory(absPath) };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.DocsReadFile,
+    (
+      _event,
+      absPath: string,
+    ):
+      | { ok: true; file: MarkdownFileContent }
+      | { ok: false; error: string } => {
+      try {
+        return { ok: true, file: docsReadFile(absPath) };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.DocsPickFolder,
+    async (event): Promise<{ path: string | null }> => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return { path: null };
+      const result = await dialog.showOpenDialog(win, {
+        title: 'Pick folder for Docs viewer',
+        properties: ['openDirectory'],
+      });
+      if (result.canceled || result.filePaths.length === 0) {
+        return { path: null };
+      }
+      return { path: result.filePaths[0] };
     },
   );
 }

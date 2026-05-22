@@ -79,6 +79,20 @@ export const IpcChannels = {
   CrashesClear: 'crashes:clear',
   CrashesOpenFolder: 'crashes:openFolder',
   CrashesRecordRenderer: 'crashes:recordRenderer',
+  /** List memory proposals filterable by project + role + status. */
+  MemoryListProposals: 'memory:listProposals',
+  /** Approve a proposal — appends body to the per-role skill file, marks approved. */
+  MemoryApproveProposal: 'memory:approveProposal',
+  /** Reject a proposal — marks rejected, doesn't touch the per-role skill. */
+  MemoryRejectProposal: 'memory:rejectProposal',
+  /** Renderer-bound: fired when an agent emits a new orchestrator-memory block. */
+  MemoryEventProposal: 'memory:event:proposal',
+  /** List a directory for the Docs rail screen — directories + .md files only. */
+  DocsListDirectory: 'docs:listDirectory',
+  /** Read a single .md file for the Docs rail screen viewer. */
+  DocsReadFile: 'docs:readFile',
+  /** Open a folder picker to choose the Docs rail screen's root. */
+  DocsPickFolder: 'docs:pickFolder',
   SpendGet: 'spend:get',
   SpendRecommendations: 'spend:recommendations',
   HistoryList: 'history:list',
@@ -875,6 +889,58 @@ export interface OrchestratorApi {
     componentStack?: string;
     url?: string;
   }) => Promise<{ ok: boolean }>;
+  /**
+   * List memory proposals for a project. Optionally filter by role
+   * (the Memory tab uses the agent's role) and status (the queue
+   * shows pending; history can show approved/rejected).
+   */
+  listMemoryProposals: (
+    projectId: string,
+    role?: import('./types').AgentRole,
+    status?: import('./types').MemoryProposalStatus,
+  ) => Promise<import('./types').MemoryProposal[]>;
+  /**
+   * Approve a proposal — appends body to the per-role skill file
+   * (existing P4 storage) and marks the proposal approved.
+   */
+  approveMemoryProposal: (
+    id: string,
+  ) => Promise<
+    | { ok: true; proposal: import('./types').MemoryProposal }
+    | { ok: false; error: string }
+  >;
+  /** Reject a proposal — marks it rejected, leaves the per-role skill untouched. */
+  rejectMemoryProposal: (
+    id: string,
+  ) => Promise<
+    | { ok: true; proposal: import('./types').MemoryProposal }
+    | { ok: false; error: string }
+  >;
+  /** Subscribe to new memory proposals as they're emitted by agents. */
+  onMemoryProposal: (
+    cb: (p: import('./types').MemoryProposal) => void,
+  ) => () => void;
+  /**
+   * List a directory's contents for the Docs rail screen. Returns
+   * directories (sorted alpha, common build/VCS dirs filtered) and
+   * `.md` / `.markdown` files (sorted alpha after dirs); non-markdown
+   * files are filtered out. Throws on non-existent paths.
+   */
+  docsListDirectory: (
+    absPath: string,
+  ) => Promise<{
+    ok: true;
+    listing: import('./types').MarkdownListing;
+  } | { ok: false; error: string }>;
+  /** Read a single markdown file's content (5 MiB cap; larger files come back truncated). */
+  docsReadFile: (
+    absPath: string,
+  ) => Promise<{
+    ok: true;
+    file: import('./types').MarkdownFileContent;
+  } | { ok: false; error: string }>;
+  /** Open a folder picker for the Docs rail screen's root. */
+  docsPickFolder: () => Promise<{ path: string | null }>;
   getSpendSummary: () => Promise<import('./types').SpendSummary>;
   /** Rule-based cost / loadout recommendations recomputed each call. */
   getSpendRecommendations: () => Promise<

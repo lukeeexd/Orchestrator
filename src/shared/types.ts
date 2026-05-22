@@ -523,3 +523,58 @@ export interface CrashEntry {
   /** Free-form context — render URL, exit code, component stack, etc. */
   context?: Record<string, unknown>;
 }
+
+/**
+ * An agent's proposal to add something to its role's persistent memory.
+ * Emitted via an `orchestrator-memory` fenced block in the agent's
+ * assistant text; landed as a pending proposal until the user
+ * approves or rejects via the Drawer's Memory tab.
+ *
+ * Approval appends `body` to the per-role skill file (P4 storage), so
+ * subsequent spawns of that role see the memory through the existing
+ * `effectiveSkill` path. No new prompt-loading mechanism — just a new
+ * way for the prompt to grow over time.
+ */
+export type MemoryProposalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface MemoryProposal {
+  id: string;
+  projectId: string;
+  role: AgentRole;
+  /** The proposed memory body — appended verbatim to the per-role skill on approve. */
+  body: string;
+  /** Originating agent — kept after approve/reject for provenance. */
+  sourceAgentId?: string;
+  sourceAgentName?: string;
+  createdAt: number;
+  status: MemoryProposalStatus;
+}
+
+/**
+ * Tree entry for the Docs rail-screen browser. The renderer renders
+ * directories (sorted first) + `.md` / `.markdown` files; non-markdown
+ * files are filtered out by main-side `markdownBrowser.listDirectory`.
+ */
+export interface MarkdownDirEntry {
+  name: string;
+  /** Absolute path on disk — round-trips back to main for navigation / read. */
+  path: string;
+  isDirectory: boolean;
+  /** True for `.md` / `.markdown` files (case-insensitive). */
+  isMarkdown: boolean;
+}
+
+export interface MarkdownListing {
+  /** Absolute path of the directory that was listed. */
+  path: string;
+  /** Parent's absolute path; null when we're at the filesystem root. */
+  parent: string | null;
+  entries: MarkdownDirEntry[];
+}
+
+export interface MarkdownFileContent {
+  path: string;
+  content: string;
+  /** True if the file exceeded 5 MiB and `content` is a head-of-file slice. */
+  truncated: boolean;
+}

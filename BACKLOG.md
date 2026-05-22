@@ -467,6 +467,410 @@ higher creativity.
 
 ---
 
+## Code review findings (v0.10.0 → v0.15.1, 2026-05-21)
+
+Detailed review at [`docs/reviews/v0.10.0-to-v0.15.1-review.md`](./docs/reviews/v0.10.0-to-v0.15.1-review.md).
+Severity tags + identifiers below match the review doc 1:1 so individual
+items can be cross-referenced. Items are grouped: **High** (act before
+next release), **Medium** (queue with normal slices), **Low** (track,
+fold into adjacent work). Adversarial-pass items (`A1`–`A12`) are the
+trailing section.
+
+### High severity (act soon)
+
+- **R-H1.** `[ ]` **Director PRD card never renders in default chat view**.
+  P15 missed update site: `DirectorPane.Message`
+  (`src/renderer/components/DirectorPane.tsx:365-426`) renders `body`
+  / `plan` / `redirect` but has no `message.prd` branch. Combined with
+  `runner.ts` setting `body: ''` when only a PRD is parsed, users in
+  the classic chat view see `(empty response)` and nothing else.
+  `DirectorStream` (the stream view) renders the card fine. **Fix:**
+  add `{message.prd && <PRDCard prd={message.prd} />}` block to
+  `DirectorPane.Message` paralleling the `plan` / `redirect`
+  branches.
+
+- **R-H2.** `[ ]` **R2 update feed amplifies unsigned-installer gap to
+  remote-install surface**. v0.15.0 swapped the primary update
+  channel from `update.electronjs.org` (Microsoft-operated,
+  TLS-pinned to GitHub) to a Cloudflare R2 bucket. The installer is
+  deliberately unsigned (PLAN.md "Code signing" decision). Squirrel
+  does not verify `.nupkg` signatures when the binary itself is
+  unsigned — anyone who can serve content at the R2 URL (leaked
+  `CLOUDFLARE_API_TOKEN`, Cloudflare account takeover, DNS poisoning)
+  silently ships code execution to every install on next 10-min
+  poll. The H7 code-signing item was *Medium* when delivery was
+  click-through Releases; v0.15.0 promotes it to *High* because
+  auto-install is silent. **Fix options:** (a) sign the installer
+  (the H7 follow-up); (b) verify the nupkg signature in a custom
+  updater before `quitAndInstall`; (c) drop R2 back to signal-only,
+  keep auto-install via the GitHub-Releases path. Any one closes
+  the loop.
+
+### Medium severity
+
+- **R-M1.** `[ ]` Inner `model` binding shadows the outer parameter in
+  `query.ts:356` (modelUsage merge loop). Harmless today; enable
+  ESLint `no-shadow` project-wide or rename to `usageModel`.
+
+- **R-M2.** `[ ]` `mcpScaffold` rollback drops scaffold registration on
+  failure. When `setProjectMcpConfig` throws, files stay on disk
+  but the wizard returns `{ ok: false, error }` and the renderer
+  collapses to the error string. Either delete `dest` recursively or
+  expose `destination` + `filesWritten` on the failure path.
+
+- **R-M3.** `[ ]` `updater.ts:65` broadcasts a string literal instead of
+  `IpcChannels.UpdaterEventDownloaded`. Strings match today; if the
+  enum drifts, renderer goes silent (no "Restart" pill). One-line
+  fix.
+
+- **R-M4.** `[ ]` `recordRendererCrash` IPC accepts arbitrary payload
+  with no zod validation. Pattern of validating object payloads at
+  the boundary was established in `_schemas.ts:45-83`; the crash
+  channel is the new exception. A compromised renderer can dump
+  arbitrary JSON-serialisable values into `userData/crashes/*.json`.
+
+- **R-M5.** `[ ]` `mcpScaffold.mergeServerIntoConfig` calls
+  `setProjectMcpConfig` (the lower-level setter), bypassing the
+  Director-chat audit trail (`extractMcpCommands` notice) that the
+  IPC handler emits. Scaffolded server lands in mcpConfig without
+  the persistent "X will execute on every spawn" record. Route
+  through the IPC handler instead.
+
+- **R-M6.** `[ ]` `index.ts:130-132` comment still claims
+  `SECONDARY_FEED_URL` is empty. `4405a9d` filled it in; the
+  comment lies. Comment-only update.
+
+- **R-M7.** `[ ]` `directorMode` schema widened to `'prd'` but
+  `extractDirectives` happily accepts a message with both a PRD
+  block and a plan block. PlanCard then shows a spawn button in PRD
+  mode. Either reject plan in PRD-mode director-messages or
+  document "PRD + plan is a valid combination."
+
+- **R-M8.** `[ ]` `setProjectDirectorProvider` resets the Director's
+  saved `session_id`; the symmetric `setProjectProvider` does not.
+  Changing project.provider mid-session leaves the Director
+  pointing at a session id in the old provider's format. Reset on
+  both setters.
+
+- **R-M9.** `[ ]` Secondary update channel's `downloadUrl` host is not
+  pinned. `UpdaterOpenSecondaryDownload` validates the scheme but
+  accepts any https host. A tampered Pages manifest can route the
+  pre-trusted "update available" click to a fake installer.
+  Allowlist `github.com` + the R2 host in the IPC handler.
+
+- **R-M10.** `[ ]` `mcpScaffold` path-escape check resolves only the
+  workspace, not the destination. `path.resolve(dest)` does not
+  follow symlinks, so a `<workspace>/.mcp-servers` symlinked
+  out-of-band escapes the sandbox while the `startsWith(realWs)`
+  check still passes. Resolve the destination's parent via
+  `fs.realpathSync` after the scaffold mkdirs.
+
+- **R-M11.** `[ ]` Skill-fire telemetry doesn't gate on
+  `appQuitting` / abort. If quit fires while a budget breach is in
+  flight, `bumpSkillFire` can land on a closed DB. Gate
+  `detectAndBumpSkillFires` on the same `appQuitting` flag the
+  marketplace sync uses, or wrap `bumpSkillFire` to no-op when DB
+  is closed.
+
+- **R-M12.** `[ ]` Provider-change paths inconsistent across the
+  agent/Director boundary (see R-M8). Folding under R-M8.
+
+- **R-M13.** `[ ]` **README install link diverges from secondary
+  fallback `downloadUrl`** (exec-summary item, no detailed entry
+  in the review body). README points new users at the R2 `.exe`
+  URL; `latest.json`'s `downloadUrl` field built by the workflow
+  points at the GitHub Release asset URL. Same release content,
+  two different URLs — when the repo flips private the README
+  path keeps working (R2 is public) but secondary-fallback users
+  hit a 404 on the GitHub URL. **Fix:** swap the manifest's
+  `downloadUrl` builder in `release.yml` to use the R2 URL too,
+  so both new-user downloads and secondary-fallback downloads
+  resolve to the same place.
+
+### Low severity (track / fold into adjacent work)
+
+- **R-L1.** `[ ]` StatusBar onClick closure references
+  `secondaryUpdate.downloadUrl` without TS narrowing. Replace with
+  `?.` or capture the URL into a local before the closure.
+- **R-L2.** `[ ]` History distillers hard-code `role: 'researcher'`
+  and assume git-on-PATH + workspace-is-git-repo. Document the
+  assumption in `buildChangelogPrompt`.
+- **R-L3.** `[ ]` "Trigger test crash" debug button assumes
+  `refreshCrashes` after 300 ms wins the I/O race. Acceptable for
+  debug; flag if the pattern propagates.
+- **R-L4.** `[ ]` Audit modal swallows IPC errors silently
+  (`MarketplaceScreen.tsx:337-348`). Add a `.catch` that surfaces a
+  re-trigger toast.
+- **R-L5.** `[ ]` `secondaryUpdater` first-poll `setTimeout` not
+  tracked by `stopSecondaryUpdater`. Cosmetic; `stopSecondaryUpdater`
+  has no current caller.
+- **R-L6.** `[ ]` ALTER TABLE migrations have no rollback. Consistent
+  with the project's forward-only shape; flagged for record.
+- **R-L7.** `[ ]` `SpawnAgentForm` partial-budget payload doesn't
+  match `agentBudget` zod schema (requires all three fields). User
+  filling one input → generic IPC error. Pre-window bug; widen the
+  schema or fix the form.
+- **R-L8.** `[ ]` `Settings` budget schema is wider than the
+  renderer's contract. A direct-IPC bypass could pass a negative
+  number and brick spawns (runtime treats negative as "always
+  trip"). Add `z.number().nonnegative()`.
+- **R-L9.** `[ ]` e2e smoke hardcodes CDP port 9222. Single-worker
+  run is collision-free; parallel CI or a dev with another CDP
+  session conflicts. Random-port pick + write to file.
+- **R-L10.** `[ ]` Release workflow has no end-to-end check that the
+  freshly-published R2 nupkg matches the freshly-built one. Adds
+  defence-in-depth against R-H2's mid-pipeline tamper.
+
+### Adversarial pass (footguns)
+
+- **R-A1.** `[ ]` `secondaryUpdater` `res.json()` has no size bound. A
+  compromised Pages bucket can serve a many-MB payload every 10
+  mins → slow process-memory exhaustion. Cap via
+  `res.headers.get('content-length')` before `.json()`. Pair with
+  R-M9.
+- **R-A2.** `[ ]` Crash listeners install **after** import-time side
+  effects. ESM import evaluation (electron, electron-squirrel-startup,
+  ./crashes itself) runs before line 11 where
+  `installCrashHandlers()` is called. Boot-time throws in those
+  imports are NOT caught. Either move install into the
+  squirrel-startup hook or correct the comment.
+- **R-A3.** `[ ]` `recordRendererCrash` has unbounded `componentStack`
+  size. Plus an infinite-loop in `componentDidCatch` spams the
+  crashes folder; `listCrashes` cap of 50 protects the UI but not
+  disk. Add a per-process write cap (e.g. drop new entries after N
+  in the last hour).
+- **R-A4.** `[ ]` Renderer ErrorBoundary + `window.error` listener
+  catch the SAME error twice for sync React throws. WeakSet-of-seen
+  in the renderer or suppress `window.error` writes that originate
+  from a React commit phase.
+- **R-A5.** `[ ]` `parsePrd` accepts a PRD with all-empty section
+  arrays (only `problem` non-empty is required by code, despite the
+  comment promising "at least one of the four list sections"). The
+  comment lies; either tighten the parse or fix the comment.
+- **R-A6.** `[ ]` `secondaryUpdater.isNewer` returns false for
+  4-part versions like `0.15.1.1`. `parseInt` on the 4-part split
+  silently truncates to the first three segments, comparison
+  succeeds with equality. We don't use 4-part versions today;
+  electron-updater consumes them happily.
+- **R-A7.** `[ ]` `mcpScaffold` error path embeds `command` /
+  `entry` in a quote-style snippet the user might copy-paste into
+  the JSON config. Quotes in the path would break the paste.
+  Cosmetic; Windows blocks quotes in paths anyway.
+- **R-A8.** `[ ]` `notifyAgentDone` embeds the agent's CLI summary
+  verbatim into the queued Director user message. If a malicious
+  / buggy agent emits an `orchestrator-redirect` (or any other
+  fence) inside its `result.result`, the Director picks it up via
+  `extractDirectives` on the next turn. Strip orchestrator-*
+  fences from agent summaries before queueing.
+- **R-A9.** `[ ]` `appQuitting` only gates the marketplace startup
+  sync, not the per-spawn skill audit or the secondary updater.
+  Inconsistent across the codebase. Either gate every async
+  shutdown-window path or document the matrix.
+- **R-A10.** `[ ]` Release workflow uses `--commit-dirty=true` on
+  the Pages deploy. Worth replacing with `--commit-hash` passing
+  the actual SHA so the Pages dashboard records which build
+  matched the release.
+- **R-A11.** `[ ]` 30-min secondary-channel grace period is
+  hardcoded. If R2 ever has an outage during a fix-the-channel
+  hotfix release, users wait 30 mins after the secondary detects
+  the new version. Halve or expose as a debug toggle.
+- **R-A12.** `[ ]` `shared/*.ts` has no lint rule banning
+  `node:*` imports. The layer convention prevents cross-process
+  imports but doesn't catch "shared imports `node:fs`" — which
+  would crash the renderer at runtime. Add an
+  `no-restricted-imports` rule scoped to `src/shared/**`.
+
+### Process / coverage observations
+
+- **R-T1.** `[ ]` **Test coverage gap across v0.10.0 → v0.15.1**
+  (review Notes section, line 539). No tests were added for:
+  - `secondaryUpdater.isNewer` — the 4-part version comparison
+    bug (R-A6) lives here precisely because nothing exercised it.
+  - `parsePrd` — the "all-empty arrays accepted" weakness (R-A5)
+    would be one assertion away.
+  - `auditSource` — no fixture-based test, so refactors of the
+    13-pattern regex set silently drift.
+  The S8 e2e smoke (v0.12.0) only verifies the window opens —
+  every other v0.10..v0.15.1 feature was shipped untested.
+  **Fix shape:** standalone unit-test runner (jest/vitest) for
+  pure functions (`isNewer`, `parsePrd`, `auditSource` regex
+  list, `parsePlan`, `parseRedirect`, the handoff-payload
+  parsers, `parseTestsKpi`). Doesn't need Electron infra; runs in
+  CI as a separate workflow step. Lower priority than the H-tier
+  fixes but the missing coverage is what made A5+A6+M9 all live
+  in shipped code.
+
+### Review-findings clusters (2026-05-21 plan)
+
+40 outstanding items grouped by shared code path + thematic
+affinity so they ship as cohesive slices instead of one-at-a-
+time fixes. Each cluster picks up multiple items that touch the
+same file or surface; ordering inside a cluster is sequential
+within one commit.
+
+Effort estimates are deliberately rough — "one slice" not
+calendar time.
+
+**Cluster 1 — PRD pipeline fixes** *(3 items, ~30 min, HIGH)*
+
+- **Items:** R-H1, R-A5, R-M7
+- **Scope:** `DirectorPane.tsx` + `director/parse.ts`. Render
+  site for PRD card in classic chat view, tighten parsePrd
+  contract (reject all-empty arrays + comment matches behaviour),
+  reject co-emitted plan blocks in PRD mode.
+- **Why bundle:** all three are P15 pipeline gaps the same
+  session shipped — one parser, one renderer, one contract.
+
+**Cluster 2 — Secondary updater hardening** *(5 items, ~1 hr, MEDIUM)*
+
+- **Items:** R-M9, R-A1, R-A6, R-L5, R-A11
+- **Scope:** `secondaryUpdater.ts` + `UpdaterOpenSecondaryDownload`
+  IPC handler + `StatusBar.tsx`.
+- **Fixes:** pin downloadUrl host (allowlist github.com + R2),
+  cap fetch body via content-length, repair 4-part isNewer,
+  track first-poll setTimeout, expose grace period as a constant.
+
+**Cluster 3 — MCP scaffold safety net** *(3-4 items, ~45 min, MEDIUM)*
+
+- **Items:** R-M2, R-M5, R-M10, optionally R-A7
+- **Scope:** `mcpScaffold.ts`.
+- **Fixes:** roll back files when registration fails, route
+  through the IPC handler so the Director-chat audit trail fires,
+  resolve symlinks at the destination before the path-escape
+  check.
+
+**Cluster 4 — Crash pipeline hardening** *(4 items, ~45 min, MEDIUM)*
+
+- **Items:** R-M4, R-A3, R-A4, R-A2
+- **Scope:** `crashes.ts`, `ErrorBoundary.tsx`,
+  `crashListeners.ts`, `index.ts`.
+- **Fixes:** zod-validate the `recordRendererCrash` payload, cap
+  componentStack size + per-process write cap, dedupe
+  ErrorBoundary + window.error double-record, either move install
+  earlier (into squirrel-startup hook) or honest-up the "BEFORE
+  any other import" comment.
+
+**Cluster 5 — R2 + repo-private readiness** *(3 items, ~1-2 hr + 1 strategic call, HIGH)*
+
+- **Items:** R-M13, R-L10, R-H2
+- **Scope:** `release.yml`, `updater.ts`, possibly a new signing
+  config.
+- **Fixes:** flip `latest.json.downloadUrl` to the R2 URL, add a
+  sha256 verify step that the published R2 nupkg matches the
+  freshly-built one, **resolve the R-H2 strategic call** (sign
+  the installer, verify nupkg sigs, or drop R2 to signal-only).
+- **Sequencing:** resolve before flipping the repo private.
+
+**Cluster 6 — Director session + trust boundaries** *(2-3 items, ~45 min, MEDIUM)*
+
+- **Items:** R-M8 (+R-M12 folds in), R-A8
+- **Scope:** `ipc/projects.ts`, `director/runner.ts`.
+- **Fixes:** symmetric session reset on `setProjectProvider`,
+  strip `orchestrator-*` fences from agent summaries before
+  queueing into the Director's next-turn input.
+
+**Cluster 7 — Quick-wins polish pass** *(8 items, ~30-45 min, LOW but trivial)*
+
+- **Items:** R-M3, R-M6, R-M11+R-A9, R-A10, R-M1, R-L1, R-L4
+- **Scope:** scattered — `updater.ts`, `index.ts`,
+  `agents/query.ts`, `release.yml`, `StatusBar.tsx`,
+  `MarketplaceScreen.tsx`.
+- **Fixes:** string literal → enum constant; stale comment fix;
+  appQuitting gating consistency; `--commit-dirty=true` →
+  `--commit-hash <sha>`; rename shadowed `model` var; closure
+  narrowing; missing `.catch` on audit IPC.
+- **Why bundle:** eight near-trivial fixes that don't deserve
+  their own slice each.
+
+**Cluster 8 — Schema boundary tightening** *(3 items, ~30 min, LOW)*
+
+- **Items:** R-L7, R-L8, R-A12
+- **Scope:** `_schemas.ts`, `SpawnAgentForm.tsx`, `.eslintrc.json`.
+- **Fixes:** tighten partial-budget zod shape, clamp Settings
+  budget schema to nonnegative, add `no-restricted-imports` rule
+  banning `node:*` in `src/shared/**`.
+
+**Cluster 9 — Test infrastructure** *(2 items, ~2-3 hr, MEDIUM)*
+
+- **Items:** R-T1, R-L9
+- **Scope:** new test runner (jest/vitest), `tests/` tree,
+  `release.yml` CI step.
+- **Fixes:** bootstrap a pure-function unit test runner; write
+  baseline tests for `isNewer`, `parsePrd`, `auditSource`,
+  `parsePlan`, `parseRedirect`, handoff parsers, `parseTestsKpi`;
+  fix the hardcoded CDP port when adding more e2e tests.
+- **Why standalone:** R-T1 ships test infra; subsequent clusters
+  get to write regression tests for whatever they touch.
+
+**Cluster 10 — Defer / Won't-fix** *(3 items, no action)*
+
+- **Items:** R-L6, R-L2, S4
+- **Reasoning:** R-L6 (ALTER TABLE no rollback) is consistent
+  with the project's forward-only migration shape. R-L2 (history
+  distillers assume git) is a documentation comment, not a
+  behaviour change. S4 (better-sqlite3) is blocked on external
+  prebuild availability.
+
+#### Suggested sequencing
+
+1. **Cluster 1 (PRD)** first — High-tier, smallest scope,
+   closes a visible bug.
+2. **Cluster 9 (tests)** before any other defensive cluster —
+   gives 2/3/4/6 a place to write regression tests for the
+   parsers they touch.
+3. **Cluster 5 (R2 + private)** when ready to talk through R-H2 —
+   the strategic decision gates flipping the repo private.
+4. **Clusters 2 / 3 / 4 / 6** in any order — defensive hardening
+   passes, independent of each other.
+5. **Cluster 7 (polish)** as a finisher / mop-up commit.
+6. **Cluster 8 (schema tightening)** — last because the lint
+   rule + zod tightening may surface other issues that pull more
+   items in.
+
+---
+
+## Product proposals (2026-05-21)
+
+Senior-PM + senior-architect pass over the v0.15.1 codebase + this
+BACKLOG. The full proposal lives at
+[`docs/product/feature-proposals.md`](./docs/product/feature-proposals.md);
+this section is a pointer + the overlap map so the two docs stay
+linked.
+
+**Two lenses, two ID schemes:**
+- **F1–F15**: PM-lens feature proposals (UX polish, power-user
+  productivity, observability, collaboration, platform).
+- **A1–A7**: architect-lens capability gaps + re-costs. A1
+  ("event-source the agent run") is the highest-leverage entry —
+  F4 / F5 / F8 / F11 / F12 collapse onto it as projections.
+
+**Overlap with existing BACKLOG items:**
+
+| Proposal | Maps to | Notes |
+|---|---|---|
+| F3 (PRDCard in classic chat view) | R-H1 | Same fix. Track in R-H1; F3 can be dropped from the proposals doc once R-H1 lands. |
+| F4 (Parallel-lane execution) | blocks-on P13 | Hard-blocked on the `claude --resume` cwd-tolerance experiment from [`docs/spike-2026-05-21-per-agent-worktrees.md`](./docs/spike-2026-05-21-per-agent-worktrees.md). A6 re-costs as XL not L. |
+| F11 (Run-bundle export `.orun`) | depends-on A1 | A7 re-costs: needs event-sourcing first or the heuristic handoff parser becomes a public contract. |
+| F14 (Git auto-branch / auto-PR) | sequences-after F4 | F14 builds on the workspace model F4 is about to change. |
+| F15 (Cross-platform builds) | depends-on H7 (code signing, PLAN.md "Decisions locked") | macOS notarisation requires the H7 follow-up. |
+| A1 (event-source) | enables F4 / F5 / F8 / F11 / F12 | Largest-leverage abstraction. Five PM features fall out for free. |
+| A2 (Workspace as interface) | re-opens M4 "no per-agent isolation" decision | Pairs with F4 / F14 / P13. |
+
+**Quick-wins (PM lens):** F3, F7 (cost forecast on PlanCard), F9
+(crash → shareable .zip). All independent of any abstraction
+above; can ship from the existing surface at any time.
+
+**Bold bets:** F4 (parallel lanes) and F13 (provider plug-in) —
+both architecturally expensive; sequence after A1 + A2.
+
+For honest sequencing across BOTH this section and the
+review-findings clusters above, see the
+[`feature-proposals.md`](./docs/product/feature-proposals.md)
+"Sequencing the architect's lens against the PM's list" block
+at the bottom of that doc.
+
+---
+
 ## Cross-references and overlaps
 
 - **S2 ↔ P4**: both touch the IPC + per-project overrides surface. Do S2
