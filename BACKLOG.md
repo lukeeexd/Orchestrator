@@ -913,7 +913,7 @@ linked.
 
 | Proposal | Maps to | Notes |
 |---|---|---|
-| F3 (PRDCard in classic chat view) | R-H1 | Same fix. Track in R-H1; F3 can be dropped from the proposals doc once R-H1 lands. |
+| ~~F3 (PRDCard in classic chat view)~~ | R-H1 | Retired 2026-05-22 — shipped via R-H1 in commit `56c0350`. |
 | F4 (Parallel-lane execution) | blocks-on P13 | Hard-blocked on the `claude --resume` cwd-tolerance experiment from [`docs/spike-2026-05-21-per-agent-worktrees.md`](./docs/spike-2026-05-21-per-agent-worktrees.md). A6 re-costs as XL not L. |
 | F11 (Run-bundle export `.orun`) | depends-on A1 | A7 re-costs: needs event-sourcing first or the heuristic handoff parser becomes a public contract. |
 | F14 (Git auto-branch / auto-PR) | sequences-after F4 | F14 builds on the workspace model F4 is about to change. |
@@ -921,9 +921,8 @@ linked.
 | A1 (event-source) | enables F4 / F5 / F8 / F11 / F12 | Largest-leverage abstraction. Five PM features fall out for free. |
 | A2 (Workspace as interface) | re-opens M4 "no per-agent isolation" decision | Pairs with F4 / F14 / P13. |
 
-**Quick-wins (PM lens):** F3, F7 (cost forecast on PlanCard), F9
-(crash → shareable .zip). All independent of any abstraction
-above; can ship from the existing surface at any time.
+**Quick-wins (PM lens):** ~~F3, F7 (cost forecast on PlanCard), F9
+(crash → shareable .zip)~~ — all three shipped 2026-05-22.
 
 **Bold bets:** F4 (parallel lanes) and F13 (provider plug-in) —
 both architecturally expensive; sequence after A1 + A2.

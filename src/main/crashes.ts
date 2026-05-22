@@ -2,6 +2,8 @@ import { app } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import AdmZip from 'adm-zip';
+import { getDb, isDbOpen } from './db';
 
 /**
  * S5: local-only crash capture. No network upload, no external service,
@@ -313,5 +315,257 @@ export function countCrashes(): number {
   } catch {
     return 0;
   }
+}
+
+/**
+ * F9: bundle a crash + adjacent forensics into a single .zip so the
+ * user can attach it to a bug report in one click. Contents:
+ *   - crash.json                  — the raw crash record
+ *   - manifest.json               — app/electron/platform versions,
+ *                                   bundle creation ts, scrub mode
+ *   - director-messages.json      — last 50 Director messages across
+ *                                   all projects (for context — what
+ *                                   the user was doing)
+ *   - agents.json                 — last 10 agents started in the
+ *                                   past 7 days (role, model, status,
+ *                                   tokens, cost, started_at)
+ *   - logs/<agent-id>.log         — last 200 log lines per agent in
+ *                                   that list
+ *
+ * The opt-in scrubber masks common secret shapes (Anthropic keys,
+ * GitHub tokens, AWS access keys, bearer JWTs, generic API-KEY=VALUE
+ * env-style assignments). It runs only against strings — JSON
+ * numeric fields are passed through unchanged. False-positive
+ * redaction in stack traces is preferable to leaking a token.
+ */
+export function exportCrashBundle(
+  crashId: string,
+  opts: { scrubSecrets: boolean },
+): { ok: true; path: string } | { ok: false; error: string } {
+  // Locate the crash JSON. The id is the file basename without extension.
+  const dir = crashDir();
+  const crashPath = path.join(dir, `${crashId}.json`);
+  if (!fs.existsSync(crashPath)) {
+    return { ok: false, error: `crash not found: ${crashId}` };
+  }
+  let crashRaw: string;
+  try {
+    crashRaw = fs.readFileSync(crashPath, 'utf8');
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'crash read failed',
+    };
+  }
+
+  const scrub = opts.scrubSecrets ? scrubSecrets : (s: string) => s;
+
+  // Collect forensics from the DB. If the DB is closed (shutdown
+  // race / corrupt boot) we still ship the crash JSON alone.
+  let directorMessages: unknown[] = [];
+  let agents: Array<{ id: string; role: string; model: string; tokens: number; cost: number; status: string; startedAt: number }> = [];
+  let logsPerAgent = new Map<string, string>();
+  if (isDbOpen()) {
+    try {
+      directorMessages = readRecentDirectorMessages(50);
+    } catch {
+      // best-effort
+    }
+    try {
+      agents = readRecentAgents(10);
+    } catch {
+      // best-effort
+    }
+    for (const a of agents) {
+      try {
+        logsPerAgent.set(a.id, readAgentLogTail(a.id, 200));
+      } catch {
+        // skip this agent
+      }
+    }
+  }
+
+  const manifest = {
+    bundleVersion: 1,
+    createdAt: new Date().toISOString(),
+    appVersion: app.getVersion(),
+    electronVersion: process.versions.electron ?? 'unknown',
+    platform: process.platform,
+    arch: process.arch,
+    nodeVersion: process.versions.node,
+    scrubSecrets: opts.scrubSecrets,
+    crashId,
+    counts: {
+      directorMessages: directorMessages.length,
+      agents: agents.length,
+      logsBundled: logsPerAgent.size,
+    },
+  };
+
+  let zip: AdmZip;
+  try {
+    zip = new AdmZip();
+    zip.addFile(
+      'manifest.json',
+      Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),
+    );
+    zip.addFile('crash.json', Buffer.from(scrub(crashRaw), 'utf8'));
+    zip.addFile(
+      'director-messages.json',
+      Buffer.from(scrub(JSON.stringify(directorMessages, null, 2)), 'utf8'),
+    );
+    zip.addFile(
+      'agents.json',
+      Buffer.from(scrub(JSON.stringify(agents, null, 2)), 'utf8'),
+    );
+    for (const [agentId, log] of logsPerAgent) {
+      zip.addFile(`logs/${agentId}.log`, Buffer.from(scrub(log), 'utf8'));
+    }
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'zip build failed',
+    };
+  }
+
+  const outPath = path.join(dir, `${crashId}-bundle.zip`);
+  try {
+    zip.writeZip(outPath);
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'zip write failed',
+    };
+  }
+  return { ok: true, path: outPath };
+}
+
+function readRecentDirectorMessages(limit: number): unknown[] {
+  const db = getDb();
+  const safeLimit = Math.max(1, Math.min(limit, 500));
+  const res = db.exec(
+    `SELECT id, project_id, who, name, time, body, plan, redirect, prd, created_at
+     FROM director_messages
+     ORDER BY created_at DESC
+     LIMIT ${safeLimit}`,
+  );
+  if (res.length === 0) return [];
+  const out: unknown[] = [];
+  for (const row of res[0].values) {
+    out.push({
+      id: row[0],
+      projectId: row[1],
+      who: row[2],
+      name: row[3],
+      time: row[4],
+      body: row[5],
+      plan: tryJsonParse(row[6]),
+      redirect: tryJsonParse(row[7]),
+      prd: tryJsonParse(row[8]),
+      createdAt: row[9],
+    });
+  }
+  return out.reverse();
+}
+
+function readRecentAgents(
+  limit: number,
+): Array<{
+  id: string;
+  role: string;
+  model: string;
+  tokens: number;
+  cost: number;
+  status: string;
+  startedAt: number;
+}> {
+  const db = getDb();
+  const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+  const res = db.exec(
+    `SELECT id, role, model, tokens, cost, status, started_at
+     FROM agents
+     WHERE started_at >= ${cutoff}
+     ORDER BY started_at DESC
+     LIMIT ${Math.max(1, Math.min(limit, 50))}`,
+  );
+  if (res.length === 0) return [];
+  return res[0].values.map((row) => ({
+    id: typeof row[0] === 'string' ? row[0] : '',
+    role: typeof row[1] === 'string' ? row[1] : '',
+    model: typeof row[2] === 'string' ? row[2] : '',
+    tokens: typeof row[3] === 'number' ? row[3] : 0,
+    cost: typeof row[4] === 'number' ? row[4] : 0,
+    status: typeof row[5] === 'string' ? row[5] : '',
+    startedAt: typeof row[6] === 'number' ? row[6] : 0,
+  }));
+}
+
+function readAgentLogTail(agentId: string, limit: number): string {
+  const db = getDb();
+  const safeLimit = Math.max(1, Math.min(limit, 1000));
+  const res = db.exec(
+    `SELECT ts, kind, msg FROM log_lines
+     WHERE agent_id = ?
+     ORDER BY seq DESC
+     LIMIT ?`,
+    [agentId, safeLimit],
+  );
+  if (res.length === 0) return '';
+  const lines: string[] = [];
+  for (const row of res[0].values) {
+    const ts = typeof row[0] === 'string' ? row[0] : '';
+    const kind = typeof row[1] === 'string' ? row[1] : '';
+    const msg = typeof row[2] === 'string' ? row[2] : '';
+    lines.push(`[${ts}] ${kind}: ${msg}`);
+  }
+  return lines.reverse().join('\n');
+}
+
+function tryJsonParse(v: unknown): unknown {
+  if (typeof v !== 'string' || v.length === 0) return null;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return v;
+  }
+}
+
+/**
+ * Mask common secret shapes inside a free-form string. Patterns are
+ * deliberately broad: better a false-positive redaction in a stack
+ * trace than a leaked token in a public bug report.
+ */
+const SECRET_PATTERNS: ReadonlyArray<{
+  re: RegExp;
+  label: string;
+}> = [
+  { re: /sk-ant-[A-Za-z0-9_-]{20,}/g, label: 'anthropic' },
+  { re: /sk-[A-Za-z0-9]{32,}/g, label: 'api-key' },
+  { re: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b/g, label: 'github' },
+  { re: /\bAKIA[0-9A-Z]{16}\b/g, label: 'aws-key' },
+  { re: /\bxox[abpr]-[A-Za-z0-9-]{10,}\b/g, label: 'slack' },
+  {
+    re: /\bbearer\s+eyJ[A-Za-z0-9_=-]+\.[A-Za-z0-9_=-]+\.[A-Za-z0-9_.+/=-]*/gi,
+    label: 'jwt',
+  },
+  // Env-style assignment: VAR_NAME=long-base64-ish value (matches
+  // OAUTH_TOKEN, ANTHROPIC_API_KEY, GITHUB_TOKEN, etc.)
+  {
+    re: /\b([A-Z][A-Z0-9_]{4,})\s*[:=]\s*["']?([A-Za-z0-9_.+/=-]{24,})["']?/g,
+    label: 'env',
+  },
+];
+
+function scrubSecrets(s: string): string {
+  let out = s;
+  for (const { re, label } of SECRET_PATTERNS) {
+    out = out.replace(re, (match, name) => {
+      if (label === 'env' && typeof name === 'string') {
+        return `${name}=[REDACTED:${label}]`;
+      }
+      return `[REDACTED:${label}]`;
+    });
+  }
+  return out;
 }
 

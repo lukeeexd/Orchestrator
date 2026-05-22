@@ -1,0 +1,178 @@
+# `docs/product/feature-proposals.md`
+
+> Senior-PM review of Orchestrator as of `v0.15.1` (read against `PLAN.md`, `BACKLOG.md`, `README.md`, `docs/design/README.md` and the `src/` tree on 2026-05-21). This is a planning artefact — no source code is modified by this proposal.
+
+## 1. Product summary
+
+Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.json` v0.15.1) that turns the user's locally-installed `claude` and/or `codex` CLI into a director-led multi-agent workflow. An LLM **Director** session (`src/main/director/runner.ts`, prompt in `src/main/director/prompt.ts`) chats with the user and emits fenced `orchestrator-plan` / `orchestrator-prd` / `orchestrator-redirect` JSON blocks (parsed in `src/main/director/parse.ts`), which the renderer renders as a `PlanCard` / `PRDCard` (`src/renderer/components/PlanCard.tsx`, `PRDCard.tsx`). When the user accepts a plan, the runner sequentially spawns specialised agents — pm, researcher, coder, qa, devops, security — each with a role-specific system prompt and tool allow-list (`src/shared/roles.ts`), per-agent budget in $/tokens/seconds, optional flavour (e.g. `qa.playwright`), and optional MCP servers (`src/main/mcpScaffold.ts`). Live drawer streams every step, a structured handoff payload (`src/main/agents/handoffPayload.ts`) flows from agent → Director, and the app aggregates lifetime / 7d / 30d spend (`src/main/spend.ts`, `SpendScreen.tsx`) and surfaces rule-based optimisation cards (`src/main/spendRecommendations.ts`). A skill **Marketplace** (`src/main/marketplace/*`) lets users subscribe to vetted skill bundles with a path-traversal auditor (`src/main/skillAudit.ts`); **Templates** (`src/main/templates.ts`) persist reusable plans; local-only **crash capture** (`src/main/crashes.ts`) writes JSON forensics to `userData/crashes/`; **auto-update** runs against a Cloudflare R2 Squirrel feed with a Pages-hosted secondary signal channel (`src/main/updater.ts`, `secondaryUpdater.ts`).
+
+## 2. Proposed features
+
+### Theme — UX polish
+
+**F1. Director command palette (Ctrl/⌘-K).**
+- **Problem:** the rail nav + slash commands work but discoverability is poor. Users hunt for actions like "open spend", "wipe Director", "switch project", "use template", "open crashes folder".
+- **Scope:** **S**. Mostly renderer. Reuse the existing `BuiltinAction` enum in `src/shared/builtinCommands.ts` and the `onSlashAction` switch already wired in `src/renderer/App.tsx:570`.
+- **Impact:** **medium** — speeds up daily flow for the only-user but doesn't unlock anything new.
+- **Deps/risks:** none material; just an overlay component + keymap. Risk = stealing Ctrl-K from a textarea — already handled in `App.tsx:478` via the `typing` guard.
+
+**F2. Inline plan diff / "what changed" between two Director plans.**
+- **Problem:** when the Director re-plans (user edits the prompt, asks for revisions), the new PlanCard replaces the old one — there's no visible diff of which rows were added, removed, or had their tasks rewritten. Reviewers approve plans blind.
+- **Scope:** **S/M**. Renderer-only diff between consecutive `plan?: PlanRow[]` payloads on `DirectorMessage` (see `src/shared/types.ts:264`).
+- **Impact:** **medium-high** — directly de-risks the "auto mode spawned 6 agents I didn't expect" failure mode `App.tsx:439` calls out.
+- **Deps/risks:** none; pure rendering. Risk = ambiguity when row names are reused — match on `i` index first, fall back to name.
+
+**F3. ~~Render PRDCard in classic chat view~~ — shipped 2026-05-22.**
+- Shipped via `R-H1` in commit `56c0350` (review-findings Cluster 1). `DirectorPane.Message` now renders `message.prd` paralleling the existing `plan` / `redirect` branches. Kept here as a retirement marker so the F-numbering stays stable.
+
+### Theme — Power-user / productivity
+
+**F4. Parallel-lane agent execution (opt-in fan-out).**
+- **Problem:** the runner is deliberately sequential (PLAN.md "Per-agent isolation" decision). For embarrassingly-parallel work — "audit these six independent modules", "write tests for each handler" — users wait n× longer than necessary.
+- **Scope:** **L**. Needs a `parallelGroup` field on `PlanRow` (`src/shared/types.ts:180`), a fan-out scheduler in `src/main/agents/spawn.ts`, a per-row worktree (resurrects P13 path c from BACKLOG), and a renderer change to render swimlanes in `AgentsPane`.
+- **Impact:** **high** — biggest wall-clock win available without changing what the app does.
+- **Deps/risks:** the M4 reason for dropping worktrees (shared workspace for sequential artefact flow) is real; safest path is a "parallel group" boundary inside a single plan that all converge before the next sequential row. Hard-blocked on the `claude --resume` cwd-tolerance experiment noted in `docs/spike-2026-05-21-per-agent-worktrees.md`.
+
+**F5. "Rewind Director to turn N" / branching conversations.**
+- **Problem:** Director chats drift; the only reset today is `wipeDirector` (`App.tsx:564`) which nukes everything. Users want to fork from a known-good point and try a different prompt.
+- **Scope:** **M**. Add a `rewindTo(messageId)` IPC that truncates `director_messages` and reseats the SDK `session_id` via a new `claude --resume <upstream-id>`-style restart. Renderer adds a chevron on each message → "Rewind here".
+- **Impact:** **medium-high** — saves an entire chat redo every time a Director goes sideways.
+- **Deps/risks:** `claude --resume` semantics across truncation are unverified — same family of risk as F4's worktree spike. Codex side is harder (different session model).
+
+**F6. Project-scoped secrets / env vault.**
+- **Problem:** Coder + DevOps agents routinely need `DATABASE_URL`, `STRIPE_KEY`, `GH_TOKEN` etc. Today users either paste them into the task (leaks into agent logs + crash JSON) or pre-populate the shell env (only works when they launched Orchestrator from a configured terminal). The OS-keychain item in PLAN.md is already deferred.
+- **Scope:** **M**. New `projects.secrets` table (encrypted at rest via OS DPAPI on Windows) + an env-injection step in `src/main/cli/spawn.ts`. Renderer adds a "Secrets" tab to `ToolsScreen.tsx`.
+- **Impact:** **high** — unlocks any agent task that touches a non-trivial backend. Also kills the "Director's chat history contains my API key" disclosure risk that exists today.
+- **Deps/risks:** DPAPI is per-user-per-machine; backup/migration story needs to be documented. Agent logs still need a secret-stripping pass (cf. R-A8 in BACKLOG — bodies are queued verbatim into Director context).
+
+**F7. Pre-spawn cost forecast on PlanCard.**
+- **Problem:** users approve a 6-agent plan without any sense of whether it'll cost $0.30 or $30. The data needed is already collected per-role + per-model in `getSpendSummary` (`src/main/spend.ts`).
+- **Scope:** **S**. Compute a historical median $/role + adjustment for task-length and model selection; render an estimate chip on `PlanCard.tsx`'s spawn button (currently "Spawn N" / "Spawn N + 2", see P5).
+- **Impact:** **medium-high** — the most common request from anyone who's been burned by an Opus run.
+- **Deps/risks:** new users with no history get a wide CI; mitigate with "first run — no data" placeholder.
+
+### Theme — Observability / telemetry
+
+**F8. Run timeline / Gantt visualisation.**
+- **Problem:** sequential chains hide their own gaps. When a user notices a 3× wall-clock blow-up across 5 agents, there's no easy way to see whether agent 2 actually took 15 minutes or whether 14 of those minutes were waiting for a child process to time out.
+- **Scope:** **M**. Renderer-only against existing `Agent.startedAt` + `elapsed` + (new) `endedAt`. Slot under `HistoryScreen.tsx` as a third view-mode toggle ("list / chart / timeline").
+- **Impact:** **medium** — directly feeds Spend optimiser rules (P3) with much richer signal.
+- **Deps/risks:** need to backfill `endedAt` from existing `agents` rows; migration is forward-only (per `R-L6`).
+
+**F9. Crash → shareable bundle.**
+- **Problem:** today the user has to open `userData/crashes/`, find the right JSON, copy it, scrub anything sensitive, and attach to a bug report. Friction kills crash submissions.
+- **Scope:** **S**. Existing `crashes.ts` already lists entries. Add an "Export as .zip" button in `SettingsScreen.tsx` that bundles the JSON + the last 200 log lines from `agents` for active projects + the last 50 Director messages, with an opt-in secret-scrubber pass.
+- **Impact:** **medium** — small effort, helps every future bug.
+- **Deps/risks:** scrubber must not be lossy enough to obscure the actual crash; risk of false-positive redaction in stack traces.
+
+**F10. Live context-window meter chip per agent.**
+- **Problem:** the design handoff (`docs/design/README.md:96`) specifies a Context tab with a stacked horizontal bar, but the always-visible state is just tokens/cost. Agents that quietly approach the model's context cap go from fine → "Context limit reached" with no warning.
+- **Scope:** **S**. KPI chip on `AgentRow.tsx` reading the existing `tokens` field against the agent's known model context size (table in `src/shared/models.ts`).
+- **Impact:** **medium** — small, but high-perceived-quality.
+- **Deps/risks:** Codex doesn't always expose context usage as cleanly; show "—" on missing data rather than fake it.
+
+### Theme — Collaboration / handoff
+
+**F11. Run-bundle export (portable `.orun`).**
+- **Problem:** Orchestrator is single-user. There's no way to share "here's exactly what this fleet did" with a collaborator short of screenshots. Handoff payloads (`src/main/agents/handoffPayload.ts`) already have `files_touched`, `tests_run`, `errors`, `summary` — the data is there.
+- **Scope:** **M**. New IPC `exportRun(agentIds[])` that bundles: agent rows + log lines + handoff payloads + Director messages tied to those agents + a manifest. Importer is a stretch goal — viewer-only is the v1.
+- **Impact:** **medium-high** — turns Orchestrator from a private tool into a defensible artefact for postmortems / PR descriptions / external review.
+- **Deps/risks:** same scrubber question as F9. Composes with F12.
+
+**F12. Comments / sticky notes pinned on log lines.**
+- **Problem:** reviewers reading a long agent log can't annotate it inline. They either copy/paste into a separate doc or take screenshots.
+- **Scope:** **S/M**. New `log_notes` table keyed on `(agentId, logLineIndex)`. Renderer adds a hover-trigger margin icon on each row of `AgentStreamPanel.tsx`.
+- **Impact:** **medium** — multiplied by F11 (notes travel with the exported bundle).
+- **Deps/risks:** keyed on log-line index is fragile if logs are ever back-edited; key on `ts + kind + msg-hash` instead.
+
+### Theme — Platform / monetisation
+
+**F13. Provider plug-in surface (Gemini, Ollama, generic OpenAI-compatible).**
+- **Problem:** `Provider` is hardcoded `'claude' | 'codex'` (`src/shared/types.ts:57`). Each project picks one at creation. PLAN.md notes a third provider is "on the table". Users with Gemini Pro / a local Ollama box / OpenRouter credit are locked out.
+- **Scope:** **L**. Define a `ProviderRunner` interface (probe + spawn + parse-events) and extract `cli/spawn.ts` (claude) + `cli/codex.ts` into implementations. New providers register via a manifest in `userData/providers/`.
+- **Impact:** **high** — opens addressable user base; lets users pin cheap providers to PM/researcher roles.
+- **Deps/risks:** event normalisation across CLIs is the same kind of work that codex onboarding already paid for, but each new provider has its own tool-allowlist semantics (codex uses sandbox-policy scopes — see `src/shared/types.ts:90`). Codex Fork is already disabled for this reason; expect more such carve-outs.
+
+**F14. Git integration: auto-branch + auto-PR per accepted plan.**
+- **Problem:** every accepted plan produces unscoped changes in the shared workspace. The user has to manually `git checkout -b ...` before spawning, and `git diff` / `gh pr create` after.
+- **Scope:** **M**. Pre-spawn hook in `src/main/agents/spawn.ts` (when project workspace is a git repo) that creates `orchestrator/<plan-id>` and optionally opens a draft PR on completion using `gh` CLI if present.
+- **Impact:** **high** — closes the loop from "described a task" to "PR ready for review".
+- **Deps/risks:** interacts with F4's worktree story; do this **after** the worktree spike resolves so we don't ship a feature that breaks the moment per-row worktrees land.
+
+**F15. Cross-platform builds (macOS / Linux).**
+- **Problem:** README + PLAN both lock to Windows. The only Windows-specific code is `MakerSquirrel` and the R2 update path. The CLI dependency is platform-agnostic; users on Mac/Linux are excluded by packaging, not by design.
+- **Scope:** **L**. New Forge makers (`MakerDMG`, `MakerDeb`), CI matrix in `.github/workflows/release.yml`, code-signing notarisation for macOS (Apple Developer ID), per-platform auto-update channel.
+- **Impact:** **high** — biggest reach unlock; pairs with H7 code signing (already deferred).
+- **Deps/risks:** macOS notarisation requires a paid Apple Developer account; signed-installer item is already a known blocker (H7). DPAPI in F6 needs a per-OS replacement (libsecret / Keychain).
+
+## 3. Quick wins (top 3, high-impact / low-effort)
+
+1. ~~**F3 — PRDCard in DirectorPane** (XS).~~ Shipped 2026-05-22 (see retirement note above).
+2. ~~**F7 — Cost forecast on PlanCard** (S).~~ Shipped 2026-05-22. Per-role median cost from completed agents, ±50% band, chip on the spawn button. Source: `src/main/spendForecast.ts` + `IpcChannels.SpendForecastPlan`.
+3. ~~**F9 — Crash → shareable .zip** (S).~~ Shipped 2026-05-22. `exportCrashBundle` in `src/main/crashes.ts` writes a zip containing the crash JSON + recent Director messages + recent agents + per-agent log tails, with an opt-in secret-scrubber. Button lives in `SettingsScreen.tsx`'s Crashes section.
+
+## 4. Bold bets (top 2, high-impact / large-effort)
+
+1. **F4 — Parallel-lane execution.** This is the single feature that changes what Orchestrator *is* — from a sequential pipeline into a real fleet. Worth the worktree spike (PLAN.md P13 path c), the schema change, and the swimlane UI because no other feature multiplies wall-clock value the same way.
+2. **F13 — Provider plug-in surface.** Moves the codebase from "claude-then-codex bolt-on" to a real abstraction. Unlocks Gemini / Ollama / OpenRouter without a fork. Pairs naturally with F6 (per-provider secret slot) and F15 (cross-platform) for a clean 1.0 narrative.
+
+---
+
+**Notes for the executing agent:**
+- F3 retired 2026-05-22 (shipped via R-H1 in commit `56c0350`).
+- F4 is hard-blocked on the `claude --resume` cwd-tolerance experiment in `docs/spike-2026-05-21-per-agent-worktrees.md`; don't sequence it ahead of that spike.
+- F14 (auto-PR) should sequence **after** F4 to avoid building on a workspace model that's about to change.
+
+## Architect's lens
+
+Senior-architect pass over the same code-base + the PM's proposals on 2026-05-21. Five entries below add capabilities the PM under-weighted because they reshape abstractions rather than UI; two re-cost PM features that the proposal undersells. Each entry cites the files that would actually move.
+
+**A1. Event-source the agent run (reshape, not feature).**
+- **Five PM features (F4, F5, F8, F11, F12) all sit on top of one missing abstraction.** Today `src/main/persistence.ts` writes *current state* — `agents` rows mutate in place, `log_lines` is append-only but per-agent (`src/main/db.ts:59-66`), and the handoff payload is *recomputed* on demand from log heuristics (`src/main/agents/handoffPayload.ts:23-34`). There is no canonical event log.
+- Refactor to write to an **immutable event log first, projections second**. A new `events` table keyed on `(project_id, ts, agent_id, kind, body_json)` becomes the source of truth; `agents` and `log_lines` become projections. Effort: M — one migration (v24) in `src/main/db.ts`, one rewrite of `src/main/persistence.ts`'s write paths, projections are reads.
+- Downstream: parallel-lane (F4) is interleaved events; rewind (F5) is `events.where(ts < cutoff)`; Gantt (F8) is event timestamps; run-bundle export (F11) is a slice of the table; sticky notes (F12) are a new `note` event kind. **One abstraction, five PM features fall out for free.** Highest-leverage move available — the PM enumerated the symptoms but missed the cure.
+
+**A2. Workspace as an interface, not a string (capability gap + reshape).**
+- `Project.workspace` is a path string (`src/shared/types.ts:62`). Every spawn cwds into it (`src/main/cli/spawn.ts`), and the M4 "per-agent isolation = none" decision (PLAN.md, "Decisions locked") is locked in *because* the abstraction is too thin to express anything else.
+- A `Workspace` interface with `.cwd() / .branch() / .merge() / .snapshot()` lets workspaces be: local folder (today), git-worktree (P13 path c), ephemeral copy-on-write dir, remote SSH host, ephemeral container. F4 and F14 both pile onto the string-path assumption — the abstraction unblocks both cleanly and is the right place to revisit M4.
+- **Capability gap the PM missed entirely: remote / containerised workspaces.** Once the abstraction exists, an SSH-backed workspace is one implementation — "run agents against my staging box" without installing `claude` there. Pairs naturally with A5 (telemetry) for fleet visibility.
+
+**A3. Headless / scriptable engine mode (the missing surface).**
+- Orchestrator is GUI-only. The entire IPC surface (`src/shared/ipc.ts`, `src/main/ipc/*`) is only reachable through Electron's `contextBridge`. There is no `orchestrator run --template <id> --workspace <path>` entry, no JSON-RPC over stdio, no HTTP. `src/main/index.ts:1-58` boots a `BrowserWindow` unconditionally.
+- A `--headless` mode that boots the main process without renderer and exposes the same handlers over stdio would unlock: CI runs, cron-driven plans, git-hook → director-plan triggers, and a future CLI sub-binary. Refactor: make `registerIpcHandlers` transport-agnostic so `ipcMain` is just one adapter alongside `stdio`.
+- PM's F11 is the *output* story; this is the missing *input* story. Without it, every automation narrative dead-ends at "click a button". Capability gap (a). Effort: M.
+
+**A4. First-class extensibility surface — provider + role + tool registries (capability gap).**
+- `Provider` is a `'claude' | 'codex'` union (`src/shared/types.ts:57`). Roles are a hardcoded six in `src/shared/roles.ts`. Tool allow-lists are per-role defaults overridden per-project (`projects.role_tools`, `src/main/db.ts:177`). The skill marketplace (`src/main/marketplace/*`, db v16-v19) extends only *prompt content*.
+- PM's F13 covers the provider axis but misses the other two. A symmetric `RoleRegistry` + `ToolRegistry` (manifest-driven, discoverable from `userData/extensions/`) lets a bundle ship **new roles**, **new tools**, and **new providers** through one mechanism — what a real plugin system looks like.
+- Capability gap (a): today an author who wants to ship a `data-engineer` role or an `openrouter` provider has nowhere to put it. Composes with A3 (headless): registered extensions surface in scripted runs without any UI work.
+
+**A5. Outgoing telemetry / webhook bus (capability gap).**
+- Telemetry is **inbound and local-only**: crash JSON to disk (`src/main/crashes.ts`), spend recomputed from DB (`src/main/spend.ts`), skill fires in `skill_fire_counts` (`src/main/db.ts:312-324`). Nothing leaves the machine.
+- A pluggable outgoing event sink — OTLP exporter, generic webhook, optional file tail — lets Orchestrator integrate with the user's existing observability (Datadog, Slack, GitHub Issues, custom dashboards). PM's F8 (Gantt) and F9 (crash bundle) both address *internal* observability and ignore the integration story.
+- Cleanly bolts onto A1: each persisted event is one publish. Capability gap (a) the PM didn't name because it requires seeing the codebase as a system that should emit, not just record.
+
+**A6. Re-cost of F4 (parallel-lane): closer to XL than L (architecturally expensive).**
+- PM scopes F4 as L. The hidden depth:
+  - `src/main/agents/agent-lock.ts` serialises completions; parallel groups need re-entrancy.
+  - `src/main/director/runner.ts` queues handoffs as a single stream; the "previous agent finished before next starts" invariant the handoff aggregator assumes (`handoffPayload.ts`) breaks under fan-out.
+  - DB has no parallel-group concept (`src/main/db.ts:37-57` agents table) — needs a `parallel_group_id` column and convergence semantics.
+  - The drawer is single-active-agent shaped today; swimlanes are a renderer rebuild, not a tweak.
+  - Codex Fork is already disabled for a related sequencing reason (PLAN.md "Providers"); parallel codex lanes need their own carve-out.
+- **Without A1 (event-source) and A2 (workspace interface) under it, F4 becomes a tangle of point fixes across five files.** With them, it is "a scheduler + a swimlane component." Sequence A1 → A2 → F4. Don't take it standalone.
+
+**A7. Re-cost of F11 (run-bundle export): the schema-version trap (architecturally expensive).**
+- PM scopes F11 as M. Hidden cost: handoff payloads aren't persisted as rows — they're rebuilt on demand in `src/main/agents/handoffPayload.ts:23-34` from log heuristics. Exporting requires either (a) persisting payloads (new column/table + a migration that can't backfill cleanly because old logs may not parse), or (b) freezing the heuristic parser at v1 forever and shipping bug-compat code for every future log change.
+- Plus: the `.orun` manifest becomes a **public contract** the moment a second machine reads one. Schema versioning, forward-compat, "this bundle is from a newer Orchestrator" UX — all the standard evolution headaches. `src/main/db.ts:444-459` migrations are forward-only by design; the export format inherits that.
+- **Do not ship F11 before A1.** Persisted events make `.orun` a trivial event-slice + a manifest pointer; the rebuild-from-heuristics trap vanishes.
+
+---
+
+**Sequencing the architect's lens against the PM's list:**
+
+1. A1 (event-source) first — unblocks F4 / F5 / F8 / F11 / F12 and de-risks A5.
+2. A2 (workspace interface) — re-opens the M4 isolation decision cleanly; unblocks F4 / F14.
+3. A3 (headless) + A4 (extensibility registries) can ship in parallel; both are additive.
+4. A5 (outgoing telemetry) bolts onto A1 once it lands.
+5. F4 and F11 sit *after* A1/A2; their PM scopes are accurate only with the abstractions in place.
+6. ~~PM's quick wins (F3, F7, F9)~~ — all three shipped 2026-05-22 (independent of the abstractions above).

@@ -380,6 +380,40 @@ export interface SpendSummary {
 }
 
 /**
+ * F7: pre-spawn cost forecast for a PlanCard. Per-role medians come
+ * from completed agents in the agents table. We don't try to model
+ * task-length or model-selection adjustments yet — the median alone
+ * is a useful "have I been burned by a 5-agent Opus run before"
+ * signal. ±50% band approximates the variance band wide enough that
+ * the user reads it as "ballpark" rather than "promise".
+ */
+export interface PlanCostForecast {
+  /** Lower bound of the forecast band, USD. Zero on no-history. */
+  lowUsd: number;
+  /** Upper bound of the forecast band, USD. Zero on no-history. */
+  highUsd: number;
+  /** Midpoint (sum of per-role medians), USD. Zero on no-history. */
+  midUsd: number;
+  /**
+   * `history` — every row's role has at least 3 completed samples.
+   * `partial` — at least one row's role has < 3 samples; estimate
+   *             uses what we have and notes the gap.
+   * `no-history` — no rows could be priced; renderer shows "no history".
+   */
+  basis: 'history' | 'partial' | 'no-history';
+  /** Per-role breakdown for tooltip display. */
+  perRole: Array<{
+    role: AgentRole;
+    /** How many completed samples this median is based on. */
+    sampleCount: number;
+    /** Per-row median used in the sum, USD. */
+    medianUsd: number;
+    /** How many plan rows this role contributes. */
+    rowCount: number;
+  }>;
+}
+
+/**
  * One rule-based recommendation surfaced on the Spend screen.
  * Recomputed every time the user opens the rail; no persistent
  * "dismissed" state in v1 (the underlying conditions resolving is the

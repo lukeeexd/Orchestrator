@@ -79,6 +79,8 @@ export const IpcChannels = {
   CrashesClear: 'crashes:clear',
   CrashesOpenFolder: 'crashes:openFolder',
   CrashesRecordRenderer: 'crashes:recordRenderer',
+  /** F9: bundle a crash + recent forensics into a shareable .zip. */
+  CrashesExportBundle: 'crashes:exportBundle',
   /** List memory proposals filterable by project + role + status. */
   MemoryListProposals: 'memory:listProposals',
   /** Approve a proposal — appends body to the per-role skill file, marks approved. */
@@ -95,6 +97,8 @@ export const IpcChannels = {
   DocsPickFolder: 'docs:pickFolder',
   SpendGet: 'spend:get',
   SpendRecommendations: 'spend:recommendations',
+  /** F7: pre-spawn cost forecast for a plan. Returns ±50% band over per-role medians. */
+  SpendForecastPlan: 'spend:forecastPlan',
   HistoryList: 'history:list',
   CommandsList: 'commands:list',
   SkillsList: 'skills:list',
@@ -878,6 +882,15 @@ export interface OrchestratorApi {
   /** Reveal `userData/crashes/` in the OS file explorer. */
   openCrashesFolder: () => Promise<{ ok: boolean }>;
   /**
+   * F9: bundle a crash + recent Director messages + recent agents +
+   * their log tails into a shareable .zip. The resulting file is
+   * revealed in Explorer so the user can attach it in one click.
+   */
+  exportCrashBundle: (
+    crashId: string,
+    opts: { scrubSecrets: boolean },
+  ) => Promise<{ ok: true; path: string } | { ok: false; error: string }>;
+  /**
    * Renderer-side React error boundary forwards captured errors
    * here. Main writes through the same pipeline as process-level
    * crashes.
@@ -946,6 +959,10 @@ export interface OrchestratorApi {
   getSpendRecommendations: () => Promise<
     import('./types').SpendRecommendation[]
   >;
+  /** F7: forecast spawn cost from per-role medians for a given plan. */
+  forecastPlanCost: (
+    rows: import('./types').PlanRow[],
+  ) => Promise<import('./types').PlanCostForecast>;
   listHistory: () => Promise<import('./types').HistoryRow[]>;
   listSlashCommands: (
     projectId: string | null,

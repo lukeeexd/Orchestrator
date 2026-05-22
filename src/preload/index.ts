@@ -365,6 +365,10 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.CrashesOpenFolder) as Promise<{
       ok: boolean;
     }>,
+  exportCrashBundle: (crashId, opts) =>
+    ipcRenderer.invoke(IpcChannels.CrashesExportBundle, crashId, opts) as Promise<
+      { ok: true; path: string } | { ok: false; error: string }
+    >,
   recordRendererCrash: (payload) =>
     ipcRenderer.invoke(
       IpcChannels.CrashesRecordRenderer,
@@ -419,6 +423,10 @@ const api: OrchestratorApi = {
   getSpendRecommendations: () =>
     ipcRenderer.invoke(IpcChannels.SpendRecommendations) as Promise<
       import('../shared/types').SpendRecommendation[]
+    >,
+  forecastPlanCost: (rows) =>
+    ipcRenderer.invoke(IpcChannels.SpendForecastPlan, rows) as Promise<
+      import('../shared/types').PlanCostForecast
     >,
   listHistory: () =>
     ipcRenderer.invoke(IpcChannels.HistoryList) as Promise<

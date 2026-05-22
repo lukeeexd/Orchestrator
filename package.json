@@ -26,6 +26,7 @@
     "@electron-forge/plugin-vite": "^7.11.1",
     "@electron/fuses": "^1.8.0",
     "@playwright/test": "^1.60.0",
+    "@types/adm-zip": "^0.5.8",
     "@types/electron-squirrel-startup": "^1.0.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -42,6 +43,7 @@
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
+    "adm-zip": "^0.5.17",
     "electron-squirrel-startup": "^1.0.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

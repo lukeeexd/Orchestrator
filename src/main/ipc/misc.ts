@@ -2,6 +2,7 @@ import { ipcMain, shell, BrowserWindow, dialog } from 'electron';
 import { IpcChannels } from '../../shared/ipc';
 import { getSpendSummary } from '../spend';
 import { getSpendRecommendations } from '../spendRecommendations';
+import { forecastPlanCost } from '../spendForecast';
 import { listHistory } from '../history';
 import { listSlashCommands } from '../commands';
 import { listSkills, writeSkill } from '../skills';
@@ -11,6 +12,7 @@ import {
   clearCrashes,
   getCrashesFolder,
   recordRendererCrash,
+  exportCrashBundle,
 } from '../crashes';
 import { recordRendererCrashSchema } from './_schemas';
 import { validated } from './_shared';
@@ -47,6 +49,15 @@ export function registerMiscHandlers(): void {
     IpcChannels.SpendRecommendations,
     (): import('../../shared/types').SpendRecommendation[] =>
       getSpendRecommendations(),
+  );
+
+  ipcMain.handle(
+    IpcChannels.SpendForecastPlan,
+    (
+      _event,
+      rows: import('../../shared/types').PlanRow[],
+    ): import('../../shared/types').PlanCostForecast =>
+      forecastPlanCost(Array.isArray(rows) ? rows : []),
   );
 
   ipcMain.handle(
@@ -135,6 +146,33 @@ export function registerMiscHandlers(): void {
       } catch {
         return { ok: false };
       }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.CrashesExportBundle,
+    async (
+      _event,
+      crashId: string,
+      opts: { scrubSecrets: boolean } | null | undefined,
+    ): Promise<
+      { ok: true; path: string } | { ok: false; error: string }
+    > => {
+      // F9: build the bundle .zip on disk, then reveal it in Explorer
+      // so the user can grab it without hunting through the folder.
+      // Reveal failure isn't fatal — caller still gets the path.
+      const safeOpts = {
+        scrubSecrets: opts?.scrubSecrets !== false,
+      };
+      const result = exportCrashBundle(crashId, safeOpts);
+      if (result.ok) {
+        try {
+          shell.showItemInFolder(result.path);
+        } catch {
+          // best-effort
+        }
+      }
+      return result;
     },
   );
 
