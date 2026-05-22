@@ -105,6 +105,10 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 - **Impact:** **high** — biggest reach unlock; pairs with H7 code signing (already deferred).
 - **Deps/risks:** macOS notarisation requires a paid Apple Developer account; signed-installer item is already a known blocker (H7). DPAPI in F6 needs a per-OS replacement (libsecret / Keychain).
 
+**F16. ~~Claude Code memory bridge.~~ — shipped 2026-05-22.**
+- Surfaces the per-project memories Claude Code accumulates (under `~/.claude/projects/<encoded>/memory/`) into Orchestrator's agent prompts. `effectiveSkill()` reads the project's MEMORY.md index, walks each linked file, and includes only `project` and `reference` types — `user` and `feedback` types are skipped because they're about the user / about the assistant rather than about the codebase. No-op when the directory doesn't exist (user hasn't used Claude Code on this project). Source: `src/main/claudeCodeMemory.ts` + composed into `effectiveSkill` in `skills.ts`. Pure helpers covered by 14 new unit tests.
+- Privacy / scope decision: silent inclusion (no Settings toggle) because Orchestrator is a single-user app and the only memories that flow through are codebase-scoped (`project` + `reference`). If a user wants to opt out, deleting MEMORY.md or removing the type frontmatter on individual files achieves it without code changes.
+
 ## 3. Quick wins (top 3, high-impact / low-effort)
 
 1. ~~**F3 — PRDCard in DirectorPane** (XS).~~ Shipped 2026-05-22 (see retirement note above).

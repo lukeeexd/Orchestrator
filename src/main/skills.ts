@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { SkillKey } from '../shared/types';
 import { DEFAULT_SKILLS } from '../shared/defaultSkills';
 import { getProject } from './projects';
+import { loadClaudeCodeMemorySection } from './claudeCodeMemory';
 
 const ALL_SKILL_KEYS: SkillKey[] = [
   'director',
@@ -92,9 +93,17 @@ export function writeSkill(
 /**
  * Server-side read used at spawn time. Returns the effective skill body
  * (disk content if present, default if not) — empty string if neither.
- * Pure helper; no UI flow, just the runtime resolution the spawn paths
- * need.
+ *
+ * F16: also pulls in Claude Code's per-project memory (when present)
+ * and appends it as a labelled section. Only `project` and `reference`
+ * memory types make it through — `user` (about the user) and
+ * `feedback` (about the assistant) would confuse agents. No-op when
+ * the workspace has no Claude Code memory dir.
  */
 export function effectiveSkill(projectId: string, key: SkillKey): string {
-  return readSkill(projectId, key).content;
+  const base = readSkill(projectId, key).content;
+  const project = getProject(projectId);
+  if (!project?.workspace) return base;
+  const memorySection = loadClaudeCodeMemorySection(project.workspace);
+  return memorySection ? base + memorySection : base;
 }
