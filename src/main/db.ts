@@ -465,6 +465,16 @@ export function getDb(): Database {
 }
 
 /**
+ * True iff `openDb()` has completed and `closeDb()` hasn't been called.
+ * Used by best-effort callers (e.g. skill-fire telemetry) that race
+ * with `before-quit` and want to no-op instead of throw when the DB
+ * is gone.
+ */
+export function isDbOpen(): boolean {
+  return dbInstance !== null;
+}
+
+/**
  * Debounced disk flush. sql.js mutates an in-memory DB; export+writeFile
  * serialises everything. 1s window batches bursts of writes (e.g. log
  * lines arriving rapidly during a run).

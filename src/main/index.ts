@@ -3,11 +3,19 @@ import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { installCrashHandlers } from './crashes';
 
-// S5: install crash handlers BEFORE any other import does real work.
-// Boot-time crashes (e.g. a corrupt sqlite file, a broken migration,
-// a thrown native module) used to silently kill the app with no UI;
-// now they land on disk under `userData/crashes/` and the Settings
-// "Crashes" tile counts them on the next launch.
+// S5: install crash handlers as early as the module body lets us.
+//
+// Honest about coverage (R-A2): ES module imports above this line —
+// `electron`, `node:path`, `electron-squirrel-startup`, `./crashes` —
+// run their import-time side effects BEFORE we get here. A throw
+// during one of those is NOT caught by these handlers. In practice
+// those modules don't throw at import time, but a future addition
+// might; if it does, the failure surfaces only on stderr.
+//
+// What this DOES catch: post-import throws — broken migration,
+// corrupt sqlite, thrown native module load — anything that would
+// otherwise silently kill the app with no UI. Crashes land in
+// `userData/crashes/` and the Settings "Crashes" tile counts them.
 installCrashHandlers();
 
 import { registerIpcHandlers } from './ipc';
@@ -156,9 +164,9 @@ app.whenReady().then(async () => {
     registry.hydrate();
     registerIpcHandlers();
     setupAutoUpdater();
-    // S6: secondary channel polls a hosted latest.json. No-op until
-    // SECONDARY_FEED_URL is set in `secondaryUpdater.ts` (once
-    // Cloudflare Pages is provisioned).
+    // S6: secondary channel polls the Cloudflare Pages `latest.json`
+    // for "new version available" notices. Signal-only — never
+    // auto-installs (R-H2). No-op in dev / unpackaged builds.
     setupSecondaryUpdater();
     // Seed the default skill marketplace (idempotent — INSERT OR
     // IGNORE) and fire async syncs for any source that hasn't been

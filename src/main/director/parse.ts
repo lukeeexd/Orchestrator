@@ -97,13 +97,25 @@ function parsePrd(raw: string): ProjectPrd | null {
     return out;
   };
   const title = typeof r.title === 'string' && r.title.trim() ? r.title.trim() : undefined;
+  const goals = stringArray('goals');
+  const non_goals = stringArray('non_goals');
+  const constraints = stringArray('constraints');
+  const open_questions = stringArray('open_questions');
+  if (
+    goals.length === 0 &&
+    non_goals.length === 0 &&
+    constraints.length === 0 &&
+    open_questions.length === 0
+  ) {
+    return null;
+  }
   return {
     ...(title ? { title } : {}),
     problem,
-    goals: stringArray('goals'),
-    non_goals: stringArray('non_goals'),
-    constraints: stringArray('constraints'),
-    open_questions: stringArray('open_questions'),
+    goals,
+    non_goals,
+    constraints,
+    open_questions,
   };
 }
 

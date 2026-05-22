@@ -36,10 +36,20 @@ const planRow = z.object({
   provider: provider.optional(),
 });
 
+// R-L7: each field is independently optional. The form sends
+// `parseNum(input)` which yields `null` for empty inputs, and a user
+// who fills only one of the three budget fields should get that one
+// limit applied — not a generic IPC validation error. Internal
+// budget code (internal.ts) treats undefined/null fields as
+// "unlimited", so widening here matches runtime behaviour.
+//
+// Nonnegative guard: a direct-IPC bypass could otherwise pass a
+// negative number, which the runtime treats as "always trip" and
+// bricks spawns silently (R-L8).
 const agentBudget = z.object({
-  usd: z.number(),
-  tokens: z.number(),
-  seconds: z.number(),
+  usd: z.number().nonnegative().nullable().optional(),
+  tokens: z.number().nonnegative().nullable().optional(),
+  seconds: z.number().nonnegative().nullable().optional(),
 });
 
 export const spawnAgentRequestSchema = z.object({
@@ -105,9 +115,32 @@ export const partialSettingsSchema = z
     defaultEffort: effortLevel,
     defaultDirectorModel: z.string(),
     defaultDirectorEffort: effortLevel,
-    defaultBudgetUsd: z.number(),
-    defaultBudgetTokens: z.number(),
-    defaultBudgetSeconds: z.number(),
+    // R-L8: clamp budget defaults to nonnegative. The runtime treats
+    // negative as "always trip", which silently bricks every spawn.
+    defaultBudgetUsd: z.number().nonnegative(),
+    defaultBudgetTokens: z.number().nonnegative(),
+    defaultBudgetSeconds: z.number().nonnegative(),
     copyGlobalSubsToNewProjects: z.boolean(),
   })
   .partial();
+
+/**
+ * R-M4: renderer-forwarded crash payload. The renderer is the trusted
+ * producer here, but the boundary is the right place to fail loud on
+ * shape drift and (more importantly) cap pathological string sizes —
+ * a deep React tree's componentStack can run into many KB and an
+ * infinite-loop in componentDidCatch can spam the crashes folder.
+ *
+ * Field caps:
+ *   - name/message     — kept short, fits an Error
+ *   - stack            — 8 KB covers a typical V8 stack
+ *   - componentStack   — 4 KB covers a deep-but-reasonable React tree
+ *   - url              — under any reasonable browser-URL limit
+ */
+export const recordRendererCrashSchema = z.object({
+  name: z.string().max(256).optional(),
+  message: z.string().max(2048).optional(),
+  stack: z.string().max(8192).optional(),
+  componentStack: z.string().max(4096).optional(),
+  url: z.string().max(2048).optional(),
+});

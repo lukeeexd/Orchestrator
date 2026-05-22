@@ -183,7 +183,7 @@ export function auditSource(sourceId: string): SkillAuditReport[] {
   return reports;
 }
 
-function scanContent(content: string): SkillAuditFinding[] {
+export function scanContent(content: string): SkillAuditFinding[] {
   const out: SkillAuditFinding[] = [];
   const lines = content.split(/\r?\n/);
   // Per-pattern dedupe: a skill that mentions \`curl\` ten times shows

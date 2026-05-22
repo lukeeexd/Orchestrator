@@ -15,6 +15,12 @@ export function SettingsScreen() {
   const [crashes, setCrashes] = useState<
     import('../../shared/types').CrashEntry[] | null
   >(null);
+  // F9: opt-in secret-scrub toggle for the crash-bundle export. Defaults
+  // to on because the bundle is the "shareable" version of the crash;
+  // user can untick if they need a fully-faithful copy for local triage.
+  const [exportScrub, setExportScrub] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const savedTimer = useRef<number | null>(null);
 
   const refreshCrashes = () => {
@@ -325,6 +331,28 @@ export function SettingsScreen() {
               <button
                 className="tb-btn"
                 onClick={async () => {
+                  if (!crashes || crashes.length === 0 || exporting) return;
+                  setExporting(true);
+                  setExportError(null);
+                  try {
+                    const res = await window.api.exportCrashBundle(
+                      crashes[0].id,
+                      { scrubSecrets: exportScrub },
+                    );
+                    if (!res.ok) setExportError(res.error);
+                  } finally {
+                    setExporting(false);
+                  }
+                }}
+                disabled={!crashes || crashes.length === 0 || exporting}
+                title="Bundle the latest crash + recent forensics into a single .zip and reveal it in Explorer"
+              >
+                <Icon name="file" size={11} />{' '}
+                {exporting ? 'Exporting…' : 'Export latest as .zip'}
+              </button>
+              <button
+                className="tb-btn"
+                onClick={async () => {
                   if (!crashes || crashes.length === 0) return;
                   await window.api.clearCrashes();
                   refreshCrashes();
@@ -335,6 +363,39 @@ export function SettingsScreen() {
                 <Icon name="x" size={11} /> Clear all
               </button>
             </div>
+          </div>
+          <div className="field">
+            <span className="lbl"></span>
+            <span className="v" style={{ fontSize: 11 }}>
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  color: 'var(--text-2)',
+                }}
+                title="Mask common secret shapes (Anthropic / GitHub / AWS keys, bearer JWTs, env-style assignments) inside the exported bundle. The raw crash JSON on disk is unchanged."
+              >
+                <input
+                  type="checkbox"
+                  checked={exportScrub}
+                  onChange={(e) => setExportScrub(e.target.checked)}
+                  style={{ margin: 0 }}
+                  disabled={exporting}
+                />
+                Scrub secrets in export
+              </label>
+              {exportError && (
+                <span
+                  className="dim"
+                  style={{ marginLeft: 8, color: 'var(--error)' }}
+                >
+                  Export failed: {exportError}
+                </span>
+              )}
+            </span>
           </div>
           <div className="field">
             <span className="lbl"></span>

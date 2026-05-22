@@ -112,8 +112,11 @@ function extractTestsRun(log: LogLine[]): TestsRunSummary | null {
     const text = typeof line.msg === 'string' ? line.msg : '';
     if (!text) continue;
 
-    // pytest: "12 passed, 3 failed, 1 skipped" (any order, optional "in N.NNs")
-    const pyt = /(\d+)\s+passed.*?(\d+)\s+failed.*?(?:(\d+)\s+skipped)?/i.exec(
+    // pytest: "12 passed, 3 failed, 1 skipped" (any order, optional "in N.NNs").
+    // The lazy `.*?` lives INSIDE the optional skipped group so the engine
+    // backtracks into matching it instead of bailing out happily with the
+    // optional group skipped.
+    const pyt = /(\d+)\s+passed.*?(\d+)\s+failed(?:.*?(\d+)\s+skipped)?/i.exec(
       text,
     );
     if (pyt) {
@@ -130,17 +133,22 @@ function extractTestsRun(log: LogLine[]): TestsRunSummary | null {
       consider({ pass: Number(pytPass[1]), fail: 0, skip: 0 });
       continue;
     }
-    // jest/vitest: "Tests: ... X passed, Y failed, Z total" (and variants)
-    const jest = /tests?:[^\n]*?(\d+)\s+passed[^\n]*?(?:(\d+)\s+failed)?/i.exec(
-      text,
-    );
-    if (jest) {
-      consider({
-        pass: Number(jest[1]) || 0,
-        fail: Number(jest[2] ?? 0) || 0,
-        skip: 0,
-      });
-      continue;
+    // jest/vitest emits "Tests: ..." with pass / fail / skip counts in
+    // any order — "3 failed, 12 passed" is just as common as
+    // "12 passed, 3 failed". Look each count up independently so we
+    // don't lose a count to ordering.
+    if (/^tests?:/im.test(text)) {
+      const p = /(\d+)\s+passed/i.exec(text);
+      const f = /(\d+)\s+failed/i.exec(text);
+      const s = /(\d+)\s+skipped/i.exec(text);
+      if (p || f) {
+        consider({
+          pass: p ? Number(p[1]) : 0,
+          fail: f ? Number(f[1]) : 0,
+          skip: s ? Number(s[1]) : 0,
+        });
+        continue;
+      }
     }
     // go test: count PASS / FAIL / SKIP marker lines
     if (/^(?:PASS|FAIL|SKIP)\b/m.test(text)) {

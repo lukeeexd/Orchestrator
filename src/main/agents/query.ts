@@ -369,15 +369,17 @@ export async function consumeQuery(
         ...currentUsage,
       };
       if (result.modelUsage) {
-        for (const [model, m] of Object.entries(result.modelUsage)) {
+        // R-M1: `usageModel` instead of `model` so we don't shadow
+        // the outer per-run `model` parameter of consumeQuery.
+        for (const [usageModel, m] of Object.entries(result.modelUsage)) {
           const turnTokens =
             (Number(m.inputTokens) || 0) +
             (Number(m.outputTokens) || 0) +
             (Number(m.cacheReadInputTokens) || 0) +
             (Number(m.cacheCreationInputTokens) || 0);
           const turnCost = Number(m.costUSD) || 0;
-          const prev = mergedUsage[model] ?? { tokens: 0, cost: 0 };
-          mergedUsage[model] = {
+          const prev = mergedUsage[usageModel] ?? { tokens: 0, cost: 0 };
+          mergedUsage[usageModel] = {
             tokens: prev.tokens + turnTokens,
             cost: prev.cost + turnCost,
           };

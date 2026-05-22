@@ -1,4 +1,4 @@
-import { getDb, scheduleSave } from '../db';
+import { getDb, isDbOpen, scheduleSave } from '../db';
 import { asInt, asStr } from './internal';
 import type { LoadoutReport } from './loadout';
 
@@ -25,6 +25,11 @@ export function bumpSkillFire(
   bundleId: string,
   skillId: string,
 ): void {
+  // R-M11/R-A9: telemetry runs from the agent loop which may
+  // outlast the `before-quit` window. If the DB has been closed,
+  // silently drop the bump instead of throwing — telemetry is
+  // best-effort, not load-bearing.
+  if (!isDbOpen()) return;
   const db = getDb();
   const now = Date.now();
   const stmt = db.prepare(
