@@ -305,9 +305,25 @@ export function MarketplaceScreen({
               onUnsubscribe={(bundleId, scope) =>
                 void mp.unsubscribe(source.id, bundleId, scope)
               }
-              onAckUpdate={(bundleId, scope) =>
-                void mp.ackUpdate(source.id, bundleId, scope)
-              }
+              onAckUpdate={async (bundleId, scope) => {
+                // The Update button now does what users expect: sync
+                // the source first so the on-disk files reflect the
+                // latest upstream commit, THEN acknowledge the version
+                // in the DB. Pure ack via mp.ackUpdate without a sync
+                // would only clear the badge — files are already on
+                // disk from a prior sync, but doing the sync here
+                // makes the button name truthful and removes a class
+                // of "I clicked Update, did anything actually pull?"
+                // confusion. The refresh broadcast updates the rail
+                // count for any sibling bundles in the same source
+                // that may have moved during this sync.
+                const r = await mp.refreshSource(source.id);
+                if (!r.ok) {
+                  return { ok: false, error: r.error ?? 'sync failed' };
+                }
+                await mp.ackUpdate(source.id, bundleId, scope);
+                return { ok: true };
+              }}
               onSetRoles={(bundleId, scope, roles) =>
                 void mp.setRoles(source.id, bundleId, scope, roles)
               }
@@ -1614,7 +1630,10 @@ function SourceSection({
   onRemove: () => void;
   onSubscribe: (bundleId: string, scope: 'global' | 'project') => void;
   onUnsubscribe: (bundleId: string, scope: 'global' | 'project') => void;
-  onAckUpdate: (bundleId: string, scope: 'global' | 'project') => void;
+  onAckUpdate: (
+    bundleId: string,
+    scope: 'global' | 'project',
+  ) => Promise<{ ok: boolean; error?: string }>;
   onSetRoles: (
     bundleId: string,
     scope: 'global' | 'project',
@@ -1998,7 +2017,9 @@ function BundleCard({
   hasUpdate: boolean;
   onSubscribe: (scope: 'global' | 'project') => void;
   onUnsubscribe: (scope: 'global' | 'project') => void;
-  onAckUpdate: (scope: 'global' | 'project') => void;
+  onAckUpdate: (
+    scope: 'global' | 'project',
+  ) => Promise<{ ok: boolean; error?: string }>;
   onSetRoles: (
     scope: 'global' | 'project',
     roles: string[] | null,
@@ -2013,6 +2034,10 @@ function BundleCard({
   const scope: 'global' | 'project' = subscription?.scope ?? 'global';
   const roles = subscription?.roles ?? null;
   const selectedSkills = subscription?.selectedSkills ?? null;
+  // Update button local state. Sync can take a moment over the
+  // network so the button surfaces busy / error states inline.
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   // Derived view for the small "N selected" chip on the bundle card.
   // Three cases:
   //  - null:        "all" (whole bundle loads)
@@ -2296,10 +2321,21 @@ function BundleCard({
                 <button
                   className="tb-btn primary"
                   style={{ height: 22 }}
-                  onClick={() => onAckUpdate(scope)}
-                  title={`Acknowledge upgrade to v${bundle.version}`}
+                  disabled={updateBusy}
+                  onClick={async () => {
+                    setUpdateBusy(true);
+                    setUpdateError(null);
+                    try {
+                      const r = await onAckUpdate(scope);
+                      if (!r.ok) setUpdateError(r.error ?? 'sync failed');
+                    } finally {
+                      setUpdateBusy(false);
+                    }
+                  }}
+                  title={`Sync ${bundle.id} from its source, then mark v${bundle.version} as installed`}
                 >
-                  <Icon name="check" size={11} /> Update
+                  <Icon name="check" size={11} />{' '}
+                  {updateBusy ? 'Updating…' : 'Update'}
                 </button>
                 <button
                   className="tb-btn"
@@ -2310,6 +2346,19 @@ function BundleCard({
                   What&apos;s new
                 </button>
               </>
+            )}
+            {updateError && (
+              <span
+                style={{
+                  fontSize: 10,
+                  color: 'var(--error)',
+                  marginLeft: 4,
+                  alignSelf: 'center',
+                }}
+                title={updateError}
+              >
+                Update failed
+              </span>
             )}
             <button
               className="tb-btn"
