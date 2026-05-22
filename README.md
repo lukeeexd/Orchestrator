@@ -22,11 +22,11 @@ Built on top of the `claude` (and optionally `codex`) CLIs you already have inst
 - **Session persistence** — Director chat, agents, log lines all rehydrate on restart.
 - **Spend screen** with real per-day cost chart and a deep link to claude.ai for official usage.
 - **Two providers** — Claude (default) or Codex (`codex exec --json`). Each project picks one at creation.
-- **Auto-update** via `update-electron-app` polling a self-hosted Squirrel feed on Cloudflare R2 every 10 minutes.
+- **Auto-update** via `update-electron-app` against `update.electronjs.org` (Microsoft-operated, TLS-pinned to GitHub Releases) every 10 minutes.
 
 ## Install
 
-Download [`Orchestrator-Setup.exe`](https://pub-8063218cce2949b1b3259affce2c51e2.r2.dev/Orchestrator-Setup.exe) and run it. SmartScreen will warn — the build isn't code-signed.
+Grab the latest `Orchestrator-Setup.exe` from the [Releases page](https://github.com/lukeeexd/Orchestrator/releases/latest) and run it. SmartScreen will warn — the build isn't code-signed.
 
 Once installed, Orchestrator updates itself in-place. A pill appears in the top bar when a new version finishes downloading.
 

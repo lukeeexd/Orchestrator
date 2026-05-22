@@ -30,6 +30,19 @@ import {
 } from '../marketplace';
 
 /**
+ * R-A8: strip `orchestrator-*` fence blocks from a free-form string
+ * before it lands inside Director-bound input. The Director's parser
+ * picks up these fences from any message it sees on its next turn;
+ * letting an agent's summary contain one would let buggy or
+ * malicious agent output forge a redirect / plan / prd directive.
+ */
+const ORCHESTRATOR_FENCE_RE = /```orchestrator-[a-z]+\s*\n[\s\S]*?\n```/gi;
+function stripOrchestratorFences(s: string): string {
+  if (!s) return s;
+  return s.replace(ORCHESTRATOR_FENCE_RE, '[orchestrator-fence redacted]');
+}
+
+/**
  * Build the Director's effective system prompt: the hardcoded base
  * plus any per-project Director skill the user has authored. Empty
  * skill is a no-op.
@@ -156,13 +169,23 @@ class DirectorSession {
     // files changed, did the tests pass, are there explicit todos)
     // instead of parsing prose. The leading prose line stays so the
     // body is still readable when surfaced verbatim somewhere.
-    const proseSummary = payload.summary
-      ? `Summary: ${payload.summary}`
+    //
+    // R-A8: scrub any `orchestrator-*` fence from the agent's
+    // summary before it lands in the Director's input. A malicious
+    // or buggy agent that emits one of those fences would otherwise
+    // get its directive interpreted as Director output on the next
+    // turn via `extractDirectives`. The Director should interpret
+    // its OWN output only — agent prose is observation, not
+    // instruction.
+    const safeSummary = stripOrchestratorFences(payload.summary);
+    const safePayload = { ...payload, summary: safeSummary };
+    const proseSummary = safeSummary
+      ? `Summary: ${safeSummary}`
       : 'No summary.';
     const body =
       `[handoff] Agent ${agentName} completed. ${proseSummary}\n\n` +
       '```json handoff-payload\n' +
-      JSON.stringify(payload, null, 2) +
+      JSON.stringify(safePayload, null, 2) +
       '\n```';
     this.pushMessage({
       id: randomUUID(),
@@ -512,12 +535,16 @@ class DirectorSession {
       }
 
       const { text, plan, redirect, prd } = extractDirectives(bodyBuf);
+      // PRD mode is "advisor that emits a PRD" — if the Director also
+      // emits a plan block in PRD mode, drop the plan so PlanCard's
+      // spawn button doesn't appear where spawning isn't the intent.
+      const effectivePlan = mode === 'prd' && prd ? null : plan;
       const fallbackBody = runtimeError
         ? `Error: ${runtimeError}`
         : '(empty response)';
       this.patchMessage(directorMessage.id, {
-        body: text || (plan || redirect || prd ? '' : fallbackBody),
-        plan: plan ?? undefined,
+        body: text || (effectivePlan || redirect || prd ? '' : fallbackBody),
+        plan: effectivePlan ?? undefined,
         redirect: redirect ?? undefined,
         prd: prd ?? undefined,
         live: false,
@@ -567,6 +594,20 @@ export function discardSession(projectId: string): void {
  * Used when a project's Director provider is changed mid-run — the
  * claude and codex CLIs don't share session formats, so any saved id
  * becomes garbage to the new CLI.
+ */
+/**
+ * Drop any persisted Director session id for this project. Call this
+ * from EVERY IPC handler that mutates `project.provider` or
+ * `project.directorProvider` — the saved session id is provider-
+ * specific (claude SDK shape vs codex's `--resume` shape) and a
+ * stale id makes the next turn fail with a confusing "session not
+ * found" error.
+ *
+ * R-M8: today only `ProjectSetDirectorProvider` mutates a provider
+ * field. If a future `ProjectSetProvider` channel is added it MUST
+ * call this — the cascade resolution (directorProvider → provider)
+ * means project.provider change matters even if directorProvider
+ * was already set.
  */
 export function resetSessionForProviderChange(projectId: string): void {
   sessions.get(projectId)?.abort();

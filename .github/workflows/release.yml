@@ -77,6 +77,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Unit tests (pure-function suite)
+        # R-T1: vitest runs the standalone unit tests under tests/unit
+        # (parsers, secondary-updater semver compare, skill-audit regex,
+        # handoff-payload extractors). Cheap (~250ms), no Electron infra
+        # needed. Catches regressions in the pure functions before the
+        # heavier package step.
+        run: npm run test:unit
+
       - name: Build installer
         run: npm run make
 
@@ -164,78 +172,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         shell: pwsh
         run: |
+          # R-A10: pass the actual git SHA via --commit-hash so the
+          # Pages deploy history records exactly which build matched
+          # this release, instead of papering over the dirty-tree
+          # warning with --commit-dirty=true.
           npx wrangler@latest pages deploy cloudflare-stage `
             --project-name "${{ vars.CLOUDFLARE_PAGES_PROJECT }}" `
             --branch main `
-            --commit-dirty=true
-
-      - name: Publish Squirrel feed to Cloudflare R2
-        # v0.15.0 (S6 follow-up): R2 hosts the actual Squirrel update
-        # feed that `update-electron-app` polls. Without this step
-        # the in-app auto-updater on v0.15.0+ has nothing to fetch.
-        #
-        # Three files go up on every tag (always overwrite — Squirrel
-        # only references the latest version's nupkg):
-        #   - RELEASES                                 (text index)
-        #   - Orchestrator-<version>-full.nupkg        (update package)
-        #   - Orchestrator-Setup.exe                   (first-install
-        #                                               download for
-        #                                               new users)
-        #
-        # Variables (Settings → Variables tab):
-        #   CLOUDFLARE_R2_BUCKET  — bucket name
-        #                           (e.g. orchestrator-binaries)
-        #
-        # Secrets (same screen, Secrets tab):
-        #   CLOUDFLARE_API_TOKEN  — token must include
-        #                           Account → Workers R2 Storage → Edit
-        #   CLOUDFLARE_ACCOUNT_ID — Cloudflare account id
-        #
-        # `continue-on-error: true` so a transient R2 hiccup never
-        # blocks the GitHub Release publish. If R2 fails to populate,
-        # v0.15.0 users will silently miss the next auto-update until
-        # the next successful run; we can also manually
-        # `wrangler r2 object put` to recover.
-        if: ${{ vars.CLOUDFLARE_R2_BUCKET != '' }}
-        continue-on-error: true
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        shell: pwsh
-        run: |
-          $bucket = "${{ vars.CLOUDFLARE_R2_BUCKET }}"
-          $squirrelDir = "out/make/squirrel.windows/x64"
-          if (-not (Test-Path $squirrelDir)) {
-            Write-Error "Squirrel output dir missing: $squirrelDir"
-            exit 1
-          }
-
-          # Upload RELEASES (Squirrel text index — autoUpdater fetches
-          # this first to discover the latest version).
-          npx wrangler@latest r2 object put `
-            "$bucket/RELEASES" `
-            --file "$squirrelDir/RELEASES" `
-            --remote
-
-          # Upload the .nupkg referenced by RELEASES. There's only one
-          # per release (electron-forge MakerSquirrel doesn't emit
-          # deltas by default).
-          Get-ChildItem "$squirrelDir/*.nupkg" | ForEach-Object {
-            $name = $_.Name
-            npx wrangler@latest r2 object put `
-              "$bucket/$name" `
-              --file $_.FullName `
-              --remote
-          }
-
-          # Upload the installer for first-time downloads — README
-          # points its install link at this URL.
-          npx wrangler@latest r2 object put `
-            "$bucket/Orchestrator-Setup.exe" `
-            --file "$squirrelDir/Orchestrator-Setup.exe" `
-            --remote
-
-          Write-Host "Published Squirrel feed to R2 bucket: $bucket"
+            --commit-hash "${{ github.sha }}"
 
       - name: Generate release notes
         id: notes

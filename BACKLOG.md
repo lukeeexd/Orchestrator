@@ -711,96 +711,161 @@ within one commit.
 Effort estimates are deliberately rough — "one slice" not
 calendar time.
 
-**Cluster 1 — PRD pipeline fixes** *(3 items, ~30 min, HIGH)*
+**Status (2026-05-22):** clusters 1–9 shipped in a single
+bundle on the `review-clusters` branch (worktree). Cluster 10 is
+the explicit-defer set. R-H2 resolved with option (c) — drop R2
+to signal-only — so R-M13 / R-L10 collapsed to "moot." R-A7
+(cosmetic quote handling in the mcp-scaffold error path) is the
+only non-deferred item not folded in — it's explicitly optional
+in Cluster 3.
+
+**Cluster 1 — PRD pipeline fixes** *(3 items, ~30 min, HIGH)* — `[x]` shipped 2026-05-22
 
 - **Items:** R-H1, R-A5, R-M7
-- **Scope:** `DirectorPane.tsx` + `director/parse.ts`. Render
-  site for PRD card in classic chat view, tighten parsePrd
-  contract (reject all-empty arrays + comment matches behaviour),
-  reject co-emitted plan blocks in PRD mode.
-- **Why bundle:** all three are P15 pipeline gaps the same
-  session shipped — one parser, one renderer, one contract.
+- **Scope:** `DirectorPane.tsx` + `director/parse.ts` + `director/runner.ts`.
+- **Shipped as:** PRDCard now renders in classic chat view
+  (R-H1); parsePrd rejects PRDs with all-four section arrays
+  empty (R-A5); runner drops the plan block when in PRD mode so
+  PlanCard's spawn button doesn't appear (R-M7).
 
-**Cluster 2 — Secondary updater hardening** *(5 items, ~1 hr, MEDIUM)*
+**Cluster 2 — Secondary updater hardening** *(5 items, ~1 hr, MEDIUM)* — `[x]` shipped 2026-05-22
 
 - **Items:** R-M9, R-A1, R-A6, R-L5, R-A11
 - **Scope:** `secondaryUpdater.ts` + `UpdaterOpenSecondaryDownload`
   IPC handler + `StatusBar.tsx`.
-- **Fixes:** pin downloadUrl host (allowlist github.com + R2),
-  cap fetch body via content-length, repair 4-part isNewer,
-  track first-poll setTimeout, expose grace period as a constant.
+- **Shipped as:** downloadUrl host pinned to github.com /
+  www.github.com / objects.githubusercontent.com (R-M9); fetch
+  body capped at 64 KB via content-length (R-A1); `isNewer`
+  handles 4-part versions (R-A6) + unit-tested; first-poll
+  setTimeout tracked + cleared by `stopSecondaryUpdater` (R-L5);
+  grace period halved from 30 to 15 min (R-A11). R2 host was
+  intentionally NOT added to the allowlist because Cluster 5
+  dropped R2 as a primary surface.
 
-**Cluster 3 — MCP scaffold safety net** *(3-4 items, ~45 min, MEDIUM)*
+**Cluster 3 — MCP scaffold safety net** *(3-4 items, ~45 min, MEDIUM)* — `[x]` shipped 2026-05-22 (R-A7 skipped)
 
 - **Items:** R-M2, R-M5, R-M10, optionally R-A7
 - **Scope:** `mcpScaffold.ts`.
-- **Fixes:** roll back files when registration fails, route
-  through the IPC handler so the Director-chat audit trail fires,
-  resolve symlinks at the destination before the path-escape
-  check.
+- **Shipped as:** scaffold dir is removed via `fs.rmSync` when
+  the mcpConfig registration fails (R-M2); a `notifySystem` call
+  fires the same Director-chat audit trail the IPC handler emits
+  (R-M5); destination realpath is checked AFTER `mkdirSync` so a
+  pre-existing `.mcp-servers` symlink can't escape the workspace
+  (R-M10). R-A7 (quote handling in the error path) deliberately
+  skipped — Windows blocks quote chars in paths so the cosmetic
+  risk doesn't bite in practice.
 
-**Cluster 4 — Crash pipeline hardening** *(4 items, ~45 min, MEDIUM)*
+**Cluster 4 — Crash pipeline hardening** *(4 items, ~45 min, MEDIUM)* — `[x]` shipped 2026-05-22
 
 - **Items:** R-M4, R-A3, R-A4, R-A2
 - **Scope:** `crashes.ts`, `ErrorBoundary.tsx`,
-  `crashListeners.ts`, `index.ts`.
-- **Fixes:** zod-validate the `recordRendererCrash` payload, cap
-  componentStack size + per-process write cap, dedupe
-  ErrorBoundary + window.error double-record, either move install
-  earlier (into squirrel-startup hook) or honest-up the "BEFORE
-  any other import" comment.
+  `crashListeners.ts`, `index.ts`, `ipc/_schemas.ts`,
+  `ipc/misc.ts`.
+- **Shipped as:** `recordRendererCrashSchema` in `_schemas.ts`
+  with string-length caps; IPC handler wrapped via `validated()`
+  (R-M4); componentStack capped at 4 KB inside
+  `recordRendererCrash` plus a per-hour 100-crash write cap to
+  prevent boundary-loop disk floods (R-A3); WeakSet-of-seen
+  Errors via `markCrashHandled` so the React boundary and
+  `window.error` don't double-record (R-A4); install comment in
+  `index.ts` rewritten to be honest about pre-import coverage
+  limits (R-A2 — moving the hook into squirrel-startup wasn't
+  feasible).
 
-**Cluster 5 — R2 + repo-private readiness** *(3 items, ~1-2 hr + 1 strategic call, HIGH)*
+**Cluster 5 — R2 + repo-private readiness** *(3 items, HIGH)* — `[x]` resolved 2026-05-22
 
 - **Items:** R-M13, R-L10, R-H2
-- **Scope:** `release.yml`, `updater.ts`, possibly a new signing
-  config.
-- **Fixes:** flip `latest.json.downloadUrl` to the R2 URL, add a
-  sha256 verify step that the published R2 nupkg matches the
-  freshly-built one, **resolve the R-H2 strategic call** (sign
-  the installer, verify nupkg sigs, or drop R2 to signal-only).
-- **Sequencing:** resolve before flipping the repo private.
+- **Scope:** `release.yml`, `updater.ts`, `secondaryUpdater.ts`,
+  `PLAN.md`, `README.md`.
+- **Strategic call:** R-H2 resolved with option (c) — drop R2 to
+  signal-only. The v0.15.0 cutover to a self-hosted R2 update
+  feed was reverted: `updater.ts` no longer points at the R2
+  bucket; `update-electron-app` falls back to its default
+  `update.electronjs.org` source (Microsoft-operated, TLS-pinned
+  to GitHub Releases). The "Publish Squirrel feed to R2" CI step
+  is removed from `release.yml`. The secondary Pages channel
+  keeps polling `latest.json` for "new version" notices but
+  never auto-installs (signal-only). PLAN.md decisions-locked
+  table + README install link updated to match.
+- **Consequence for R-M13 / R-L10:** moot. The latest.json
+  downloadUrl already points to GitHub Releases (release.yml
+  line 126); no R2 nupkg to checksum-verify.
+- **Sequencing note:** flipping the repo private now requires
+  code-signing the installer (H7) first — the public-repo
+  dependency moved into PLAN.md's "Repo location" notes.
 
-**Cluster 6 — Director session + trust boundaries** *(2-3 items, ~45 min, MEDIUM)*
+**Cluster 6 — Director session + trust boundaries** *(2-3 items, ~45 min, MEDIUM)* — `[x]` shipped 2026-05-22
 
 - **Items:** R-M8 (+R-M12 folds in), R-A8
-- **Scope:** `ipc/projects.ts`, `director/runner.ts`.
-- **Fixes:** symmetric session reset on `setProjectProvider`,
-  strip `orchestrator-*` fences from agent summaries before
-  queueing into the Director's next-turn input.
+- **Scope:** `director/runner.ts`.
+- **Shipped as:** `stripOrchestratorFences` redacts any
+  `orchestrator-*` fence from the agent's `result.result` text
+  before it's quoted into the Director's next-turn input — so a
+  buggy/malicious agent can't forge a redirect/plan/prd
+  directive via its summary (R-A8); same redaction is applied
+  to the JSON `handoff-payload` block's `summary` field;
+  `resetSessionForProviderChange` doc-comment expanded to state
+  the invariant that any future `setProjectProvider` IPC channel
+  MUST call the reset, including the cascade rationale (R-M8 —
+  no actual setProjectProvider channel exists today, so this is
+  preventative documentation paired with the existing
+  `setProjectDirectorProvider` reset).
 
-**Cluster 7 — Quick-wins polish pass** *(8 items, ~30-45 min, LOW but trivial)*
+**Cluster 7 — Quick-wins polish pass** *(8 items, ~30-45 min, LOW but trivial)* — `[x]` shipped 2026-05-22
 
 - **Items:** R-M3, R-M6, R-M11+R-A9, R-A10, R-M1, R-L1, R-L4
 - **Scope:** scattered — `updater.ts`, `index.ts`,
   `agents/query.ts`, `release.yml`, `StatusBar.tsx`,
-  `MarketplaceScreen.tsx`.
-- **Fixes:** string literal → enum constant; stale comment fix;
-  appQuitting gating consistency; `--commit-dirty=true` →
-  `--commit-hash <sha>`; rename shadowed `model` var; closure
-  narrowing; missing `.catch` on audit IPC.
-- **Why bundle:** eight near-trivial fixes that don't deserve
-  their own slice each.
+  `MarketplaceScreen.tsx`, `db.ts`, `marketplace/telemetry.ts`.
+- **Shipped as:** updater.ts now broadcasts via
+  `IpcChannels.UpdaterEventDownloaded` enum constant (R-M3 —
+  folded into Cluster 5); index.ts comment about empty
+  SECONDARY_FEED_URL rewritten (R-M6); `isDbOpen()` predicate
+  added to db.ts + `bumpSkillFire` early-exits when DB is
+  closed (R-M11 + R-A9); release.yml passes
+  `--commit-hash ${{ github.sha }}` instead of
+  `--commit-dirty=true` (R-A10); per-model usage loop binding
+  renamed from `model` → `usageModel` (R-M1); StatusBar's
+  secondary-pill onClick captures `downloadUrl`/`version` into
+  locals before the closure (R-L1 — folded into Cluster 2);
+  MarketplaceScreen's audit IPC has a `.catch` that logs to
+  console.warn (R-L4).
 
-**Cluster 8 — Schema boundary tightening** *(3 items, ~30 min, LOW)*
+**Cluster 8 — Schema boundary tightening** *(3 items, ~30 min, LOW)* — `[x]` shipped 2026-05-22
 
 - **Items:** R-L7, R-L8, R-A12
-- **Scope:** `_schemas.ts`, `SpawnAgentForm.tsx`, `.eslintrc.json`.
-- **Fixes:** tighten partial-budget zod shape, clamp Settings
-  budget schema to nonnegative, add `no-restricted-imports` rule
-  banning `node:*` in `src/shared/**`.
+- **Scope:** `_schemas.ts`, `.eslintrc.json`.
+- **Shipped as:** `agentBudget` schema now accepts
+  `nonnegative().nullable().optional()` for each of usd/tokens/
+  seconds — matches the form's parseNum-yields-null behaviour
+  and rejects negatives at the boundary (R-L7 + R-L8); settings'
+  default budget fields likewise clamp to nonnegative (R-L8);
+  ESLint override clause for `src/shared/**` adds
+  `no-restricted-imports` with a `node:*` pattern ban so a
+  shared file importing `node:fs` (etc.) fails lint instead of
+  crashing the renderer at runtime (R-A12). Added `root: true`
+  and `.eslintignore` for build configs as a side fix so the
+  worktree lint resolves the import plugin uniquely.
 
-**Cluster 9 — Test infrastructure** *(2 items, ~2-3 hr, MEDIUM)*
+**Cluster 9 — Test infrastructure** *(2 items, ~2-3 hr, MEDIUM)* — `[x]` shipped 2026-05-22
 
 - **Items:** R-T1, R-L9
-- **Scope:** new test runner (jest/vitest), `tests/` tree,
-  `release.yml` CI step.
-- **Fixes:** bootstrap a pure-function unit test runner; write
-  baseline tests for `isNewer`, `parsePrd`, `auditSource`,
-  `parsePlan`, `parseRedirect`, handoff parsers, `parseTestsKpi`;
-  fix the hardcoded CDP port when adding more e2e tests.
-- **Why standalone:** R-T1 ships test infra; subsequent clusters
-  get to write regression tests for whatever they touch.
+- **Scope:** vitest devDep, `vitest.config.ts`, `tests/unit/*`,
+  `release.yml` CI step, `tests/e2e/smoke.spec.ts`.
+- **Shipped as:** vitest 4.x as devDep; `vitest.config.ts` keys
+  off `tests/unit/**/*.test.ts`; 42 baseline tests across four
+  files covering `extractDirectives` (plan / redirect / prd —
+  the R-A5 all-empty-array case), `isNewer` (incl. R-A6 4-part
+  regression), `buildHandoffPayload` (files_touched / tests_run
+  / todos / errors), and `scanContent` (all 13 skillAudit
+  regex patterns). Two latent parser bugs surfaced + fixed: the
+  pytest skip count was lost when followed by other text, and
+  the jest "failed-before-passed" variant wasn't matched.
+  Release workflow now runs `npm run test:unit` between install
+  and `make` so unit-test failure blocks the release before the
+  heavier package step. R-L9: e2e smoke's CDP port now
+  allocates via a kernel-assigned ephemeral port at runtime
+  instead of hardcoded 9222.
 
 **Cluster 10 — Defer / Won't-fix** *(3 items, no action)*
 

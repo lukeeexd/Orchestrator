@@ -1,4 +1,5 @@
 {
+  "root": true,
   "env": {
     "browser": true,
     "es6": true,
@@ -66,5 +67,23 @@
         ]
       }
     ]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["src/shared/**/*.ts", "src/shared/**/*.tsx"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["node:*"],
+                "message": "src/shared/ is process-agnostic and must not import Node built-ins. A `node:fs` (etc.) import would crash the renderer at runtime since Chromium has no Node. Move the helper into src/main/ or src/preload/ instead."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

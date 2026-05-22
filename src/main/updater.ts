@@ -1,29 +1,27 @@
 import { app, autoUpdater, BrowserWindow } from 'electron';
-import { updateElectronApp, UpdateSourceType } from 'update-electron-app';
+import { updateElectronApp } from 'update-electron-app';
+import { IpcChannels } from '../shared/ipc';
 
 /**
- * v0.15.0: auto-update now polls a self-hosted Squirrel feed on
- * Cloudflare R2 instead of `update.electronjs.org`. The latter is
- * public-repo-only — pointing at our R2 bucket lets us flip the
- * GitHub repo private later without breaking auto-update.
+ * Primary auto-update channel: `update-electron-app`'s default
+ * `update.electronjs.org` feed (Microsoft-operated, TLS-pinned to
+ * GitHub Releases). The v0.15.0 cutover to a self-hosted R2 feed was
+ * reverted (R-H2 review finding): because the installer is
+ * deliberately unsigned, a compromise of the static-storage feed
+ * (token leak, account takeover, DNS) ships code execution to every
+ * install on the next 10-minute poll. The Microsoft-operated feed
+ * has a much higher compromise bar.
  *
- * The feed bucket lives at this baseUrl and contains:
- *   - RELEASES                                  (Squirrel text index)
- *   - Orchestrator-<version>-full.nupkg         (the update package)
- *   - Orchestrator-Setup.exe                    (first-install link)
+ * `secondaryUpdater.ts` keeps a belt-and-suspenders "new version
+ * available" signal via Cloudflare Pages, but signal-only — it
+ * never auto-installs.
  *
- * `release.yml` uploads all three to R2 on every tag via
- * `wrangler r2 object put`. `update-electron-app`'s built-in
- * `StaticStorage` source pattern fetches RELEASES from baseUrl +
- * platform suffix; Electron's autoUpdater then handles the
- * nupkg download + install hand-off.
+ * Repo-private remains a separate strategic call: cutting over to a
+ * self-hosted feed would require signing the installer first (H7).
  *
  * No-ops in dev mode (process.defaultApp / non-packaged) so dev
  * sessions don't accidentally apply updates over the working copy.
  */
-const UPDATE_FEED_BASE_URL =
-  'https://pub-8063218cce2949b1b3259affce2c51e2.r2.dev';
-
 export function setupAutoUpdater(): void {
   if (!app.isPackaged) {
     // Dev/unpackaged build — autoUpdater isn't available and we don't
@@ -33,10 +31,6 @@ export function setupAutoUpdater(): void {
 
   try {
     updateElectronApp({
-      updateSource: {
-        type: UpdateSourceType.StaticStorage,
-        baseUrl: UPDATE_FEED_BASE_URL,
-      },
       // 10 minutes is the package default; explicit so it's easy to tune.
       updateInterval: '10 minutes',
       // Skip the bundled UpdateDownloaded notification — we surface our
@@ -62,7 +56,7 @@ export function setupAutoUpdater(): void {
   // finishes. The update-electron-app package wraps autoUpdater but
   // doesn't intercept these events, so we attach our own listeners.
   autoUpdater.on('update-downloaded', (_event, releaseNotes, releaseName) => {
-    broadcast('updater:event:update-downloaded', {
+    broadcast(IpcChannels.UpdaterEventDownloaded, {
       version: releaseName,
       notes: typeof releaseNotes === 'string' ? releaseNotes : '',
     });

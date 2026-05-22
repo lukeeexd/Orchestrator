@@ -22,6 +22,7 @@ import { ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { AttachmentThumb } from './AttachmentThumb';
 import { PlanCard } from './PlanCard';
+import { PRDCard } from './PRDCard';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
 import { DirectorStream } from './DirectorStream';
@@ -407,6 +408,7 @@ function Message({
           onSaveAsTemplate={onSaveAsTemplate}
         />
       )}
+      {message.prd && <PRDCard prd={message.prd} />}
       {message.redirect && (
         <div className="dir-redirect">
           <div className="dir-redirect-head">

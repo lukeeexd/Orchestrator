@@ -6,8 +6,7 @@ interface Props {
 }
 
 /**
- * v0.15.1: 30-minute grace period before the secondary's "Download"
- * pill surfaces.
+ * Grace period before the secondary's "Download" pill surfaces.
  *
  * The secondary update channel (S6 from v0.14.1) polls a hosted
  * `latest.json` and signals when a newer version exists. The primary
@@ -22,8 +21,13 @@ interface Props {
  * "Restart" pill (auto-install) they're used to. The grace period
  * lets the primary finish its download first — only if it doesn't
  * deliver does the secondary surface its fallback affordance.
+ *
+ * 15 minutes is the sweet spot: long enough for the primary's first
+ * poll-cycle (10 min) plus a download buffer; short enough that a
+ * genuine primary-channel outage doesn't keep users waiting half an
+ * hour on a hotfix release (R-A11).
  */
-const SECONDARY_GRACE_MS = 30 * 60 * 1000;
+export const SECONDARY_GRACE_MS = 15 * 60 * 1000;
 
 export function StatusBar({ agentCount }: Props) {
   const idle = agentCount === 0;
@@ -93,17 +97,24 @@ export function StatusBar({ agentCount }: Props) {
           <span>Update {updateReady.version || 'ready'} · Restart</span>
         </button>
       )}
-      {showSecondaryPill && (
-        <button
-          className="statusbar-update"
-          onClick={() =>
-            void window.api.openSecondaryDownload(secondaryUpdate.downloadUrl)
-          }
-          title="The primary auto-update channel hasn't delivered this version in 30 minutes. Click to download manually."
-        >
-          <Icon name="file" size={11} />
-          <span>Update {secondaryUpdate.version} available · Download</span>
-        </button>
+      {showSecondaryPill && secondaryUpdate && (
+        // Capture the URL + version into locals so the closure isn't
+        // dependent on the still-truthy state (R-L1). If a follow-up
+        // refactor memoises the handler, the captured locals survive
+        // a state flip between render and click.
+        (() => {
+          const { downloadUrl, version } = secondaryUpdate;
+          return (
+            <button
+              className="statusbar-update"
+              onClick={() => void window.api.openSecondaryDownload(downloadUrl)}
+              title="The primary auto-update channel hasn't delivered this version in 15 minutes. Click to download manually."
+            >
+              <Icon name="file" size={11} />
+              <span>Update {version} available · Download</span>
+            </button>
+          );
+        })()
       )}
       <div className="seg">
         <span className="k">Ctrl+N</span>

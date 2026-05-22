@@ -344,6 +344,15 @@ export function MarketplaceScreen({
                         reports,
                       });
                     }
+                  })
+                  .catch((err) => {
+                    // R-L4: surface IPC failures instead of silently
+                    // swallowing. The source still landed (addSource
+                    // already returned ok); only the audit pass blew up.
+                    console.warn(
+                      '[marketplace] auditMarketplaceSource failed:',
+                      err,
+                    );
                   });
               }
             }

@@ -1,0 +1,15 @@
+# Build outputs
+.vite/
+out/
+dist/
+node_modules/
+
+# Config files that import from devDeps which eslint-plugin-import
+# can't resolve via the default resolver. Lint-skipping these is
+# safe — they're never shipped and tsc catches type errors.
+vitest.config.ts
+playwright.config.ts
+forge.config.ts
+vite.main.config.ts
+vite.preload.config.ts
+vite.renderer.config.ts

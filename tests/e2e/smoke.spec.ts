@@ -1,5 +1,6 @@
 import { test, expect, chromium, type BrowserContext, type Page } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
+import net from 'node:net';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -24,9 +25,27 @@ const PACKAGED_EXE = path.join(
   'Orchestrator-win32-x64',
   'Orchestrator.exe',
 );
-// Hard-coded port. Single-worker run, never overlaps with itself.
-const CDP_PORT = 9222;
+// R-L9: pick an ephemeral port at runtime so parallel CI workers (or a
+// dev with another Chromium CDP session live on 9222) don't collide.
+async function pickFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.on('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const addr = srv.address();
+      if (addr && typeof addr === 'object') {
+        const port = addr.port;
+        srv.close(() => resolve(port));
+      } else {
+        srv.close();
+        reject(new Error('failed to acquire ephemeral port'));
+      }
+    });
+  });
+}
 
+let cdpPort = 0;
 let proc: ChildProcess;
 let context: BrowserContext;
 let win: Page;
@@ -67,16 +86,17 @@ test.beforeAll(async () => {
   // Isolated userData per run so the smoke never touches the real
   // settings.json / orchestrator.db / marketplace cache.
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchestrator-e2e-'));
+  cdpPort = await pickFreePort();
 
   proc = spawn(
     PACKAGED_EXE,
-    [`--remote-debugging-port=${CDP_PORT}`, `--user-data-dir=${userDataDir}`],
+    [`--remote-debugging-port=${cdpPort}`, `--user-data-dir=${userDataDir}`],
     { stdio: 'ignore', windowsHide: true, detached: false },
   );
 
-  await waitForCdp(CDP_PORT, 30_000);
+  await waitForCdp(cdpPort, 30_000);
 
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${CDP_PORT}`);
+  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
   context = browser.contexts()[0];
 
   const pages = context.pages();

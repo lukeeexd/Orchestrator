@@ -88,11 +88,38 @@ function normalizeError(value: unknown): CrashEntry['error'] {
   return { name: 'NonError', message: String(value) };
 }
 
+// R-A3: per-process write cap. An infinite-loop in componentDidCatch
+// (or a runaway setInterval throw) would otherwise spam the crashes
+// folder with thousands of entries. We cap writes per rolling hour;
+// further crashes during the cap window land on stderr only.
+const WRITE_CAP_PER_HOUR = 100;
+const WRITE_CAP_WINDOW_MS = 60 * 60 * 1000;
+const writeTimes: number[] = [];
+
+function shouldWrite(now: number): boolean {
+  const cutoff = now - WRITE_CAP_WINDOW_MS;
+  while (writeTimes.length > 0 && writeTimes[0] < cutoff) {
+    writeTimes.shift();
+  }
+  if (writeTimes.length >= WRITE_CAP_PER_HOUR) return false;
+  writeTimes.push(now);
+  return true;
+}
+
 function writeCrash(
   kind: CrashKind,
   error: CrashEntry['error'],
   context?: Record<string, unknown>,
 ): void {
+  if (!shouldWrite(Date.now())) {
+    // Hit the rolling cap — surface to stderr but don't grow the file
+    // count further. The original throw still hit stderr above (process
+    // listeners) or via the React boundary's render fallback.
+    process.stderr.write(
+      `[crash] write-cap reached (${WRITE_CAP_PER_HOUR}/h); dropping ${kind}: ${error.name}: ${error.message}\n`,
+    );
+    return;
+  }
   const ts = new Date().toISOString();
   const id = `${ts.replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`;
   const entry: CrashEntry = {
@@ -188,6 +215,8 @@ export function installCrashHandlers(): void {
  * here as plain JSON; we normalise + write through the same
  * pipeline as the process-level handlers.
  */
+const RENDERER_COMPONENT_STACK_CAP = 4096;
+
 export function recordRendererCrash(payload: {
   name?: string;
   message?: string;
@@ -195,6 +224,14 @@ export function recordRendererCrash(payload: {
   componentStack?: string;
   url?: string;
 }): void {
+  // R-A3: cap componentStack at 4 KB. A deep React tree's stack can
+  // run many KB; combined with the IPC zod cap this is belt-and-
+  // braces protection for the on-disk JSON.
+  const stack = payload.componentStack
+    ? payload.componentStack.length > RENDERER_COMPONENT_STACK_CAP
+      ? payload.componentStack.slice(0, RENDERER_COMPONENT_STACK_CAP) + '…'
+      : payload.componentStack
+    : undefined;
   writeCrash(
     'renderer-error-boundary',
     {
@@ -203,7 +240,7 @@ export function recordRendererCrash(payload: {
       ...(payload.stack ? { stack: payload.stack } : {}),
     },
     {
-      ...(payload.componentStack ? { componentStack: payload.componentStack } : {}),
+      ...(stack ? { componentStack: stack } : {}),
       ...(payload.url ? { url: payload.url } : {}),
     },
   );

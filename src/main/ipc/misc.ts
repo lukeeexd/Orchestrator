@@ -12,6 +12,8 @@ import {
   getCrashesFolder,
   recordRendererCrash,
 } from '../crashes';
+import { recordRendererCrashSchema } from './_schemas';
+import { validated } from './_shared';
 import {
   listProposals as listMemoryProposals,
   approveProposal as approveMemoryProposal,
@@ -93,14 +95,20 @@ export function registerMiscHandlers(): void {
     async (_event, url: string): Promise<{ ok: boolean }> => {
       // S6: the URL comes from the secondary updater's broadcast,
       // which fires only for URLs we put into latest.json. Belt-
-      // and-suspenders: only honour http/https schemes so a
-      // tampered manifest can't trick us into shell-opening a
-      // file://, javascript:, or other scheme.
+      // and-suspenders: pin scheme AND host so a tampered manifest
+      // can't trick us into shell-opening a fake installer hosted
+      // on an attacker domain. Allowlist GitHub Releases (the
+      // current install URL) — extend the list if the secondary
+      // ever signals a different host (R-M9).
       try {
         const parsed = new URL(url);
-        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-          return { ok: false };
-        }
+        if (parsed.protocol !== 'https:') return { ok: false };
+        const host = parsed.hostname.toLowerCase();
+        const allowed =
+          host === 'github.com' ||
+          host === 'www.github.com' ||
+          host === 'objects.githubusercontent.com';
+        if (!allowed) return { ok: false };
         await shell.openExternal(url);
         return { ok: true };
       } catch {
@@ -130,18 +138,13 @@ export function registerMiscHandlers(): void {
     },
   );
 
-  ipcMain.handle(
+  validated(
     IpcChannels.CrashesRecordRenderer,
-    (
-      _event,
-      payload: {
-        name?: string;
-        message?: string;
-        stack?: string;
-        componentStack?: string;
-        url?: string;
-      },
-    ): { ok: boolean } => {
+    recordRendererCrashSchema,
+    // R-M4: zod-validate the renderer-forwarded crash payload at the
+    // boundary so a malformed/oversize record can't reach the disk-
+    // write pipeline.
+    (_event, payload): { ok: boolean } => {
       recordRendererCrash(payload);
       return { ok: true };
     },

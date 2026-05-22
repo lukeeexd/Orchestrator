@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { markCrashHandled } from '../crashListeners';
 
 interface Props {
   children: ReactNode;
@@ -30,6 +31,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     this.setState({ componentStack: info.componentStack ?? null });
+    // R-A4: mark this error so the global window.error listener
+    // doesn't write a duplicate crash record when the same throw
+    // bubbles up. React 19 lets sync throws hit both paths.
+    markCrashHandled(error);
     void window.api
       ?.recordRendererCrash({
         name: error.name,

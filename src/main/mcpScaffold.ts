@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { assertValidWorkspacePath } from './security/workspace';
+import { extractMcpCommands } from './security/mcp';
 import { getProject, setProjectMcpConfig } from './projects';
+import { notifySystem } from './director/runner';
 
 /**
  * P9 — MCP server scaffolder. Writes a minimal-but-runnable MCP
@@ -96,6 +98,18 @@ export function scaffoldMcpServer(input: ScaffoldInput): ScaffoldResult {
   const filesWritten: string[] = [];
   try {
     fs.mkdirSync(dest, { recursive: true });
+    // R-M10: realpath the destination AFTER mkdir so any symlink
+    // hiding inside `.mcp-servers` (created out-of-band) shows its
+    // true target. `path.resolve` doesn't follow symlinks, so the
+    // pre-mkdir check could be bypassed.
+    const realDest = fs.realpathSync(dest);
+    if (!realDest.startsWith(realWs + path.sep) && realDest !== realWs) {
+      removeScaffoldDir(dest);
+      return {
+        ok: false,
+        error: 'destination resolved outside workspace (symlinked away)',
+      };
+    }
     const files =
       input.language === 'typescript'
         ? buildTypescriptScaffold(input)
@@ -106,6 +120,9 @@ export function scaffoldMcpServer(input: ScaffoldInput): ScaffoldResult {
       filesWritten.push(path.relative(workspace, filePath).replace(/\\/g, '/'));
     }
   } catch (e) {
+    // Best-effort cleanup so a partial write doesn't strand the
+    // directory.
+    removeScaffoldDir(dest);
     return {
       ok: false,
       error: e instanceof Error ? e.message : 'file write failed',
@@ -116,37 +133,51 @@ export function scaffoldMcpServer(input: ScaffoldInput): ScaffoldResult {
   // Existing mcpConfig is preserved; we merge the new entry in.
   const command =
     input.language === 'typescript' ? 'node' : 'python';
-  const entry =
+  const argPath =
     input.language === 'typescript'
-      ? `node "${path.join(dest, 'index.js')}"`
-      : `python "${path.join(dest, 'main.py')}"`;
+      ? path.join(dest, 'index.js')
+      : path.join(dest, 'main.py');
   // We store the absolute argv form — `claude --mcp-config` reads
   // commands as strings; the user can edit later in the JSON editor
   // if they want a relative form or a different launcher (tsx,
   // poetry, etc).
+  let nextConfig: string;
   try {
-    const next = mergeServerIntoConfig(project.mcpConfig, input.name, {
+    nextConfig = mergeServerIntoConfig(project.mcpConfig, input.name, {
       command,
-      args: [
-        input.language === 'typescript'
-          ? path.join(dest, 'index.js')
-          : path.join(dest, 'main.py'),
-      ],
+      args: [argPath],
     });
-    setProjectMcpConfig(input.projectId, next);
+    setProjectMcpConfig(input.projectId, nextConfig);
   } catch (e) {
-    // Files are already written; surface the registration failure but
-    // don't roll back the scaffold (the user can hand-add to mcp
-    // config if needed). Mention `entry` in the error so they can
-    // paste it.
+    // R-M2: roll back the freshly-written scaffold so the workspace
+    // doesn't end up half-configured. The user can re-run with the
+    // registration issue addressed (full disk, permissions, etc).
+    removeScaffoldDir(dest);
     return {
       ok: false,
-      error: `scaffold wrote files but mcpConfig registration failed: ${
+      error: `mcpConfig registration failed; scaffold rolled back: ${
         e instanceof Error ? e.message : String(e)
-      }. Add manually: command="${command}", args=["${entry}"]`,
-      destination: dest,
-      filesWritten,
+      }`,
     };
+  }
+
+  // R-M5: fire the same Director-chat audit trail that the
+  // ProjectSetMcpConfig handler emits, so a scaffolded server is
+  // recorded as "will execute on every spawn" in the persistent
+  // chat history. Falling out of this notify is non-fatal — the
+  // server is registered regardless.
+  try {
+    const commands = extractMcpCommands(nextConfig);
+    if (commands.length > 0) {
+      notifySystem(
+        input.projectId,
+        `MCP server "${input.name}" scaffolded. The following commands will execute on every Claude agent spawn for this project: ${commands.join(', ')}`,
+      );
+    }
+  } catch {
+    // The config we just wrote should parse — if it doesn't, the
+    // scaffolded entry will still work next spawn, the audit trail
+    // is just missing.
   }
 
   return {
@@ -154,6 +185,14 @@ export function scaffoldMcpServer(input: ScaffoldInput): ScaffoldResult {
     destination: dest,
     filesWritten,
   };
+}
+
+function removeScaffoldDir(dest: string): void {
+  try {
+    fs.rmSync(dest, { recursive: true, force: true });
+  } catch {
+    // best-effort
+  }
 }
 
 function mergeServerIntoConfig(
