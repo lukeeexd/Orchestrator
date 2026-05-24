@@ -3,6 +3,7 @@ import type { DirectorMessage, DirectorMode, PlanRow } from '../../shared/types'
 import { PlanCard } from './PlanCard';
 import { PRDCard } from './PRDCard';
 import { Icon } from './Icon';
+import { findPrevPlanRows } from '../lib/planDiff';
 
 /**
  * Flat terminal-style render of the Director's conversation. Replaces the
@@ -53,13 +54,18 @@ export function DirectorStream({
 
   return (
     <div className="director-stream" ref={scrollRef} onScroll={onScroll}>
-      {messages.map((m) => (
+      {messages.map((m, idx) => (
         <StreamEntry
           key={m.id}
           message={m}
           mode={mode}
           onSpawnPlan={(rows) => onSpawnPlan(m, rows)}
           onSaveAsTemplate={onSaveAsTemplate}
+          prevPlanRows={
+            m.plan && m.plan.length > 0
+              ? findPrevPlanRows(messages, idx)
+              : undefined
+          }
         />
       ))}
       {messages.length === 0 && (
@@ -79,11 +85,13 @@ function StreamEntry({
   mode,
   onSpawnPlan,
   onSaveAsTemplate,
+  prevPlanRows,
 }: {
   message: DirectorMessage;
   mode: DirectorMode;
   onSpawnPlan: (rows: PlanRow[]) => Promise<void>;
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
+  prevPlanRows?: PlanRow[];
 }) {
   // Pick a glyph + className per author. Mirrors the Claude Code CLI's
   // ●/⏺/⎿ vocabulary — keeps reads quick: ● is "actor talking", ⎿ is
@@ -131,6 +139,7 @@ function StreamEntry({
             mode={mode}
             onSpawn={onSpawnPlan}
             onSaveAsTemplate={onSaveAsTemplate}
+            prevRows={prevPlanRows}
           />
         </div>
       )}

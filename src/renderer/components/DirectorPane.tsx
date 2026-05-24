@@ -32,6 +32,7 @@ import {
   handleAttachmentDrop,
   handleAttachmentPaste,
 } from '../lib/attachmentDataTransfer';
+import { findPrevPlanRows } from '../lib/planDiff';
 
 interface Props {
   width: number;
@@ -349,13 +350,18 @@ function Chat({
 
   return (
     <div className="chat">
-      {messages.map((m) => (
+      {messages.map((m, idx) => (
         <Message
           key={m.id}
           message={m}
           mode={mode}
           onSpawn={onSpawnPlan}
           onSaveAsTemplate={onSaveAsTemplate}
+          prevPlanRows={
+            m.plan && m.plan.length > 0
+              ? findPrevPlanRows(messages, idx)
+              : undefined
+          }
         />
       ))}
       <div ref={tailRef} />
@@ -368,11 +374,13 @@ function Message({
   mode,
   onSpawn,
   onSaveAsTemplate,
+  prevPlanRows,
 }: {
   message: DirectorMessage;
   mode: DirectorMode;
   onSpawn: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
+  prevPlanRows?: PlanRow[];
 }) {
   return (
     <div className="msg">
@@ -406,6 +414,7 @@ function Message({
           mode={mode}
           onSpawn={(rows) => onSpawn(message, rows)}
           onSaveAsTemplate={onSaveAsTemplate}
+          prevRows={prevPlanRows}
         />
       )}
       {message.prd && <PRDCard prd={message.prd} />}
