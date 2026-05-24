@@ -70,11 +70,10 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 - **Impact:** **medium-high** — turns Orchestrator from a private tool into a defensible artefact for postmortems / PR descriptions / external review.
 - **Deps/risks:** same scrubber question as F9. Composes with F12.
 
-**F12. Comments / sticky notes pinned on log lines.**
-- **Problem:** reviewers reading a long agent log can't annotate it inline. They either copy/paste into a separate doc or take screenshots.
-- **Scope:** **S/M**. New `log_notes` table keyed on `(agentId, logLineIndex)`. Renderer adds a hover-trigger margin icon on each row of `AgentStreamPanel.tsx`.
-- **Impact:** **medium** — multiplied by F11 (notes travel with the exported bundle).
-- **Deps/risks:** keyed on log-line index is fragile if logs are ever back-edited; key on `ts + kind + msg-hash` instead.
+**F12. ~~Comments / sticky notes pinned on log lines.~~ — shipped 2026-05-24.**
+- New `log_notes` table via migration v26, composite PK on `(agent_id, line_key)`. `line_key` is the FNV-1a-32 hex of `ts + kind + msg-serialised` (with tool-call args sorted) — pure JS in `src/shared/logNotes.ts` so the renderer can compute keys without crossing the IPC boundary. The hash beats indexing by `seq` because it survives any future log replay / reorder, and a back-edit of a log line (which doesn't currently happen) would orphan its note rather than mis-attribute.
+- Notes are authored from the Drawer's Logs tab — a hover affordance on each line opens an inline textarea with Ctrl-Enter save / Esc cancel / "save empty = delete." `useLogNotes(agentId)` does an optimistic in-memory update before the IPC round-trip so saves feel instant; failures roll back via a re-fetch. AgentRow's rail expansion deliberately doesn't get the affordance — the Drawer is the deeper-read surface where annotation belongs.
+- `deleteNotesForAgent` is called from the agent-remove path so the table doesn't accumulate orphans. 7 unit tests cover the line-key hash (determinism, ts/kind/msg sensitivity, arg-order invariance for tool calls).
 
 ### Theme — Platform / monetisation
 

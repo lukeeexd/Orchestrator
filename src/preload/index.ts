@@ -428,6 +428,17 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.SpendForecastPlan, rows) as Promise<
       import('../shared/types').PlanCostForecast
     >,
+  listLogNotes: (agentId) =>
+    ipcRenderer.invoke(IpcChannels.LogNotesList, agentId) as Promise<
+      import('../shared/types').LogNote[]
+    >,
+  setLogNote: (agentId, lineKey, body) =>
+    ipcRenderer.invoke(
+      IpcChannels.LogNotesSet,
+      agentId,
+      lineKey,
+      body,
+    ) as Promise<{ ok: true } | { ok: false; error: string }>,
   listSecrets: (projectId) =>
     ipcRenderer.invoke(IpcChannels.SecretsList, projectId) as Promise<
       import('../shared/types').SecretListEntry[]

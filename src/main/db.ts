@@ -480,6 +480,35 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 26,
+    up: (db) => {
+      // F12: per-line notes pinned to an agent's log. Key is a stable
+      // hash of (ts + kind + msg) — see src/shared/logNotes.ts for the
+      // hash function. The composite PK on (agent_id, line_key) means
+      // one note per line per agent; updates re-use the row via
+      // ON CONFLICT.
+      //
+      // Hashing (rather than using log_lines.seq) survives any future
+      // reorder / replay; the same log content always maps to the same
+      // key. Editing a log line (which doesn't currently happen)
+      // would orphan its note — acceptable, simpler than tracking
+      // per-line identity through edits.
+      db.exec(`
+        CREATE TABLE log_notes (
+          agent_id   TEXT NOT NULL,
+          line_key   TEXT NOT NULL,
+          body       TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (agent_id, line_key)
+        );
+
+        CREATE INDEX idx_log_notes_agent
+          ON log_notes (agent_id);
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

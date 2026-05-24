@@ -372,6 +372,19 @@ export interface SpendDayBucket {
 }
 
 /**
+ * F12: per-log-line note. The renderer fetches the full list for an
+ * agent on select and indexes by `lineKey` for O(1) lookup during
+ * the log-line render pass. lineKey is the FNV-1a hex of
+ * (ts + kind + msg) — see `src/shared/logNotes.ts`.
+ */
+export interface LogNote {
+  lineKey: string;
+  body: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
  * F6: per-project secret metadata returned to the renderer. Values
  * are deliberately omitted from the bulk-list response so a casual
  * log of the IPC payload can't leak the vault.

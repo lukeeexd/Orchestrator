@@ -10,6 +10,8 @@ import { Icon } from './Icon';
 import { LogLineRow } from './LogLineRow';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
+import { computeLogLineKey } from '../../shared/logNotes';
+import { useLogNotes } from '../hooks/useLogNotes';
 
 const CONTEXT_CAP_DEFAULT = 200_000;
 const CONTEXT_CAP_1M = 1_000_000;
@@ -483,6 +485,11 @@ function TabHead({
 
 function LogsTab({ agent }: { agent: Agent }) {
   const tail = agent.log.slice(-8);
+  // F12: pinned notes for this agent's log lines. The drawer is the
+  // place users park to read + annotate, so the hook lives here
+  // (rather than at the AgentRow level where notes wouldn't
+  // typically be authored from the rail).
+  const { notes, setNote } = useLogNotes(agent.id);
   return (
     <>
       <div className="field">
@@ -511,10 +518,18 @@ function LogsTab({ agent }: { agent: Agent }) {
               borderRadius: 6,
             }}
           >
-            {tail.map((l, i) => (
-              // M11: composite key — see AgentRow for rationale.
-              <LogLineRow key={`${l.ts}-${l.kind}-${i}`} line={l} />
-            ))}
+            {tail.map((l, i) => {
+              const lineKey = computeLogLineKey(l);
+              return (
+                // M11: composite key — see AgentRow for rationale.
+                <LogLineRow
+                  key={`${l.ts}-${l.kind}-${i}`}
+                  line={l}
+                  note={notes.get(lineKey)}
+                  onSaveNote={setNote}
+                />
+              );
+            })}
           </div>
         ) : (
           <div className="inline-empty">No log entries yet.</div>
