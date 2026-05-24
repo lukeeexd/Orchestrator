@@ -29,6 +29,7 @@ export function listHistory(): HistoryRow[] {
       tokens: a.tokens,
       cost: a.cost,
       startedAt: a.startedAt,
+      endedAt: a.endedAt ?? null,
       elapsed: a.elapsed,
       projectId: a.projectId,
       projectName: projectNames.get(a.projectId) ?? '(deleted project)',

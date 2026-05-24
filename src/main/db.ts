@@ -436,6 +436,50 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 25,
+    up: (db) => {
+      // F8: timeline / Gantt view needs an absolute end-of-run
+      // timestamp so the renderer can lay out per-agent bars over
+      // wall-clock time. We already had `started_at` (absolute) and
+      // `elapsed` (formatted string like "1m 23s") — the latter is
+      // a display field and not reliably parseable. `ended_at` stays
+      // null for in-progress agents; flips on every terminal status
+      // transition (done / error / aborted).
+      db.exec(`ALTER TABLE agents ADD COLUMN ended_at INTEGER;`);
+
+      // Backfill rows where status is already terminal. The fallback
+      // is `started_at` (zero-duration bar) for rows we can't parse;
+      // for "Nm Ks" / "Ks" / "Nh Mm" shapes, compute the duration in
+      // ms and stamp started_at + duration.
+      //
+      // SQLite has no regex; we use INSTR + SUBSTR. Three patterns:
+      //   - "Nh Mm"     -> hours*3600 + minutes*60
+      //   - "Mm Ss"     -> minutes*60 + seconds
+      //   - "Ss"        -> seconds
+      // Anything that doesn't match collapses to started_at.
+      db.exec(`
+        UPDATE agents
+           SET ended_at = started_at + (
+             CASE
+               WHEN elapsed LIKE '%h %m' THEN
+                 CAST(SUBSTR(elapsed, 1, INSTR(elapsed, 'h') - 1) AS INTEGER) * 3600000 +
+                 CAST(SUBSTR(elapsed, INSTR(elapsed, 'h') + 2,
+                             INSTR(elapsed, 'm') - INSTR(elapsed, 'h') - 2) AS INTEGER) * 60000
+               WHEN elapsed LIKE '%m %s' THEN
+                 CAST(SUBSTR(elapsed, 1, INSTR(elapsed, 'm') - 1) AS INTEGER) * 60000 +
+                 CAST(SUBSTR(elapsed, INSTR(elapsed, 'm') + 2,
+                             INSTR(elapsed, 's') - INSTR(elapsed, 'm') - 2) AS INTEGER) * 1000
+               WHEN elapsed LIKE '%s' THEN
+                 CAST(SUBSTR(elapsed, 1, INSTR(elapsed, 's') - 1) AS INTEGER) * 1000
+               ELSE 0
+             END
+           )
+         WHERE ended_at IS NULL
+           AND status IN ('done', 'error', 'paused');
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

@@ -26,9 +26,37 @@ export function listForProject(projectId: string): Agent[] {
     .filter((a) => a.projectId === projectId);
 }
 
+// F8: auto-stamp endedAt whenever an agent transitions to a terminal
+// status. Doing this in the registry means every code path through
+// `patch` (spawn / fork / redirect / query result / abort / shutdown)
+// gets the timestamp for free — callers don't have to remember.
+//
+// We deliberately do NOT clear endedAt when the agent flips back to
+// running via redirect. The timeline view treats `status === running`
+// as live ("draw the bar to now") and only consults endedAt for
+// terminal rows. The next terminal transition overwrites whatever
+// stale value was there.
+const TERMINAL_STATUSES = new Set<Agent['status']>([
+  'done',
+  'error',
+  'paused',
+]);
+
 export function patch(id: string, p: Partial<Agent>): Agent | undefined {
   const e = entries.get(id);
   if (!e) return undefined;
+  // We mutate `p` in place when stamping endedAt so the same object
+  // reference the caller passed to sinks.onPatch picks up the new
+  // field — the renderer event stays a single hop. Documented:
+  // patches are caller-fresh objects in every existing call site,
+  // so mutation is safe.
+  if (
+    p.status !== undefined &&
+    TERMINAL_STATUSES.has(p.status) &&
+    p.endedAt === undefined
+  ) {
+    p.endedAt = Date.now();
+  }
   e.agent = { ...e.agent, ...p };
   persistence.patchAgent(id, p);
   return e.agent;

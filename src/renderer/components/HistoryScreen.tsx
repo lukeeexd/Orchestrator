@@ -9,6 +9,7 @@ import type {
 import { ROLE_TINT, STATUS_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { SaveTemplateDialog } from './SaveTemplateDialog';
+import { HistoryTimeline } from './HistoryTimeline';
 
 /**
  * P12 — Changelog generator prompt. Researcher walks recent git state
@@ -116,6 +117,9 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState<SortField>('startedAt');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  // F8: list / timeline view-mode toggle. List is the existing table;
+  // timeline renders the filtered rows as a Gantt-style chart.
+  const [viewMode, setViewMode] = useState<'list' | 'timeline'>('list');
   /**
    * Open SaveTemplateDialog with this row's role + task captured as a
    * single-row PlanRow[]. Null = closed. Lets the user reuse a one-off
@@ -242,6 +246,24 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
         <span className="title">
           <b>History</b>
         </span>
+        <div
+          className="mode-toggle"
+          style={{ marginLeft: 12 }}
+          title="List shows the full sortable table. Timeline renders the same rows as a Gantt-style chart over wall-clock time."
+        >
+          <button
+            className={viewMode === 'list' ? 'on' : ''}
+            onClick={() => setViewMode('list')}
+          >
+            list
+          </button>
+          <button
+            className={viewMode === 'timeline' ? 'on' : ''}
+            onClick={() => setViewMode('timeline')}
+          >
+            timeline
+          </button>
+        </div>
         <span className="spacer" />
         <button
           className="tb-btn"
@@ -339,6 +361,8 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
             <div className="inline-empty">
               No agents match the current filters.
             </div>
+          ) : viewMode === 'timeline' ? (
+            <HistoryTimeline rows={filtered} onOpenAgent={onOpenAgent} />
           ) : (
             <div className="history-table">
               <div className="history-row history-header">

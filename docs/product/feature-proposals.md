@@ -49,11 +49,9 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 
 ### Theme — Observability / telemetry
 
-**F8. Run timeline / Gantt visualisation.**
-- **Problem:** sequential chains hide their own gaps. When a user notices a 3× wall-clock blow-up across 5 agents, there's no easy way to see whether agent 2 actually took 15 minutes or whether 14 of those minutes were waiting for a child process to time out.
-- **Scope:** **M**. Renderer-only against existing `Agent.startedAt` + `elapsed` + (new) `endedAt`. Slot under `HistoryScreen.tsx` as a third view-mode toggle ("list / chart / timeline").
-- **Impact:** **medium** — directly feeds Spend optimiser rules (P3) with much richer signal.
-- **Deps/risks:** need to backfill `endedAt` from existing `agents` rows; migration is forward-only (per `R-L6`).
+**F8. ~~Run timeline / Gantt visualisation.~~ — shipped 2026-05-24.**
+- HistoryScreen gains a `list / timeline` toggle in its pane head; the timeline view renders the filtered rows as a Gantt chart with proportional bars over wall-clock time (label column + time-axis ticks + colour-by-status). Sequential chains show their gaps visibly; running agents extend to "now" with a dashed border.
+- New `ended_at INTEGER` column via migration v25 + best-effort backfill from `started_at + parse(elapsed)` for existing rows. `registry.patch` auto-stamps `endedAt = Date.now()` on every transition to a terminal status (`done` / `error` / `paused`) so callers don't have to remember. Three pre-existing crash patches in `spawn.ts` / `fork.ts` / `redirect.ts` were also routed through `registry.patch` (they were only notifying the renderer, leaving the DB row in `running` — fixed in the same pass).
 
 **F9. Crash → shareable bundle.**
 - **Problem:** today the user has to open `userData/crashes/`, find the right JSON, copy it, scrub anything sensitive, and attach to a bug report. Friction kills crash submissions.

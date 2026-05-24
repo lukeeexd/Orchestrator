@@ -77,7 +77,14 @@ async function redirectAgentLocked(
       kind: 'error',
       msg: `redirect crashed: ${msg}`,
     });
-    sinks.onPatch(req.agentId, { status: 'error', statusLabel: 'Crashed' });
+    // F8 + persistence fix: route through registry.patch so DB + the
+    // in-memory agent catch the terminal state and pick up endedAt.
+    const patch: Partial<import('../../shared/types').Agent> = {
+      status: 'error',
+      statusLabel: 'Crashed',
+    };
+    registry.patch(req.agentId, patch);
+    sinks.onPatch(req.agentId, patch);
   });
 
   return { ok: true };
