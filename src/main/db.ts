@@ -411,6 +411,31 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 24,
+    up: (db) => {
+      // F6: per-project secrets vault. The runner injects these into
+      // each spawn's child-process env (NOT the prompt), so values
+      // never land in agent logs / crash JSON / Director chat
+      // history. Storage is plaintext under userData, matching the
+      // existing API-key / OAuth-token precedent in settings.json —
+      // NTFS ACLs already gate other users on the same machine.
+      // DPAPI encryption is a deferred follow-up (would matter most
+      // if Orchestrator ever shipped to multi-user shared hosts).
+      //
+      // Names are env-var shaped (^[A-Z][A-Z0-9_]*$) so they slot
+      // straight into the child env without escaping.
+      db.exec(`
+        CREATE TABLE project_secrets (
+          project_id  TEXT NOT NULL,
+          name        TEXT NOT NULL,
+          value       TEXT NOT NULL,
+          updated_at  INTEGER NOT NULL,
+          PRIMARY KEY (project_id, name)
+        );
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

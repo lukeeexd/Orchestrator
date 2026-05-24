@@ -10,11 +10,8 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 
 ### Theme — UX polish
 
-**F1. Director command palette (Ctrl/⌘-K).**
-- **Problem:** the rail nav + slash commands work but discoverability is poor. Users hunt for actions like "open spend", "wipe Director", "switch project", "use template", "open crashes folder".
-- **Scope:** **S**. Mostly renderer. Reuse the existing `BuiltinAction` enum in `src/shared/builtinCommands.ts` and the `onSlashAction` switch already wired in `src/renderer/App.tsx:570`.
-- **Impact:** **medium** — speeds up daily flow for the only-user but doesn't unlock anything new.
-- **Deps/risks:** none material; just an overlay component + keymap. Risk = stealing Ctrl-K from a textarea — already handled in `App.tsx:478` via the `typing` guard.
+**F1. ~~Director command palette (Ctrl/⌘-K).~~ — shipped 2026-05-23.**
+- New `CommandPalette.tsx` overlay mounted in App. Ctrl/⌘-K toggles open; Up/Down navigate; Enter runs; Esc closes. Fires even while typing in the composer (palette is the global navigation surface). Action source is the existing `BUILTIN_COMMANDS` list; the slash-menu switch was extracted into a shared `runBuiltinAction` callback so the palette and the slash menu invoke the same code path. Added `go-marketplace` and `go-docs` to the action enum so the palette covers every rail item.
 
 **F2. Inline plan diff / "what changed" between two Director plans.**
 - **Problem:** when the Director re-plans (user edits the prompt, asks for revisions), the new PlanCard replaces the old one — there's no visible diff of which rows were added, removed, or had their tasks rewritten. Reviewers approve plans blind.
@@ -39,11 +36,10 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 - **Impact:** **medium-high** — saves an entire chat redo every time a Director goes sideways.
 - **Deps/risks:** `claude --resume` semantics across truncation are unverified — same family of risk as F4's worktree spike. Codex side is harder (different session model).
 
-**F6. Project-scoped secrets / env vault.**
-- **Problem:** Coder + DevOps agents routinely need `DATABASE_URL`, `STRIPE_KEY`, `GH_TOKEN` etc. Today users either paste them into the task (leaks into agent logs + crash JSON) or pre-populate the shell env (only works when they launched Orchestrator from a configured terminal). The OS-keychain item in PLAN.md is already deferred.
-- **Scope:** **M**. New `projects.secrets` table (encrypted at rest via OS DPAPI on Windows) + an env-injection step in `src/main/cli/spawn.ts`. Renderer adds a "Secrets" tab to `ToolsScreen.tsx`.
-- **Impact:** **high** — unlocks any agent task that touches a non-trivial backend. Also kills the "Director's chat history contains my API key" disclosure risk that exists today.
-- **Deps/risks:** DPAPI is per-user-per-machine; backup/migration story needs to be documented. Agent logs still need a secret-stripping pass (cf. R-A8 in BACKLOG — bodies are queued verbatim into Director context).
+**F6. ~~Project-scoped secrets / env vault.~~ — shipped 2026-05-23.**
+- New `project_secrets` table via migration v24 (composite PK on `project_id, name`); `src/main/secrets.ts` handles list / set / delete / reveal + a main-only `getSecretsForSpawn` helper; `buildEnv` in `agents/internal.ts` layers project secrets onto the spawn env so the agent's shell sees `$DATABASE_URL` / `$GH_TOKEN` / etc. as regular env vars — never appearing in prompt, log, or crash bundle. Project secrets win over inherited `process.env` of the same name.
+- New **Secrets** tab in `ToolsScreen` lets users add / edit / delete entries. List shows metadata only (`name`, length, updated-at) — values cross the IPC boundary one-at-a-time via a `revealSecret` round-trip. Names must match the env-var convention `^[A-Z][A-Z0-9_]{0,62}$`; 8 unit tests cover the regex + assertion path.
+- **Storage decision deliberately plaintext for v1**, matching the existing OAuth-token-in-settings.json precedent. NTFS ACLs already gate other users on the same machine. DPAPI encryption is the natural follow-up if Orchestrator ever ships to multi-user shared hosts.
 
 **F7. Pre-spawn cost forecast on PlanCard.**
 - **Problem:** users approve a 6-agent plan without any sense of whether it'll cost $0.30 or $30. The data needed is already collected per-role + per-model in `getSpendSummary` (`src/main/spend.ts`).
@@ -65,11 +61,8 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 - **Impact:** **medium** — small effort, helps every future bug.
 - **Deps/risks:** scrubber must not be lossy enough to obscure the actual crash; risk of false-positive redaction in stack traces.
 
-**F10. Live context-window meter chip per agent.**
-- **Problem:** the design handoff (`docs/design/README.md:96`) specifies a Context tab with a stacked horizontal bar, but the always-visible state is just tokens/cost. Agents that quietly approach the model's context cap go from fine → "Context limit reached" with no warning.
-- **Scope:** **S**. KPI chip on `AgentRow.tsx` reading the existing `tokens` field against the agent's known model context size (table in `src/shared/models.ts`).
-- **Impact:** **medium** — small, but high-perceived-quality.
-- **Deps/risks:** Codex doesn't always expose context usage as cleanly; show "—" on missing data rather than fake it.
+**F10. ~~Live context-window meter chip per agent.~~ — shipped 2026-05-23.**
+- New `ctx` KPI chip on AgentRow shows the agent's cumulative tokens as a percentage of the model's known context cap. Colours: <50% muted, 50-80% amber, ≥80% red. Tooltip explains that cumulative is an upper-bound proxy (the per-turn payload is what actually counts against the cap; a future refactor could record per-turn input tokens specifically). Unknown models (or codex agents whose CLI doesn't expose usage) show `—` rather than faking a number. Context sizes live in a new `MODEL_CONTEXT_TOKENS` table in `src/shared/models.ts`.
 
 ### Theme — Collaboration / handoff
 
@@ -104,6 +97,10 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 - **Scope:** **L**. New Forge makers (`MakerDMG`, `MakerDeb`), CI matrix in `.github/workflows/release.yml`, code-signing notarisation for macOS (Apple Developer ID), per-platform auto-update channel.
 - **Impact:** **high** — biggest reach unlock; pairs with H7 code signing (already deferred).
 - **Deps/risks:** macOS notarisation requires a paid Apple Developer account; signed-installer item is already a known blocker (H7). DPAPI in F6 needs a per-OS replacement (libsecret / Keychain).
+
+**F16. ~~Claude Code memory bridge.~~ — shipped 2026-05-22.**
+- Surfaces the per-project memories Claude Code accumulates (under `~/.claude/projects/<encoded>/memory/`) into Orchestrator's agent prompts. `effectiveSkill()` reads the project's MEMORY.md index, walks each linked file, and includes only `project` and `reference` types — `user` and `feedback` types are skipped because they're about the user / about the assistant rather than about the codebase. No-op when the directory doesn't exist (user hasn't used Claude Code on this project). Source: `src/main/claudeCodeMemory.ts` + composed into `effectiveSkill` in `skills.ts`. Pure helpers covered by 14 new unit tests.
+- Privacy / scope decision: silent inclusion (no Settings toggle) because Orchestrator is a single-user app and the only memories that flow through are codebase-scoped (`project` + `reference`). If a user wants to opt out, deleting MEMORY.md or removing the type frontmatter on individual files achieves it without code changes.
 
 ## 3. Quick wins (top 3, high-impact / low-effort)
 

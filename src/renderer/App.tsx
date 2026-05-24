@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   DirectorMessage,
   DirectorMode,
@@ -32,6 +32,7 @@ import { TemplatesScreen } from './components/TemplatesScreen';
 import { DocsScreen } from './components/DocsScreen';
 import { SaveTemplateDialog } from './components/SaveTemplateDialog';
 import { CliMissingGate } from './components/CliMissingGate';
+import { CommandPalette } from './components/CommandPalette';
 import type { BuiltinAction } from '../shared/builtinCommands';
 import {
   ProjectTabs,
@@ -79,6 +80,9 @@ export function App() {
     null,
   );
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // F1: Ctrl-K command palette state. Opens via the global keymap below
+  // and via any future caller (e.g. an empty-state "Try Ctrl-K" hint).
+  const [paletteOpen, setPaletteOpen] = useState(false);
   // P2 — onboarding banner state. `needed` reflects the result of the
   // hasWorkspaceMd probe + the per-project dismiss flag in localStorage;
   // `busy` covers the round-trip while the template spawn is in flight.
@@ -476,6 +480,54 @@ export function App() {
     })();
   }, [messages, mode, activeProjectId, agents]);
 
+  // F1: shared action handler for both the Director-composer slash menu
+  // and the global Ctrl-K palette. Adding a new BuiltinAction to
+  // shared/builtinCommands.ts + a case here lights it up in both
+  // surfaces with no other changes.
+  const runBuiltinAction = useCallback(
+    async (action: BuiltinAction) => {
+      switch (action) {
+        case 'wipe-director':
+          if (activeProjectId)
+            await window.api.wipeDirector(activeProjectId);
+          break;
+        case 'open-usage':
+          await window.api.openClaudeUsage();
+          break;
+        case 'go-agents':
+          setActive('agents');
+          break;
+        case 'go-spend':
+          setActive('cost');
+          break;
+        case 'go-history':
+          setActive('history');
+          break;
+        case 'go-settings':
+          setActive('settings');
+          break;
+        case 'go-tools':
+          setActive('tools');
+          break;
+        case 'go-templates':
+          setActive('templates');
+          break;
+        case 'go-marketplace':
+          setActive('marketplace');
+          break;
+        case 'go-docs':
+          setActive('docs');
+          break;
+        case 'show-help':
+          // Handled locally inside the Composer (opens modal). The
+          // palette doesn't need a separate help affordance because
+          // it IS the surfaced list.
+          break;
+      }
+    },
+    [activeProjectId, setActive],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -487,6 +539,13 @@ export function App() {
       if (e.key === 'n' || e.key === 'N') {
         e.preventDefault();
         setSpawning(true);
+      } else if (e.key === 'k' || e.key === 'K') {
+        // F1: Ctrl/⌘-K opens the command palette. Fires even while
+        // typing in an input — the palette is the global way to
+        // navigate, so users shouldn't have to leave the composer to
+        // get to it.
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
       } else if (e.key === '.' && !typing) {
         e.preventDefault();
         if (selectedId) void window.api.abortAgent(selectedId);
@@ -568,38 +627,7 @@ export function App() {
               }}
               viewMode={viewMode}
               projectId={activeProjectId}
-              onSlashAction={async (action: BuiltinAction) => {
-                switch (action) {
-                  case 'wipe-director':
-                    if (activeProjectId)
-                      await window.api.wipeDirector(activeProjectId);
-                    break;
-                  case 'open-usage':
-                    await window.api.openClaudeUsage();
-                    break;
-                  case 'go-agents':
-                    setActive('agents');
-                    break;
-                  case 'go-spend':
-                    setActive('cost');
-                    break;
-                  case 'go-history':
-                    setActive('history');
-                    break;
-                  case 'go-settings':
-                    setActive('settings');
-                    break;
-                  case 'go-tools':
-                    setActive('tools');
-                    break;
-                  case 'go-templates':
-                    setActive('templates');
-                    break;
-                  case 'show-help':
-                    // Handled locally inside the Composer (opens modal).
-                    break;
-                }
-              }}
+              onSlashAction={runBuiltinAction}
             />
             <ResizeHandle
               value={dirW}
@@ -732,6 +760,11 @@ export function App() {
           onCancel={() => setShowNewProject(false)}
         />
       )}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onRun={runBuiltinAction}
+      />
       {saveTemplateRows && (
         <SaveTemplateDialog
           rows={saveTemplateRows}

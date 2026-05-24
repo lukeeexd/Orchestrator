@@ -128,7 +128,7 @@ async function run(
   sinks: RunnerSinks,
 ): Promise<void> {
   const role = ROLES[req.role];
-  const env = buildEnv(settings);
+  const env = buildEnv(settings, req.projectId);
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
   try {

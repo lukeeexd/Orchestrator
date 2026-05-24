@@ -6,6 +6,7 @@ import type {
   PlanRow,
 } from '../../shared/types';
 import { ROLE_TINT } from '../../shared/roles';
+import { diffPlans, type PlanRowDiffStatus } from '../lib/planDiff';
 
 const SHIP_GATE_LS_KEY = 'orchestrator.shipGate';
 
@@ -43,6 +44,14 @@ interface Props {
    * row set so the saved template matches what the user sees.
    */
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
+  /**
+   * F2: when this card replaces an earlier plan in the same Director
+   * conversation, the rows of the previous plan. The parent walks
+   * `messages` backward to find the most recent prior plan-bearing
+   * message and passes its rows here. Undefined for the first plan
+   * in a conversation or when no prior plan exists.
+   */
+  prevRows?: PlanRow[];
 }
 
 export function PlanCard({
@@ -51,6 +60,7 @@ export function PlanCard({
   mode,
   onSpawn,
   onSaveAsTemplate,
+  prevRows,
 }: Props) {
   // Local editable copy of the plan. The Director's original proposal
   // stays on the message; this state is what the user can prune/tweak
@@ -152,10 +162,68 @@ export function PlanCard({
     edited.length !== rows.length ||
     edited.some((r, i) => r.task !== rows[i]?.task);
 
+  // F2: diff against the previous plan (if any). The diff is computed
+  // against the Director's emitted `rows`, not the user-edited `edited`
+  // set — we want to surface what the Director changed, not what the
+  // user just unticked. Keyed by (role, name) — see planDiff.ts for
+  // match semantics.
+  const planDiff = useMemo(
+    () => (prevRows && prevRows.length > 0 ? diffPlans(rows, prevRows) : null),
+    [rows, prevRows],
+  );
+  const diffByRow = useMemo(() => {
+    const m = new Map<string, { status: PlanRowDiffStatus; prevTask?: string }>();
+    if (!planDiff) return m;
+    for (const r of planDiff.rows) {
+      m.set(`${r.row.role}\x00${r.row.name}`, {
+        status: r.status,
+        ...(r.prevTask !== undefined ? { prevTask: r.prevTask } : {}),
+      });
+    }
+    return m;
+  }, [planDiff]);
+  const hasMeaningfulDiff =
+    planDiff !== null &&
+    (planDiff.summary.added > 0 ||
+      planDiff.summary.modified > 0 ||
+      planDiff.summary.removed > 0);
+
   return (
     <div className="dir-plan">
       <div className="dir-plan-head">
         <span>Plan</span>
+        {hasMeaningfulDiff && planDiff && (
+          <span
+            className="badge"
+            style={{
+              background: 'var(--sub-2)',
+              color: 'var(--text-2)',
+              fontSize: 10,
+              marginLeft: 6,
+            }}
+            title={
+              `Changed since the previous plan:` +
+              `\n  +${planDiff.summary.added} added` +
+              `\n  ~${planDiff.summary.modified} modified` +
+              `\n  -${planDiff.summary.removed} removed` +
+              (planDiff.summary.unchanged > 0
+                ? `\n  ${planDiff.summary.unchanged} unchanged`
+                : '')
+            }
+          >
+            <span style={{ color: 'var(--ok, #4ade80)' }}>
+              +{planDiff.summary.added}
+            </span>
+            {' / '}
+            <span style={{ color: 'var(--waiting, #fbbf24)' }}>
+              ~{planDiff.summary.modified}
+            </span>
+            {' / '}
+            <span style={{ color: 'var(--error, #f87171)' }}>
+              -{planDiff.summary.removed}
+            </span>
+          </span>
+        )}
         {accepted ? (
           <span className="badge">accepted</span>
         ) : (
@@ -241,16 +309,42 @@ export function PlanCard({
           plan.
         </div>
       ) : (
-        edited.map((p, i) => (
-          <PlanRowView
-            key={`${p.name}-${i}`}
-            row={p}
-            isLast={i === edited.length - 1}
-            editable={!accepted}
-            onTaskChange={(t) => editTask(i, t)}
-            onDrop={() => dropRow(i)}
-          />
-        ))
+        edited.map((p, i) => {
+          const diff = diffByRow.get(`${p.role}\x00${p.name}`);
+          return (
+            <PlanRowView
+              key={`${p.name}-${i}`}
+              row={p}
+              isLast={i === edited.length - 1}
+              editable={!accepted}
+              onTaskChange={(t) => editTask(i, t)}
+              onDrop={() => dropRow(i)}
+              diffStatus={diff?.status}
+              prevTask={diff?.prevTask}
+            />
+          );
+        })
+      )}
+      {planDiff && planDiff.removed.length > 0 && (
+        <div
+          style={{
+            padding: '4px 12px 8px',
+            fontSize: 10,
+            color: 'var(--text-2)',
+            borderTop: '1px dashed var(--sub-2)',
+            marginTop: 4,
+          }}
+          title="These rows were in the previous plan but the Director dropped them in this revision."
+        >
+          <span style={{ color: 'var(--error, #f87171)' }}>− removed:</span>{' '}
+          {planDiff.removed.map((r, i) => (
+            <span key={`${r.role}-${r.name}-${i}`}>
+              {i > 0 && ', '}
+              <span style={{ color: ROLE_TINT[r.role] }}>{r.role}</span>{' '}
+              <span style={{ textDecoration: 'line-through' }}>{r.name}</span>
+            </span>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -322,17 +416,48 @@ function PlanRowView({
   editable,
   onTaskChange,
   onDrop,
+  diffStatus,
+  prevTask,
 }: {
   row: PlanRow;
   isLast: boolean;
   editable: boolean;
   onTaskChange: (next: string) => void;
   onDrop: () => void;
+  diffStatus?: PlanRowDiffStatus;
+  prevTask?: string;
 }) {
+  // F2: per-row diff marker. A coloured leading glyph + a tooltip on
+  // the role label that surfaces the previous task text when modified.
+  const diffGlyph =
+    diffStatus === 'added'
+      ? { sym: '+', color: 'var(--ok, #4ade80)', tip: 'New in this plan' }
+      : diffStatus === 'modified'
+        ? {
+            sym: '~',
+            color: 'var(--waiting, #fbbf24)',
+            tip: prevTask
+              ? `Task changed from previous plan:\n  was: ${prevTask}`
+              : 'Task changed from previous plan',
+          }
+        : null;
   return (
     <div className="plan-row">
       <span className="num">{String(row.i).padStart(2, '0')}</span>
       <span className="tree">{isLast ? '└─' : '├─'}</span>
+      {diffGlyph && (
+        <span
+          style={{
+            color: diffGlyph.color,
+            fontFamily: 'var(--font-mono, monospace)',
+            fontWeight: 700,
+            marginRight: 2,
+          }}
+          title={diffGlyph.tip}
+        >
+          {diffGlyph.sym}
+        </span>
+      )}
       <span className="who" style={{ color: ROLE_TINT[row.role] }}>
         {row.role}
       </span>
