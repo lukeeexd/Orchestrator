@@ -629,10 +629,62 @@ body.resizing * { cursor: col-resize !important; }
 .log-divider { height: 6px; }
 .log-line {
   display: grid;
-  grid-template-columns: 88px 60px minmax(0, 1fr);
+  grid-template-columns: 88px 60px minmax(0, 1fr) auto;
   gap: 10px;
   padding: 2px 0;
   line-height: 1.5;
+  position: relative;
+}
+
+/* F12: sticky-note toggle on each log line. Hidden by default;
+   reveals on row hover, on focus, or when the line already has a
+   note. Sits in the grid's 4th column (auto-sized) so existing
+   ts/kind/msg layout stays unchanged. */
+.log-line .log-line-note-toggle {
+  background: transparent;
+  border: 0;
+  color: var(--muted-2);
+  cursor: default;
+  padding: 0 4px;
+  opacity: 0;
+  transition: opacity 0.08s;
+  align-self: center;
+}
+.log-line:hover .log-line-note-toggle,
+.log-line .log-line-note-toggle:focus,
+.log-line .log-line-note-toggle.has-note {
+  opacity: 1;
+}
+.log-line .log-line-note-toggle.has-note {
+  color: var(--accent);
+}
+.log-line .log-line-note-toggle:hover {
+  color: var(--text-1);
+}
+
+/* F12: note callout + editor render directly below the line,
+   aligned with the msg column (88 ts + 10 gap + 60 kind + 10 gap
+   = 168px) so they visually anchor to the line they annotate. */
+.log-line-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.log-line-note {
+  margin-left: 168px;
+  margin-top: 2px;
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  background: var(--sub-2);
+  border-left: 2px solid var(--accent);
+  border-radius: 2px;
+  font-size: 11px;
+  color: var(--text-1);
+  white-space: pre-wrap;
+}
+.log-line-note.log-line-note-editor {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
 }
 .log-line .ts { color: var(--muted-2); font-size: 11px; }
 .log-line .kind {

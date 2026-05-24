@@ -42,63 +42,46 @@ function LogLineRowInner({ line, note, onSaveNote }: Props) {
     setEditing(false);
   };
 
+  // F12: when there's no note affordance to render, return the original
+  // three-column layout untouched so existing callers (and the memo
+  // shape) are unaffected.
+  if (!canNote && !note) {
+    return (
+      <div className={'log-line ' + line.kind}>
+        <span className="ts">{line.ts}</span>
+        <span className="kind">{line.kind}</span>
+        <span className="msg">
+          <LogMsg msg={line.msg} />
+        </span>
+      </div>
+    );
+  }
+
   return (
-    <div className={'log-line ' + line.kind}>
-      <span className="ts">{line.ts}</span>
-      <span className="kind">{line.kind}</span>
-      <span className="msg">
-        <LogMsg msg={line.msg} />
-      </span>
-      {canNote && !editing && (
-        <button
-          className="log-line-note-toggle"
-          onClick={openEditor}
-          title={note ? 'Edit note' : 'Pin a note to this line'}
-          style={{
-            background: 'transparent',
-            border: 0,
-            color: note ? 'var(--accent)' : 'var(--muted-2)',
-            cursor: 'default',
-            padding: '0 4px',
-            opacity: note ? 1 : undefined,
-          }}
-        >
-          <Icon name={note ? 'check' : 'file'} size={10} />
-        </button>
-      )}
+    <div className="log-line-wrap">
+      <div className={'log-line ' + line.kind}>
+        <span className="ts">{line.ts}</span>
+        <span className="kind">{line.kind}</span>
+        <span className="msg">
+          <LogMsg msg={line.msg} />
+        </span>
+        {canNote && !editing && (
+          <button
+            className={
+              'log-line-note-toggle' + (note ? ' has-note' : '')
+            }
+            onClick={openEditor}
+            title={note ? 'Edit note' : 'Pin a note to this line'}
+          >
+            <Icon name={note ? 'check' : 'file'} size={10} />
+          </button>
+        )}
+      </div>
       {note && !editing && (
-        <div
-          style={{
-            marginLeft: 24,
-            marginTop: 2,
-            marginBottom: 2,
-            padding: '4px 8px',
-            background: 'var(--sub-2)',
-            borderLeft: '2px solid var(--accent)',
-            borderRadius: 2,
-            fontSize: 11,
-            color: 'var(--text-1)',
-            whiteSpace: 'pre-wrap',
-          }}
-        >
-          {note}
-        </div>
+        <div className="log-line-note">{note}</div>
       )}
       {editing && (
-        <div
-          style={{
-            marginLeft: 24,
-            marginTop: 2,
-            marginBottom: 2,
-            padding: 4,
-            background: 'var(--sub-2)',
-            borderLeft: '2px solid var(--accent)',
-            borderRadius: 2,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-          }}
-        >
+        <div className="log-line-note log-line-note-editor">
           <textarea
             autoFocus
             value={draft}
@@ -121,8 +104,8 @@ function LogLineRowInner({ line, note, onSaveNote }: Props) {
             }}
             spellCheck={false}
           />
-          <div style={{ display: 'flex', gap: 4 }}>
-            <span className="spacer" style={{ flex: 1 }} />
+          <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+            <span style={{ flex: 1 }} />
             <button
               className="tb-btn"
               style={{ height: 20 }}
