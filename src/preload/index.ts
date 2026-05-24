@@ -428,6 +428,25 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.SpendForecastPlan, rows) as Promise<
       import('../shared/types').PlanCostForecast
     >,
+  listSecrets: (projectId) =>
+    ipcRenderer.invoke(IpcChannels.SecretsList, projectId) as Promise<
+      import('../shared/types').SecretListEntry[]
+    >,
+  setSecret: (projectId, name, value) =>
+    ipcRenderer.invoke(
+      IpcChannels.SecretsSet,
+      projectId,
+      name,
+      value,
+    ) as Promise<{ ok: true } | { ok: false; error: string }>,
+  deleteSecret: (projectId, name) =>
+    ipcRenderer.invoke(IpcChannels.SecretsDelete, projectId, name) as Promise<{
+      ok: true;
+    }>,
+  revealSecret: (projectId, name) =>
+    ipcRenderer.invoke(IpcChannels.SecretsReveal, projectId, name) as Promise<
+      { ok: true; value: string } | { ok: false; error: string }
+    >,
   listHistory: () =>
     ipcRenderer.invoke(IpcChannels.HistoryList) as Promise<
       import('../shared/types').HistoryRow[]

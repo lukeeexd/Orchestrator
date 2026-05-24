@@ -39,11 +39,10 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 - **Impact:** **medium-high** — saves an entire chat redo every time a Director goes sideways.
 - **Deps/risks:** `claude --resume` semantics across truncation are unverified — same family of risk as F4's worktree spike. Codex side is harder (different session model).
 
-**F6. Project-scoped secrets / env vault.**
-- **Problem:** Coder + DevOps agents routinely need `DATABASE_URL`, `STRIPE_KEY`, `GH_TOKEN` etc. Today users either paste them into the task (leaks into agent logs + crash JSON) or pre-populate the shell env (only works when they launched Orchestrator from a configured terminal). The OS-keychain item in PLAN.md is already deferred.
-- **Scope:** **M**. New `projects.secrets` table (encrypted at rest via OS DPAPI on Windows) + an env-injection step in `src/main/cli/spawn.ts`. Renderer adds a "Secrets" tab to `ToolsScreen.tsx`.
-- **Impact:** **high** — unlocks any agent task that touches a non-trivial backend. Also kills the "Director's chat history contains my API key" disclosure risk that exists today.
-- **Deps/risks:** DPAPI is per-user-per-machine; backup/migration story needs to be documented. Agent logs still need a secret-stripping pass (cf. R-A8 in BACKLOG — bodies are queued verbatim into Director context).
+**F6. ~~Project-scoped secrets / env vault.~~ — shipped 2026-05-23.**
+- New `project_secrets` table via migration v24 (composite PK on `project_id, name`); `src/main/secrets.ts` handles list / set / delete / reveal + a main-only `getSecretsForSpawn` helper; `buildEnv` in `agents/internal.ts` layers project secrets onto the spawn env so the agent's shell sees `$DATABASE_URL` / `$GH_TOKEN` / etc. as regular env vars — never appearing in prompt, log, or crash bundle. Project secrets win over inherited `process.env` of the same name.
+- New **Secrets** tab in `ToolsScreen` lets users add / edit / delete entries. List shows metadata only (`name`, length, updated-at) — values cross the IPC boundary one-at-a-time via a `revealSecret` round-trip. Names must match the env-var convention `^[A-Z][A-Z0-9_]{0,62}$`; 8 unit tests cover the regex + assertion path.
+- **Storage decision deliberately plaintext for v1**, matching the existing OAuth-token-in-settings.json precedent. NTFS ACLs already gate other users on the same machine. DPAPI encryption is the natural follow-up if Orchestrator ever ships to multi-user shared hosts.
 
 **F7. Pre-spawn cost forecast on PlanCard.**
 - **Problem:** users approve a 6-agent plan without any sense of whether it'll cost $0.30 or $30. The data needed is already collected per-role + per-model in `getSpendSummary` (`src/main/spend.ts`).

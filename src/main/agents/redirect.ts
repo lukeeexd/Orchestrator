@@ -95,7 +95,7 @@ async function runRedirect(
   const entry = registry.get(agentId);
   if (!entry || !entry.agent.sessionId) return;
   const settings = readSettings();
-  const env = buildEnv(settings);
+  const env = buildEnv(settings, entry.agent.projectId);
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
   // If the redirect comes with a new model/effort, persist it on the

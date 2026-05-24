@@ -13,6 +13,7 @@ import {
 import { Icon } from './Icon';
 import { McpScaffoldWizard } from './McpScaffoldWizard';
 import { SkillsEditor } from './SkillsEditor';
+import { SecretsEditor } from './SecretsEditor';
 
 interface Props {
   project: Project | null;
@@ -87,7 +88,9 @@ export function ToolsScreen({ project, onChange, onMcpChange }: Props) {
     void setRoleAllowList(role, [...ROLES[role].tools]);
   };
 
-  const [tab, setTab] = useState<'tools' | 'prompts' | 'mcp'>('tools');
+  const [tab, setTab] = useState<'tools' | 'prompts' | 'mcp' | 'secrets'>(
+    'tools',
+  );
 
   if (!project) {
     return (
@@ -140,12 +143,21 @@ export function ToolsScreen({ project, onChange, onMcpChange }: Props) {
           >
             mcp
           </button>
+          <button
+            className={tab === 'secrets' ? 'on' : ''}
+            onClick={() => setTab('secrets')}
+            title="Project-scoped secrets injected as env vars into every agent spawn"
+          >
+            secrets
+          </button>
         </div>
         <span className="spacer" />
       </div>
 
       <div className="settings-body">
-        {tab === 'mcp' ? (
+        {tab === 'secrets' ? (
+          <SecretsEditor project={project} />
+        ) : tab === 'mcp' ? (
           <McpEditor project={project} onMcpChange={onMcpChange} />
         ) : tab === 'prompts' ? (
           <section className="settings-section">

@@ -3,6 +3,12 @@ import { IpcChannels } from '../../shared/ipc';
 import { getSpendSummary } from '../spend';
 import { getSpendRecommendations } from '../spendRecommendations';
 import { forecastPlanCost } from '../spendForecast';
+import {
+  listSecrets,
+  setSecret,
+  deleteSecret,
+  readSecretValue,
+} from '../secrets';
 import { listHistory } from '../history';
 import { listSlashCommands } from '../commands';
 import { listSkills, writeSkill } from '../skills';
@@ -58,6 +64,55 @@ export function registerMiscHandlers(): void {
       rows: import('../../shared/types').PlanRow[],
     ): import('../../shared/types').PlanCostForecast =>
       forecastPlanCost(Array.isArray(rows) ? rows : []),
+  );
+
+  // ─────────────────────────── F6: secrets vault ───────────────────────────
+
+  ipcMain.handle(
+    IpcChannels.SecretsList,
+    (
+      _event,
+      projectId: string,
+    ): import('../../shared/types').SecretListEntry[] =>
+      listSecrets(projectId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.SecretsSet,
+    (
+      _event,
+      projectId: string,
+      name: string,
+      value: string,
+    ): { ok: true } | { ok: false; error: string } => {
+      try {
+        setSecret(projectId, name, value);
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.SecretsDelete,
+    (_event, projectId: string, name: string): { ok: true } => {
+      deleteSecret(projectId, name);
+      return { ok: true };
+    },
+  );
+
+  ipcMain.handle(
+    IpcChannels.SecretsReveal,
+    (
+      _event,
+      projectId: string,
+      name: string,
+    ): { ok: true; value: string } | { ok: false; error: string } => {
+      const v = readSecretValue(projectId, name);
+      if (v === null) return { ok: false, error: 'secret not found' };
+      return { ok: true, value: v };
+    },
   );
 
   ipcMain.handle(

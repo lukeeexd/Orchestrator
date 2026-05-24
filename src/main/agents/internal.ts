@@ -9,6 +9,7 @@ import { ROLES } from '../../shared/roles';
 import * as registry from './registry';
 import { effectiveSkill } from '../skills';
 import { getProject } from '../projects';
+import { getSecretsForSpawn } from '../secrets';
 import { awaitCompletion as awaitLockedCompletion } from './agent-lock';
 import { nowTs } from './classifier';
 
@@ -132,6 +133,7 @@ export interface AuthSettings {
 
 export function buildEnv(
   settings: AuthSettings,
+  projectId?: string,
 ): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...process.env };
   if (settings.oauthToken) {
@@ -139,6 +141,20 @@ export function buildEnv(
     delete env.ANTHROPIC_API_KEY;
   } else if (settings.apiKey) {
     env.ANTHROPIC_API_KEY = settings.apiKey;
+  }
+  // F6: layer project secrets on top so the agent's shell sees
+  // DATABASE_URL / GH_TOKEN / etc. as regular env vars. Values are
+  // passed verbatim — shell:false in spawn means no metacharacter
+  // interpolation; the child process gets clean strings.
+  //
+  // Project secrets WIN over inherited process.env vars of the same
+  // name: that lets a user override a globally-set DATABASE_URL with
+  // a per-project one without unsetting the global first.
+  if (projectId) {
+    const secrets = getSecretsForSpawn(projectId);
+    for (const [k, v] of Object.entries(secrets)) {
+      env[k] = v;
+    }
   }
   return env;
 }

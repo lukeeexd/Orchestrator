@@ -99,6 +99,14 @@ export const IpcChannels = {
   SpendRecommendations: 'spend:recommendations',
   /** F7: pre-spawn cost forecast for a plan. Returns ±50% band over per-role medians. */
   SpendForecastPlan: 'spend:forecastPlan',
+  /** F6: list secrets (names + lengths only) for a project. */
+  SecretsList: 'secrets:list',
+  /** F6: insert-or-replace a secret value for a project. */
+  SecretsSet: 'secrets:set',
+  /** F6: delete a single secret. */
+  SecretsDelete: 'secrets:delete',
+  /** F6: read a single secret value (used by the UI's reveal-to-edit affordance). */
+  SecretsReveal: 'secrets:reveal',
   HistoryList: 'history:list',
   CommandsList: 'commands:list',
   SkillsList: 'skills:list',
@@ -963,6 +971,26 @@ export interface OrchestratorApi {
   forecastPlanCost: (
     rows: import('./types').PlanRow[],
   ) => Promise<import('./types').PlanCostForecast>;
+  /** F6: list secrets for a project — metadata only (no values). */
+  listSecrets: (
+    projectId: string,
+  ) => Promise<import('./types').SecretListEntry[]>;
+  /** F6: insert-or-replace a secret. */
+  setSecret: (
+    projectId: string,
+    name: string,
+    value: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** F6: delete a single secret. */
+  deleteSecret: (
+    projectId: string,
+    name: string,
+  ) => Promise<{ ok: true }>;
+  /** F6: read a single secret value (renderer-side "reveal" affordance). */
+  revealSecret: (
+    projectId: string,
+    name: string,
+  ) => Promise<{ ok: true; value: string } | { ok: false; error: string }>;
   listHistory: () => Promise<import('./types').HistoryRow[]>;
   listSlashCommands: (
     projectId: string | null,

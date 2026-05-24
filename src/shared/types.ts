@@ -360,6 +360,18 @@ export interface SpendDayBucket {
   cost: number;
 }
 
+/**
+ * F6: per-project secret metadata returned to the renderer. Values
+ * are deliberately omitted from the bulk-list response so a casual
+ * log of the IPC payload can't leak the vault.
+ */
+export interface SecretListEntry {
+  name: string;
+  updatedAt: number;
+  /** Length of the stored value — lets the UI render `••• (12)` without revealing the bytes. */
+  valueLength: number;
+}
+
 export interface SpendSummary {
   /** Aggregate totals across every agent in every project — lifetime. */
   lifetime: { agentCount: number; tokens: number; cost: number };

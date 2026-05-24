@@ -144,7 +144,7 @@ async function runFork(
   const entry = registry.get(agentId);
   if (!entry) return;
   const settings = readSettings();
-  const env = buildEnv(settings);
+  const env = buildEnv(settings, entry.agent.projectId);
   const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
 
   try {
