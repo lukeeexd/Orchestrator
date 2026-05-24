@@ -49,11 +49,9 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 
 ### Theme — Observability / telemetry
 
-**F8. Run timeline / Gantt visualisation.**
-- **Problem:** sequential chains hide their own gaps. When a user notices a 3× wall-clock blow-up across 5 agents, there's no easy way to see whether agent 2 actually took 15 minutes or whether 14 of those minutes were waiting for a child process to time out.
-- **Scope:** **M**. Renderer-only against existing `Agent.startedAt` + `elapsed` + (new) `endedAt`. Slot under `HistoryScreen.tsx` as a third view-mode toggle ("list / chart / timeline").
-- **Impact:** **medium** — directly feeds Spend optimiser rules (P3) with much richer signal.
-- **Deps/risks:** need to backfill `endedAt` from existing `agents` rows; migration is forward-only (per `R-L6`).
+**F8. ~~Run timeline / Gantt visualisation.~~ — shipped 2026-05-24.**
+- HistoryScreen gains a `list / timeline` toggle in its pane head; the timeline view renders the filtered rows as a Gantt chart with proportional bars over wall-clock time (label column + time-axis ticks + colour-by-status). Sequential chains show their gaps visibly; running agents extend to "now" with a dashed border.
+- New `ended_at INTEGER` column via migration v25 + best-effort backfill from `started_at + parse(elapsed)` for existing rows. `registry.patch` auto-stamps `endedAt = Date.now()` on every transition to a terminal status (`done` / `error` / `paused`) so callers don't have to remember. Three pre-existing crash patches in `spawn.ts` / `fork.ts` / `redirect.ts` were also routed through `registry.patch` (they were only notifying the renderer, leaving the DB row in `running` — fixed in the same pass).
 
 **F9. Crash → shareable bundle.**
 - **Problem:** today the user has to open `userData/crashes/`, find the right JSON, copy it, scrub anything sensitive, and attach to a bug report. Friction kills crash submissions.
@@ -72,11 +70,10 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 - **Impact:** **medium-high** — turns Orchestrator from a private tool into a defensible artefact for postmortems / PR descriptions / external review.
 - **Deps/risks:** same scrubber question as F9. Composes with F12.
 
-**F12. Comments / sticky notes pinned on log lines.**
-- **Problem:** reviewers reading a long agent log can't annotate it inline. They either copy/paste into a separate doc or take screenshots.
-- **Scope:** **S/M**. New `log_notes` table keyed on `(agentId, logLineIndex)`. Renderer adds a hover-trigger margin icon on each row of `AgentStreamPanel.tsx`.
-- **Impact:** **medium** — multiplied by F11 (notes travel with the exported bundle).
-- **Deps/risks:** keyed on log-line index is fragile if logs are ever back-edited; key on `ts + kind + msg-hash` instead.
+**F12. ~~Comments / sticky notes pinned on log lines.~~ — shipped 2026-05-24.**
+- New `log_notes` table via migration v26, composite PK on `(agent_id, line_key)`. `line_key` is the FNV-1a-32 hex of `ts + kind + msg-serialised` (with tool-call args sorted) — pure JS in `src/shared/logNotes.ts` so the renderer can compute keys without crossing the IPC boundary. The hash beats indexing by `seq` because it survives any future log replay / reorder, and a back-edit of a log line (which doesn't currently happen) would orphan its note rather than mis-attribute.
+- Notes are authored from the Drawer's Logs tab — a hover affordance on each line opens an inline textarea with Ctrl-Enter save / Esc cancel / "save empty = delete." `useLogNotes(agentId)` does an optimistic in-memory update before the IPC round-trip so saves feel instant; failures roll back via a re-fetch. AgentRow's rail expansion deliberately doesn't get the affordance — the Drawer is the deeper-read surface where annotation belongs.
+- `deleteNotesForAgent` is called from the agent-remove path so the table doesn't accumulate orphans. 7 unit tests cover the line-key hash (determinism, ts/kind/msg sensitivity, arg-order invariance for tool calls).
 
 ### Theme — Platform / monetisation
 

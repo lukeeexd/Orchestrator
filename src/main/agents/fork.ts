@@ -127,7 +127,14 @@ async function forkAgentLocked(
       kind: 'error',
       msg: `fork crashed: ${msg}`,
     });
-    sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
+    // F8 + persistence fix: route through registry.patch so DB + the
+    // in-memory agent catch the terminal state and pick up endedAt.
+    const patch: Partial<import('../../shared/types').Agent> = {
+      status: 'error',
+      statusLabel: 'Crashed',
+    };
+    registry.patch(id, patch);
+    sinks.onPatch(id, patch);
   });
 
   return { ok: true, agentId: id };

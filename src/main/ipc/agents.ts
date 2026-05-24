@@ -18,6 +18,7 @@ import {
   spawnAgent,
 } from '../agents/runner';
 import { deleteAgent } from '../persistence';
+import { deleteNotesForAgent } from '../logNotes';
 import { assertWorkspaceMatchesProject } from '../security/workspace';
 import type { IpcContext } from './_shared';
 import { validated } from './_shared';
@@ -125,6 +126,10 @@ export function registerAgentsHandlers(ctx: IpcContext): AgentSinks {
       const ok = registry.remove(id);
       if (ok) {
         deleteAgent(id);
+        // F12: drop any pinned notes alongside the agent so the
+        // log_notes table doesn't accumulate orphan rows after
+        // long-running cleanup cycles.
+        deleteNotesForAgent(id);
         ctx.broadcast(IpcChannels.AgentEventRemove, { projectId, agentId: id });
       }
       return { ok };

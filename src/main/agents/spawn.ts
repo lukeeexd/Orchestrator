@@ -113,7 +113,17 @@ export async function spawnAgent(
   work.catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
     sinks.onLog(id, { ts: nowTs(), kind: 'error', msg: `runner crashed: ${msg}` });
-    sinks.onPatch(id, { status: 'error', statusLabel: 'Crashed' });
+    // F8 + persistence fix: route through registry.patch so the
+    // in-memory agent + DB row catch the terminal state (previously
+    // only the renderer was notified — a hydrate-from-disk would
+    // resurrect the row as 'running'). registry.patch mutates the
+    // patch object to stamp endedAt before we hand it to sinks.
+    const patch: Partial<import('../../shared/types').Agent> = {
+      status: 'error',
+      statusLabel: 'Crashed',
+    };
+    registry.patch(id, patch);
+    sinks.onPatch(id, patch);
   });
 
   return { agentId: id };

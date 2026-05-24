@@ -3,6 +3,7 @@ import { IpcChannels } from '../../shared/ipc';
 import { getSpendSummary } from '../spend';
 import { getSpendRecommendations } from '../spendRecommendations';
 import { forecastPlanCost } from '../spendForecast';
+import { listNotes as listLogNotes, setNote as setLogNote } from '../logNotes';
 import {
   listSecrets,
   setSecret,
@@ -64,6 +65,33 @@ export function registerMiscHandlers(): void {
       rows: import('../../shared/types').PlanRow[],
     ): import('../../shared/types').PlanCostForecast =>
       forecastPlanCost(Array.isArray(rows) ? rows : []),
+  );
+
+  // ─────────────────────────── F12: log notes ───────────────────────────
+
+  ipcMain.handle(
+    IpcChannels.LogNotesList,
+    (
+      _event,
+      agentId: string,
+    ): import('../../shared/types').LogNote[] => listLogNotes(agentId),
+  );
+
+  ipcMain.handle(
+    IpcChannels.LogNotesSet,
+    (
+      _event,
+      agentId: string,
+      lineKey: string,
+      body: string,
+    ): { ok: true } | { ok: false; error: string } => {
+      try {
+        setLogNote(agentId, lineKey, body);
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
   );
 
   // ─────────────────────────── F6: secrets vault ───────────────────────────

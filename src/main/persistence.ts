@@ -262,8 +262,8 @@ export function saveAgent(a: Agent): void {
        tokens, cost, elapsed, model, workspace,
        budget_usd, budget_tokens, budget_seconds,
        spawned_by, started_at, session_id, project_id, effort,
-       forked_from_id, forked_from_name, model_usage, provider, subtype)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       forked_from_id, forked_from_name, model_usage, provider, subtype, ended_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     a.id,
@@ -293,6 +293,7 @@ export function saveAgent(a: Agent): void {
     a.modelUsage ? JSON.stringify(a.modelUsage) : null,
     a.provider ?? null,
     a.subtype ?? null,
+    a.endedAt ?? null,
   ]);
   stmt.free();
   scheduleSave();
@@ -314,6 +315,12 @@ export function patchAgent(id: string, patch: Partial<Agent>): void {
   if (patch.modelUsage !== undefined) {
     sets.push('model_usage = ?');
     values.push(JSON.stringify(patch.modelUsage));
+  }
+  if (patch.endedAt !== undefined) {
+    sets.push('ended_at = ?');
+    // null clears the column (e.g. redirect flips back to running);
+    // a number stamps the terminal moment.
+    values.push(patch.endedAt === null ? (null as unknown as number) : patch.endedAt);
   }
   if (sets.length === 0) return;
   values.push(id);
@@ -345,7 +352,7 @@ export function loadAgents(): Agent[] {
     SELECT id, ordering, role, role_label, name, status, status_label, step, task,
            tokens, cost, elapsed, model, workspace,
            budget_usd, budget_tokens, budget_seconds, spawned_by, started_at, session_id, project_id, effort,
-           forked_from_id, forked_from_name, model_usage, provider, subtype
+           forked_from_id, forked_from_name, model_usage, provider, subtype, ended_at
     FROM agents ORDER BY ordering ASC
   `);
   if (res.length === 0) return [];
@@ -358,6 +365,7 @@ export function loadAgents(): Agent[] {
     const modelUsageRaw = row[24];
     const providerRaw = row[25];
     const subtypeRaw = row[26];
+    const endedAtRaw = row[27];
     out.push({
       id: asStr(row[0]),
       projectId: asStr(row[20]),
@@ -399,6 +407,7 @@ export function loadAgents(): Agent[] {
           ? providerRaw
           : undefined,
       subtype: subtypeRaw === 'playwright' ? 'playwright' : undefined,
+      endedAt: typeof endedAtRaw === 'number' ? endedAtRaw : undefined,
     });
     agentOrdering = Math.max(agentOrdering, asInt(row[1]));
   }

@@ -148,6 +148,15 @@ export interface Agent {
   spawnedBy: AgentSpawnedBy;
   log: LogLine[];
   startedAt: number;
+  /**
+   * F8: wall-clock end time. Set on every transition to a terminal
+   * status (done / error / paused); cleared when the agent is
+   * redirected back to running. Older rows are backfilled in
+   * migration v25 from `started_at + parse(elapsed)` on a best-
+   * effort basis. Undefined means "still running" (or "in-progress
+   * across an app restart").
+   */
+  endedAt?: number;
   /** SDK session id, captured from the stream. Enables Redirect via `options.resume`. */
   sessionId?: string;
   /** Set when this agent was forked off another. Stored for UX attribution. */
@@ -345,6 +354,8 @@ export interface HistoryRow {
   tokens: number;
   cost: number;
   startedAt: number;
+  /** F8: see Agent.endedAt. Null for still-running rows. */
+  endedAt: number | null;
   elapsed: string;
   projectId: string;
   projectName: string;
@@ -358,6 +369,19 @@ export interface SpendDayBucket {
   agentCount: number;
   tokens: number;
   cost: number;
+}
+
+/**
+ * F12: per-log-line note. The renderer fetches the full list for an
+ * agent on select and indexes by `lineKey` for O(1) lookup during
+ * the log-line render pass. lineKey is the FNV-1a hex of
+ * (ts + kind + msg) — see `src/shared/logNotes.ts`.
+ */
+export interface LogNote {
+  lineKey: string;
+  body: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /**

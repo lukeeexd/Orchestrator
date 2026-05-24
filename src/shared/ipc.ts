@@ -99,6 +99,10 @@ export const IpcChannels = {
   SpendRecommendations: 'spend:recommendations',
   /** F7: pre-spawn cost forecast for a plan. Returns ±50% band over per-role medians. */
   SpendForecastPlan: 'spend:forecastPlan',
+  /** F12: list every note pinned to lines in an agent's log. */
+  LogNotesList: 'logNotes:list',
+  /** F12: insert / update / delete a single note (empty body deletes). */
+  LogNotesSet: 'logNotes:set',
   /** F6: list secrets (names + lengths only) for a project. */
   SecretsList: 'secrets:list',
   /** F6: insert-or-replace a secret value for a project. */
@@ -971,6 +975,16 @@ export interface OrchestratorApi {
   forecastPlanCost: (
     rows: import('./types').PlanRow[],
   ) => Promise<import('./types').PlanCostForecast>;
+  /** F12: list every note pinned to lines in an agent's log. */
+  listLogNotes: (
+    agentId: string,
+  ) => Promise<import('./types').LogNote[]>;
+  /** F12: set or delete a note (empty body deletes). */
+  setLogNote: (
+    agentId: string,
+    lineKey: string,
+    body: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** F6: list secrets for a project — metadata only (no values). */
   listSecrets: (
     projectId: string,
