@@ -15,6 +15,8 @@ export type BuiltinAction =
   | 'go-settings'
   | 'go-tools'
   | 'go-templates'
+  | 'go-marketplace'
+  | 'go-docs'
   | 'show-help';
 
 export interface BuiltinCommand extends SlashCommand {
@@ -85,6 +87,20 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
     body: '',
     scope: 'builtin',
     action: 'go-templates',
+  },
+  {
+    name: 'marketplace',
+    description: 'Switch to the skill Marketplace.',
+    body: '',
+    scope: 'builtin',
+    action: 'go-marketplace',
+  },
+  {
+    name: 'docs',
+    description: 'Switch to the Docs viewer.',
+    body: '',
+    scope: 'builtin',
+    action: 'go-docs',
   },
   {
     name: 'help',

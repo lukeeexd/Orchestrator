@@ -78,6 +78,32 @@ export function modelMatchesProvider(id: string, provider: Provider): boolean {
   return modelProvider(id) === provider && id !== DEFAULT_CODEX_MODEL;
 }
 
+/**
+ * F10: per-model context-window size in tokens, for the live
+ * context-meter chip on AgentRow. Claude defaults to 200k unless the
+ * 1M beta is enabled. Models not listed return null from
+ * `modelContextTokens` — the chip falls back to "—" rather than
+ * faking a number.
+ */
+export const MODEL_CONTEXT_TOKENS: Record<string, number> = {
+  'claude-opus-4-7': 200_000,
+  'claude-opus-4-7-1m': 1_000_000,
+  'claude-sonnet-4-6': 200_000,
+  'claude-haiku-4-5-20251001': 200_000,
+  // Codex / GPT — best estimate; ChatGPT-plan doesn't expose the
+  // effective context per turn, so this is an upper bound and the
+  // chip may underestimate utilisation. Better than nothing.
+  'gpt-5-codex': 200_000,
+};
+
+/**
+ * Look up a model's context size. Returns null on unknown ids so the
+ * caller can hide / dash-out the chip instead of guessing.
+ */
+export function modelContextTokens(id: string): number | null {
+  return MODEL_CONTEXT_TOKENS[id] ?? null;
+}
+
 /** Beta header that unlocks the 1M token context window. */
 const BETA_CONTEXT_1M = 'context-1m-2025-08-07';
 

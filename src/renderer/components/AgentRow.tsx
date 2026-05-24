@@ -1,5 +1,6 @@
 import type { Agent, LogLine } from '../../shared/types';
 import { ROLE_TINT } from '../../shared/roles';
+import { modelContextTokens } from '../../shared/models';
 import { Icon } from './Icon';
 import { LogLineRow } from './LogLineRow';
 
@@ -95,6 +96,10 @@ export function AgentRow({
           <span className="label">tokens</span>
           <span className="val">{(agent.tokens / 1000).toFixed(1)}k</span>
         </span>
+        <ContextMeterChip
+          tokens={agent.tokens}
+          model={agent.model}
+        />
         <span className="metric">
           <span className="label">cost</span>
           <span className="val">${agent.cost.toFixed(2)}</span>
@@ -158,5 +163,67 @@ export function AgentRow({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * F10: live context-window meter chip. Renders the agent's
+ * cumulative tokens as a percentage of the model's known context
+ * cap, colour-coded so users see runaway agents approaching the
+ * limit before "Context limit reached" lands. Falls back to "—"
+ * when the model id isn't in the MODEL_CONTEXT_TOKENS table (codex
+ * doesn't always expose context usage cleanly; better to show
+ * unknown than to fake a number).
+ *
+ * Note: `agent.tokens` accumulates input + output across every
+ * turn of the session, while the context window is the per-turn
+ * payload size. They're not the same number — but cumulative
+ * tokens is the closest proxy we have today, and it tracks the
+ * same "are we approaching the cap" curve. A future refactor
+ * could record per-turn input tokens specifically; for now the
+ * chip is an upper-bound signal.
+ */
+function ContextMeterChip({
+  tokens,
+  model,
+}: {
+  tokens: number;
+  model: string;
+}) {
+  const cap = modelContextTokens(model);
+  if (cap === null || cap <= 0) {
+    return (
+      <span
+        className="metric"
+        title={`Unknown context window for model ${model || '(none)'}`}
+      >
+        <span className="label">ctx</span>
+        <span className="val">—</span>
+      </span>
+    );
+  }
+  const pct = Math.min(100, Math.round((tokens / cap) * 100));
+  const colour =
+    pct >= 80
+      ? 'var(--error)'
+      : pct >= 50
+        ? 'var(--waiting)'
+        : 'var(--text-2)';
+  return (
+    <span
+      className="metric"
+      title={
+        `Cumulative tokens vs ${model}'s context window.\n` +
+        `${tokens.toLocaleString()} / ${cap.toLocaleString()} tokens (${pct}%).` +
+        `\nCumulative is input + output across every turn; the per-turn ` +
+        `payload is what actually counts against the cap, so this is an ` +
+        `upper bound on utilisation.`
+      }
+    >
+      <span className="label">ctx</span>
+      <span className="val" style={{ color: colour }}>
+        {pct}%
+      </span>
+    </span>
   );
 }

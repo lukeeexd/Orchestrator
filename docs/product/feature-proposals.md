@@ -10,11 +10,8 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 
 ### Theme — UX polish
 
-**F1. Director command palette (Ctrl/⌘-K).**
-- **Problem:** the rail nav + slash commands work but discoverability is poor. Users hunt for actions like "open spend", "wipe Director", "switch project", "use template", "open crashes folder".
-- **Scope:** **S**. Mostly renderer. Reuse the existing `BuiltinAction` enum in `src/shared/builtinCommands.ts` and the `onSlashAction` switch already wired in `src/renderer/App.tsx:570`.
-- **Impact:** **medium** — speeds up daily flow for the only-user but doesn't unlock anything new.
-- **Deps/risks:** none material; just an overlay component + keymap. Risk = stealing Ctrl-K from a textarea — already handled in `App.tsx:478` via the `typing` guard.
+**F1. ~~Director command palette (Ctrl/⌘-K).~~ — shipped 2026-05-23.**
+- New `CommandPalette.tsx` overlay mounted in App. Ctrl/⌘-K toggles open; Up/Down navigate; Enter runs; Esc closes. Fires even while typing in the composer (palette is the global navigation surface). Action source is the existing `BUILTIN_COMMANDS` list; the slash-menu switch was extracted into a shared `runBuiltinAction` callback so the palette and the slash menu invoke the same code path. Added `go-marketplace` and `go-docs` to the action enum so the palette covers every rail item.
 
 **F2. Inline plan diff / "what changed" between two Director plans.**
 - **Problem:** when the Director re-plans (user edits the prompt, asks for revisions), the new PlanCard replaces the old one — there's no visible diff of which rows were added, removed, or had their tasks rewritten. Reviewers approve plans blind.
@@ -64,11 +61,8 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 - **Impact:** **medium** — small effort, helps every future bug.
 - **Deps/risks:** scrubber must not be lossy enough to obscure the actual crash; risk of false-positive redaction in stack traces.
 
-**F10. Live context-window meter chip per agent.**
-- **Problem:** the design handoff (`docs/design/README.md:96`) specifies a Context tab with a stacked horizontal bar, but the always-visible state is just tokens/cost. Agents that quietly approach the model's context cap go from fine → "Context limit reached" with no warning.
-- **Scope:** **S**. KPI chip on `AgentRow.tsx` reading the existing `tokens` field against the agent's known model context size (table in `src/shared/models.ts`).
-- **Impact:** **medium** — small, but high-perceived-quality.
-- **Deps/risks:** Codex doesn't always expose context usage as cleanly; show "—" on missing data rather than fake it.
+**F10. ~~Live context-window meter chip per agent.~~ — shipped 2026-05-23.**
+- New `ctx` KPI chip on AgentRow shows the agent's cumulative tokens as a percentage of the model's known context cap. Colours: <50% muted, 50-80% amber, ≥80% red. Tooltip explains that cumulative is an upper-bound proxy (the per-turn payload is what actually counts against the cap; a future refactor could record per-turn input tokens specifically). Unknown models (or codex agents whose CLI doesn't expose usage) show `—` rather than faking a number. Context sizes live in a new `MODEL_CONTEXT_TOKENS` table in `src/shared/models.ts`.
 
 ### Theme — Collaboration / handoff
 
