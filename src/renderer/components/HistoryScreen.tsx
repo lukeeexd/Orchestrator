@@ -354,12 +354,15 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
           </h3>
           {rows && rows.length === 0 ? (
             <div className="inline-empty">
-              No agents have been spawned yet. Once you do, every run shows
-              up here.
+              {viewMode === 'timeline'
+                ? 'No runs to plot yet. Spawn an agent and it will appear as a bar on the timeline.'
+                : 'No agents have been spawned yet. Once you do, every run shows up here.'}
             </div>
           ) : filtered.length === 0 ? (
             <div className="inline-empty">
-              No agents match the current filters.
+              {viewMode === 'timeline'
+                ? 'No runs match the current filters — nothing to plot.'
+                : 'No agents match the current filters.'}
             </div>
           ) : viewMode === 'timeline' ? (
             <HistoryTimeline rows={filtered} onOpenAgent={onOpenAgent} />
