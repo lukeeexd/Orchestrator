@@ -4,6 +4,7 @@ import { getSpendSummary } from '../spend';
 import { getSpendRecommendations } from '../spendRecommendations';
 import { forecastPlanCost } from '../spendForecast';
 import { listNotes as listLogNotes, setNote as setLogNote } from '../logNotes';
+import { exportRunBundle } from '../runBundle';
 import {
   listSecrets,
   setSecret,
@@ -91,6 +92,36 @@ export function registerMiscHandlers(): void {
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
+    },
+  );
+
+  // ─────────────────────────── F11: run-bundle export ───────────────────────────
+
+  ipcMain.handle(
+    IpcChannels.RunsExportBundle,
+    async (
+      _event,
+      agentIds: string[],
+      opts: { scrubSecrets: boolean } | null | undefined,
+    ): Promise<
+      { ok: true; path: string } | { ok: false; error: string }
+    > => {
+      // F11: build the .orun zip on disk, then reveal it in Explorer
+      // so the user can grab it without hunting through userData.
+      // Reveal failure isn't fatal — the path is returned regardless.
+      const safeOpts = {
+        scrubSecrets: opts?.scrubSecrets !== false,
+      };
+      const result = exportRunBundle(agentIds, safeOpts);
+      if (result.ok && result.path) {
+        try {
+          shell.showItemInFolder(result.path);
+        } catch {
+          // best-effort
+        }
+        return { ok: true, path: result.path };
+      }
+      return { ok: false, error: result.error ?? 'export failed' };
     },
   );
 

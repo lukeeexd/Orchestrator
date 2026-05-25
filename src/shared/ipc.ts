@@ -103,6 +103,8 @@ export const IpcChannels = {
   LogNotesList: 'logNotes:list',
   /** F12: insert / update / delete a single note (empty body deletes). */
   LogNotesSet: 'logNotes:set',
+  /** F11: export one or more agent runs as a portable .orun zip. */
+  RunsExportBundle: 'runs:exportBundle',
   /** F6: list secrets (names + lengths only) for a project. */
   SecretsList: 'secrets:list',
   /** F6: insert-or-replace a secret value for a project. */
@@ -985,6 +987,13 @@ export interface OrchestratorApi {
     lineKey: string,
     body: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** F11: export one or more agent runs (same project) as a .orun zip. */
+  exportRunBundle: (
+    agentIds: string[],
+    opts: { scrubSecrets: boolean },
+  ) => Promise<
+    { ok: true; path: string } | { ok: false; error: string }
+  >;
   /** F6: list secrets for a project — metadata only (no values). */
   listSecrets: (
     projectId: string,

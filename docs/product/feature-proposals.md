@@ -64,11 +64,10 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 
 ### Theme — Collaboration / handoff
 
-**F11. Run-bundle export (portable `.orun`).**
-- **Problem:** Orchestrator is single-user. There's no way to share "here's exactly what this fleet did" with a collaborator short of screenshots. Handoff payloads (`src/main/agents/handoffPayload.ts`) already have `files_touched`, `tests_run`, `errors`, `summary` — the data is there.
-- **Scope:** **M**. New IPC `exportRun(agentIds[])` that bundles: agent rows + log lines + handoff payloads + Director messages tied to those agents + a manifest. Importer is a stretch goal — viewer-only is the v1.
-- **Impact:** **medium-high** — turns Orchestrator from a private tool into a defensible artefact for postmortems / PR descriptions / external review.
-- **Deps/risks:** same scrubber question as F9. Composes with F12.
+**F11. ~~Run-bundle export (portable `.orun`).~~ — shipped 2026-05-25.**
+- New `RunsExportBundle` IPC + `src/main/runBundle.ts` slices the A1 events table for the requested agents + UNIONs the project's `director.*` events, fetches the projection-table state for each agent, fetches the project's Director messages, and writes the lot to a `.orun` zip under `userData/exports/`. Bundle contents: `manifest.json` (versions, agent count, scrub flag) + `events.json` (the full event slice) + `agents.json` (final projection state with model_usage) + `director-messages.json` + `logs/<agentId>.log` per agent.
+- UI affordance: per-row paperclip icon in HistoryScreen alongside the template / changelog / recap buttons; pane head has a "scrub on export" toggle (default on) + an inline "Export failed" notice when it errors. Single-row export is v1; the underlying IPC already accepts an array so multi-select is a follow-up.
+- Reuses F9's secret-scrubber — extracted to `src/main/secretScrubber.ts` so both surfaces share one pattern set. The A7 re-cost the architect flagged (heuristic handoff-payload as public contract) **is moot now**: A1 Lite gave us real persisted events to slice, so no heuristic is involved.
 
 **F12. ~~Comments / sticky notes pinned on log lines.~~ — shipped 2026-05-24.**
 - New `log_notes` table via migration v26, composite PK on `(agent_id, line_key)`. `line_key` is the FNV-1a-32 hex of `ts + kind + msg-serialised` (with tool-call args sorted) — pure JS in `src/shared/logNotes.ts` so the renderer can compute keys without crossing the IPC boundary. The hash beats indexing by `seq` because it survives any future log replay / reorder, and a back-edit of a log line (which doesn't currently happen) would orphan its note rather than mis-attribute.

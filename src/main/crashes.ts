@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import AdmZip from 'adm-zip';
 import { getDb, isDbOpen } from './db';
+import { scrubSecrets } from './secretScrubber';
 
 /**
  * S5: local-only crash capture. No network upload, no external service,
@@ -530,42 +531,7 @@ function tryJsonParse(v: unknown): unknown {
   }
 }
 
-/**
- * Mask common secret shapes inside a free-form string. Patterns are
- * deliberately broad: better a false-positive redaction in a stack
- * trace than a leaked token in a public bug report.
- */
-const SECRET_PATTERNS: ReadonlyArray<{
-  re: RegExp;
-  label: string;
-}> = [
-  { re: /sk-ant-[A-Za-z0-9_-]{20,}/g, label: 'anthropic' },
-  { re: /sk-[A-Za-z0-9]{32,}/g, label: 'api-key' },
-  { re: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b/g, label: 'github' },
-  { re: /\bAKIA[0-9A-Z]{16}\b/g, label: 'aws-key' },
-  { re: /\bxox[abpr]-[A-Za-z0-9-]{10,}\b/g, label: 'slack' },
-  {
-    re: /\bbearer\s+eyJ[A-Za-z0-9_=-]+\.[A-Za-z0-9_=-]+\.[A-Za-z0-9_.+/=-]*/gi,
-    label: 'jwt',
-  },
-  // Env-style assignment: VAR_NAME=long-base64-ish value (matches
-  // OAUTH_TOKEN, ANTHROPIC_API_KEY, GITHUB_TOKEN, etc.)
-  {
-    re: /\b([A-Z][A-Z0-9_]{4,})\s*[:=]\s*["']?([A-Za-z0-9_.+/=-]{24,})["']?/g,
-    label: 'env',
-  },
-];
-
-function scrubSecrets(s: string): string {
-  let out = s;
-  for (const { re, label } of SECRET_PATTERNS) {
-    out = out.replace(re, (match, name) => {
-      if (label === 'env' && typeof name === 'string') {
-        return `${name}=[REDACTED:${label}]`;
-      }
-      return `[REDACTED:${label}]`;
-    });
-  }
-  return out;
-}
+// F9's secret-scrubber pass lives in `./secretScrubber` so F11
+// run-bundle export shares the same patterns; adding a new
+// pattern lights up in both surfaces.
 

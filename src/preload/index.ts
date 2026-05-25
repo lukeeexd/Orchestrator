@@ -439,6 +439,14 @@ const api: OrchestratorApi = {
       lineKey,
       body,
     ) as Promise<{ ok: true } | { ok: false; error: string }>,
+  exportRunBundle: (agentIds, opts) =>
+    ipcRenderer.invoke(
+      IpcChannels.RunsExportBundle,
+      agentIds,
+      opts,
+    ) as Promise<
+      { ok: true; path: string } | { ok: false; error: string }
+    >,
   listSecrets: (projectId) =>
     ipcRenderer.invoke(IpcChannels.SecretsList, projectId) as Promise<
       import('../shared/types').SecretListEntry[]
