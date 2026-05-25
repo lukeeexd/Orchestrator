@@ -34,6 +34,8 @@ export const IpcChannels = {
   DirectorAckRedirect: 'director:ackRedirect',
   DirectorAbort: 'director:abort',
   DirectorWipe: 'director:wipe',
+  /** F5: rewind the Director conversation to a chosen anchor message. */
+  DirectorRewind: 'director:rewind',
   ProjectList: 'project:list',
   ProjectCreate: 'project:create',
   ProjectSetActive: 'project:setActive',
@@ -610,6 +612,17 @@ export interface OrchestratorApi {
   ackDirectorRedirect: (req: DirectorAckRedirectRequest) => Promise<{ ok: true }>;
   abortDirector: (projectId: string) => Promise<{ ok: true }>;
   wipeDirector: (projectId: string) => Promise<{ ok: true }>;
+  /**
+   * F5: truncate the Director chat to (and including) the given
+   * message. Returns the count of messages dropped. Caller should
+   * re-fetch via `listDirectorMessages` afterward.
+   */
+  rewindDirector: (
+    projectId: string,
+    messageId: string,
+  ) => Promise<
+    { ok: true; truncatedCount: number } | { ok: false; error: string }
+  >;
   // Projects
   listProjects: () => Promise<Project[]>;
   createProject: (

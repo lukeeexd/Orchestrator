@@ -24,6 +24,7 @@ describe('EventKinds enum', () => {
     expect(EventKinds.DirectorMessagePatch).toBe('director.message_patch');
     expect(EventKinds.DirectorPlanAccepted).toBe('director.plan_accepted');
     expect(EventKinds.DirectorWipe).toBe('director.wipe');
+    expect(EventKinds.DirectorRewind).toBe('director.rewind');
     expect(EventKinds.NoteSet).toBe('note.set');
     expect(EventKinds.NoteDelete).toBe('note.delete');
   });

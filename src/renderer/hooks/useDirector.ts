@@ -9,6 +9,13 @@ interface UseDirectorResult {
     attachments?: string[],
   ) => Promise<void>;
   busy: boolean;
+  /**
+   * F5: re-fetch the message list from main. Used by the rewind
+   * affordance after a successful `rewindDirector` IPC — avoids
+   * the empty-state flash that a wipe-and-stream-back approach
+   * would cause.
+   */
+  refresh: () => Promise<void>;
 }
 
 export function useDirector(projectId: string | null): UseDirectorResult {
@@ -66,6 +73,16 @@ export function useDirector(projectId: string | null): UseDirectorResult {
     };
   }, [projectId]);
 
+  const refresh = useCallback(async () => {
+    if (!projectId) {
+      setMessages([]);
+      return;
+    }
+    const next = await window.api.listDirectorMessages(projectId);
+    setMessages(next);
+    setBusy(false);
+  }, [projectId]);
+
   const send = useCallback(
     async (body: string, mode: DirectorMode, attachments?: string[]) => {
       if (!projectId) return;
@@ -76,5 +93,5 @@ export function useDirector(projectId: string | null): UseDirectorResult {
     [projectId],
   );
 
-  return { messages, send, busy };
+  return { messages, send, busy, refresh };
 }

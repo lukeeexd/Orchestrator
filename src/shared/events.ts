@@ -30,6 +30,8 @@ export const EventKinds = {
   DirectorMessagePatch: 'director.message_patch',
   DirectorPlanAccepted: 'director.plan_accepted',
   DirectorWipe: 'director.wipe',
+  /** F5: user rewound the Director conversation to a specific message. */
+  DirectorRewind: 'director.rewind',
 
   // Notes
   NoteSet: 'note.set',

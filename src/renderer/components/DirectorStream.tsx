@@ -24,6 +24,8 @@ interface Props {
   mode: DirectorMode;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
+  /** F5: caller handles confirmation + refresh. Per-message affordance. */
+  onRewindTo: (messageId: string) => Promise<void>;
 }
 
 export function DirectorStream({
@@ -31,6 +33,7 @@ export function DirectorStream({
   mode,
   onSpawnPlan,
   onSaveAsTemplate,
+  onRewindTo,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [stickToBottom, setStickToBottom] = useState(true);
@@ -66,6 +69,8 @@ export function DirectorStream({
               ? findPrevPlanRows(messages, idx)
               : undefined
           }
+          onRewindTo={onRewindTo}
+          isLastMessage={idx === messages.length - 1}
         />
       ))}
       {messages.length === 0 && (
@@ -86,13 +91,19 @@ function StreamEntry({
   onSpawnPlan,
   onSaveAsTemplate,
   prevPlanRows,
+  onRewindTo,
+  isLastMessage,
 }: {
   message: DirectorMessage;
   mode: DirectorMode;
   onSpawnPlan: (rows: PlanRow[]) => Promise<void>;
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
   prevPlanRows?: PlanRow[];
+  onRewindTo: (messageId: string) => Promise<void>;
+  isLastMessage: boolean;
 }) {
+  // F5: same skip-conditions as the chat-view Message component.
+  const canRewind = !message.live && !isLastMessage;
   // Pick a glyph + className per author. Mirrors the Claude Code CLI's
   // ●/⏺/⎿ vocabulary — keeps reads quick: ● is "actor talking", ⎿ is
   // "system narration", >  is "user input".
@@ -114,6 +125,15 @@ function StreamEntry({
         <span className="who">{message.name}</span>
         <span className="dim">·</span>
         <span className="dim ts">{message.time}</span>
+        {canRewind && (
+          <button
+            className="dir-msg-rewind"
+            onClick={() => void onRewindTo(message.id)}
+            title="Rewind the Director chat here — every message after this point is wiped and the next turn starts a fresh session"
+          >
+            <Icon name="redirect" size={10} /> rewind
+          </button>
+        )}
         {message.live && <span className="dim live-dot">streaming…</span>}
       </div>
       {message.attachments && message.attachments.length > 0 && (

@@ -64,6 +64,12 @@ interface Props {
   /** Open the Save-as-template dialog with the currently-edited rows. */
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
   onWipe: () => Promise<void>;
+  /**
+   * F5: rewind the Director chat to the message with the given id.
+   * Caller handles confirmation + refresh. Rendered as a per-message
+   * hover affordance on the chat / stream views.
+   */
+  onRewindTo: (messageId: string) => Promise<void>;
   viewMode: ViewMode;
   /** Project id used to scope which `.claude/commands/` directory to load from. */
   projectId: string | null;
@@ -96,6 +102,7 @@ export function DirectorPane({
   onSpawnPlan,
   onSaveAsTemplate,
   onWipe,
+  onRewindTo,
   viewMode,
   projectId,
   onSlashAction,
@@ -168,6 +175,7 @@ export function DirectorPane({
           mode={mode}
           onSpawnPlan={onSpawnPlan}
           onSaveAsTemplate={onSaveAsTemplate}
+          onRewindTo={onRewindTo}
         />
       ) : messages.length === 0 ? (
         <EmptyChat mode={mode} />
@@ -177,6 +185,7 @@ export function DirectorPane({
           mode={mode}
           onSpawnPlan={onSpawnPlan}
           onSaveAsTemplate={onSaveAsTemplate}
+          onRewindTo={onRewindTo}
         />
       )}
 
@@ -330,11 +339,13 @@ function Chat({
   mode,
   onSpawnPlan,
   onSaveAsTemplate,
+  onRewindTo,
 }: {
   messages: DirectorMessage[];
   mode: DirectorMode;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
+  onRewindTo: (messageId: string) => Promise<void>;
 }) {
   const tailRef = useRef<HTMLDivElement | null>(null);
   // M11: also pin to bottom when an existing message's body
@@ -362,6 +373,8 @@ function Chat({
               ? findPrevPlanRows(messages, idx)
               : undefined
           }
+          onRewindTo={onRewindTo}
+          isLastMessage={idx === messages.length - 1}
         />
       ))}
       <div ref={tailRef} />
@@ -375,21 +388,38 @@ function Message({
   onSpawn,
   onSaveAsTemplate,
   prevPlanRows,
+  onRewindTo,
+  isLastMessage,
 }: {
   message: DirectorMessage;
   mode: DirectorMode;
   onSpawn: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
   prevPlanRows?: PlanRow[];
+  onRewindTo: (messageId: string) => Promise<void>;
+  isLastMessage: boolean;
 }) {
+  // F5: don't offer rewind on the currently-streaming Director turn
+  // (the message is mid-write) or on the very last message (there's
+  // nothing AFTER it to truncate — rewind would be a no-op).
+  const canRewind = !message.live && !isLastMessage;
   return (
-    <div className="msg">
+    <div className="msg dir-msg-row">
       <div className={'msg-head ' + message.who}>
         <span className="who">{message.name}</span>
         <span>·</span>
         <span>{message.time}</span>
         {message.live && (
           <span style={{ color: 'var(--accent)' }}>· streaming</span>
+        )}
+        {canRewind && (
+          <button
+            className="dir-msg-rewind"
+            onClick={() => void onRewindTo(message.id)}
+            title="Rewind the Director chat here — every message after this point is wiped and the next turn starts a fresh session"
+          >
+            <Icon name="redirect" size={10} /> rewind here
+          </button>
         )}
       </div>
       {message.attachments && message.attachments.length > 0 && (

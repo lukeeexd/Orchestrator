@@ -218,6 +218,64 @@ const sessionKey = (projectId: string) =>
   `project:${projectId}:director_session_id`;
 
 /**
+ * F5: truncate a project's Director chat to everything UP TO AND
+ * INCLUDING the given message. The user picks a known-good point
+ * (via "Rewind here" in the renderer); we drop everything after
+ * it so the next turn re-runs from that anchor. The chosen
+ * message itself is preserved so the user can see the context
+ * that led them to rewind.
+ *
+ * Caller (`director.rewindTo`) is responsible for clearing the
+ * saved Director session id separately (via
+ * `clearDirectorSessionId`) so the next turn spawns a fresh CLI
+ * session instead of trying to `--resume` a session whose
+ * conversation memory references the truncated turns. This
+ * sidesteps the resume-after-truncation semantics question
+ * entirely — F5 doesn't actually need that to work.
+ */
+export function rewindDirectorMessagesTo(
+  projectId: string,
+  messageId: string,
+): { ok: boolean; truncatedCount: number; error?: string } {
+  const db = getDb();
+  const probe = db.exec(
+    `SELECT ordering FROM director_messages
+      WHERE project_id = ? AND id = ?`,
+    [projectId, messageId],
+  );
+  if (probe.length === 0 || probe[0].values.length === 0) {
+    return { ok: false, truncatedCount: 0, error: 'message not found' };
+  }
+  const anchorOrdering =
+    typeof probe[0].values[0][0] === 'number' ? probe[0].values[0][0] : 0;
+
+  const countRes = db.exec(
+    `SELECT COUNT(*) FROM director_messages
+      WHERE project_id = ? AND ordering > ?`,
+    [projectId, anchorOrdering],
+  );
+  const truncatedCount =
+    countRes.length > 0 && typeof countRes[0].values[0][0] === 'number'
+      ? countRes[0].values[0][0]
+      : 0;
+
+  appendEvent(
+    EventKinds.DirectorRewind,
+    { toMessageId: messageId, truncatedCount },
+    { projectId },
+  );
+
+  const stmt = db.prepare(
+    `DELETE FROM director_messages
+       WHERE project_id = ? AND ordering > ?`,
+  );
+  stmt.run([projectId, anchorOrdering]);
+  stmt.free();
+  scheduleSave();
+  return { ok: true, truncatedCount };
+}
+
+/**
  * Drop every persisted Director artifact for one project: chat messages
  * + the saved SDK session id. Leaves the project itself and its agents
  * intact — this is the "clear chat" operation, not project deletion.

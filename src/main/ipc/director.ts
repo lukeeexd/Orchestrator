@@ -68,6 +68,26 @@ export function registerDirectorHandlers(
   );
 
   ipcMain.handle(
+    IpcChannels.DirectorRewind,
+    (
+      _event,
+      projectId: string,
+      messageId: string,
+    ): { ok: true; truncatedCount: number } | { ok: false; error: string } => {
+      // F5: rewind doesn't emit DirectorEventCleared — that would
+      // briefly flash an empty chat before the refresh re-populates.
+      // Instead, the renderer awaits this IPC then calls
+      // listDirectorMessages to atomically replace its in-memory
+      // copy.
+      const result = director.rewindTo(projectId, messageId);
+      if (!result.ok) {
+        return { ok: false, error: result.error ?? 'rewind failed' };
+      }
+      return { ok: true, truncatedCount: result.truncatedCount };
+    },
+  );
+
+  ipcMain.handle(
     IpcChannels.DirectorAckRedirect,
     (
       _event,

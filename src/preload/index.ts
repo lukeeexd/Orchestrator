@@ -127,6 +127,14 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.DirectorWipe, projectId) as Promise<{
       ok: true;
     }>,
+  rewindDirector: (projectId, messageId) =>
+    ipcRenderer.invoke(
+      IpcChannels.DirectorRewind,
+      projectId,
+      messageId,
+    ) as Promise<
+      { ok: true; truncatedCount: number } | { ok: false; error: string }
+    >,
 
   // Projects
   listProjects: () =>
