@@ -6,6 +6,8 @@ import type {
 } from '../shared/types';
 import { DEFAULT_EFFORT, isEffortLevel } from '../shared/efforts';
 import { getDb, scheduleSave } from './db';
+import { appendEvent } from './events';
+import { EventKinds } from '../shared/events';
 
 let messageOrdering = 0;
 let agentOrdering = 0;
@@ -71,6 +73,26 @@ export function saveDirectorMessage(m: DirectorMessage): void {
     m.prd ? JSON.stringify(m.prd) : null,
   ]);
   stmt.free();
+  // A1: audit append. We log the creation moment; subsequent
+  // patches (live → settled, plan_accepted, etc.) don't generate
+  // events. Final state lives in the projection table; F11 / F5
+  // join events.kind='director.message' onto director_messages.id
+  // for the latest body.
+  appendEvent(
+    EventKinds.DirectorMessage,
+    {
+      id: m.id,
+      who: m.who,
+      name: m.name,
+      live: m.live ?? false,
+      body: m.body,
+      plan: m.plan,
+      redirect: m.redirect,
+      prd: m.prd,
+      attachments: m.attachments,
+    },
+    { projectId: m.projectId },
+  );
   scheduleSave();
 }
 
@@ -201,6 +223,10 @@ const sessionKey = (projectId: string) =>
  * intact — this is the "clear chat" operation, not project deletion.
  */
 export function wipeDirector(projectId: string): void {
+  // A1: audit append BEFORE the delete so the event records the
+  // intent at the moment it happened. The empty body is sufficient
+  // — `project_id` on the row scopes the event.
+  appendEvent(EventKinds.DirectorWipe, {}, { projectId });
   const db = getDb();
   const dm = db.prepare(`DELETE FROM director_messages WHERE project_id = ?`);
   dm.run([projectId]);
@@ -296,6 +322,31 @@ export function saveAgent(a: Agent): void {
     a.endedAt ?? null,
   ]);
   stmt.free();
+  // A1: audit append. agent.spawn carries the immutable creation
+  // metadata — role, name, task, model, etc. Subsequent mutations
+  // flow through `patchAgent` and emit `agent.patch` events.
+  // Forks set `forkedFromId`; this lets F11 / F5 reconstruct the
+  // spawn tree without joining anything.
+  appendEvent(
+    EventKinds.AgentSpawn,
+    {
+      id: a.id,
+      role: a.role,
+      subtype: a.subtype,
+      name: a.name,
+      task: a.task,
+      model: a.model,
+      effort: a.effort,
+      provider: a.provider,
+      workspace: a.workspace,
+      budget: a.budget,
+      spawnedBy: a.spawnedBy,
+      forkedFromId: a.forkedFromId,
+      forkedFromName: a.forkedFromName,
+      startedAt: a.startedAt,
+    },
+    { projectId: a.projectId, agentId: a.id },
+  );
   scheduleSave();
 }
 
@@ -329,6 +380,16 @@ export function patchAgent(id: string, patch: Partial<Agent>): void {
   );
   stmt.run(values);
   stmt.free();
+  // A1: audit append. We log the patch as-supplied so F5's rewind
+  // can reconstruct any past field. modelUsage gets pruned from the
+  // body — it grows unboundedly across long sessions and would
+  // bloat the audit table; rewind consumers can read the projection
+  // table's final value.
+  const { modelUsage, ...auditable } = patch;
+  void modelUsage;
+  if (Object.keys(auditable).length > 0) {
+    appendEvent(EventKinds.AgentPatch, auditable, { agentId: id });
+  }
   scheduleSave();
 }
 
@@ -343,6 +404,13 @@ export function appendLogLine(agentId: string, line: LogLine): void {
   const msg = typeof line.msg === 'string' ? line.msg : JSON.stringify(line.msg);
   stmt.run([agentId, next, line.ts, line.kind, msg]);
   stmt.free();
+  // A1: audit append — one event per log line, body mirrors the
+  // LogLine shape so F11's export is a 1:1 replay.
+  appendEvent(
+    EventKinds.AgentLog,
+    { ts: line.ts, kind: line.kind, msg: line.msg },
+    { agentId },
+  );
   scheduleSave();
 }
 
@@ -533,6 +601,11 @@ export function listLogLinesForAgent(
 }
 
 export function deleteAgent(id: string): void {
+  // A1: audit append BEFORE the projection-table delete so the
+  // event sees the agent still existed at write time. Body is
+  // empty — the agent.spawn event captures everything F11 / F5
+  // need to know about who was removed.
+  appendEvent(EventKinds.AgentDelete, {}, { agentId: id });
   const db = getDb();
   const a = db.prepare(`DELETE FROM agents WHERE id = ?`);
   a.run([id]);

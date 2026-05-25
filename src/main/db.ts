@@ -509,6 +509,42 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 27,
+    up: (db) => {
+      // A1 (dual-write Lite): canonical event log. Every state-
+      // changing persistence operation appends a row here alongside
+      // its existing INSERT/UPDATE on the projection tables
+      // (agents / log_lines / director_messages / log_notes / etc.).
+      //
+      // The existing per-feature tables stay PRIMARY — reads still
+      // go through them. The events table is an additive audit
+      // trail; consumers that want a stream (F11 run-bundle export,
+      // F5 rewind, future workflow integrations) read here.
+      //
+      // INTEGER PRIMARY KEY gives monotonic rowid ordering without
+      // AUTOINCREMENT's reuse-prevention overhead — we never DELETE
+      // from events, so rowid recycle isn't a concern. ts is
+      // wall-clock ms; seq is the ordering key for reads. schema_v
+      // is per-row so future kind-shape evolutions can be migrated
+      // forward without rewriting old bodies.
+      db.exec(`
+        CREATE TABLE events (
+          seq        INTEGER PRIMARY KEY,
+          project_id TEXT,
+          agent_id   TEXT,
+          ts         INTEGER NOT NULL,
+          kind       TEXT NOT NULL,
+          body       TEXT,
+          schema_v   INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE INDEX idx_events_project ON events (project_id, seq);
+        CREATE INDEX idx_events_agent ON events (agent_id, seq);
+        CREATE INDEX idx_events_kind ON events (kind, seq);
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;
