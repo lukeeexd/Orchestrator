@@ -354,6 +354,36 @@ body.resizing * { cursor: col-resize !important; }
   font-size: 10px;
   color: var(--muted);
 }
+
+/* F5: per-message Rewind affordance — hover-revealed on both the
+   chat-view message row and the stream-view entry. */
+.dir-msg-rewind {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted-2);
+  font: inherit;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  cursor: default;
+  opacity: 0;
+  transition: opacity 0.08s, color 0.08s, border-color 0.08s;
+}
+.msg:hover .dir-msg-rewind,
+.stream-entry:hover .dir-msg-rewind,
+.dir-msg-rewind:focus {
+  opacity: 1;
+}
+.dir-msg-rewind:hover {
+  color: var(--waiting);
+  border-color: var(--waiting);
+}
 .msg-head .who {
   font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.08em;

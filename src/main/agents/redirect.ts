@@ -116,10 +116,19 @@ async function runRedirect(
   const modelChanged = !!modelOverride && modelOverride !== entry.agent.model;
   const effortChanged =
     !!effortOverride && effortOverride !== entry.agent.effort;
-  if (modelChanged || effortChanged) {
+  // Bug fix: the row, stream header, and Drawer all read `agent.task`.
+  // Before this, redirect updated model/effort but left task pointing
+  // at the original spawn instruction — so the agent would visibly be
+  // working on a new direction while the headline still showed the
+  // old one. Mirror fork.ts which sets task = req.task on the new
+  // agent.
+  const trimmed = body.trim();
+  const taskChanged = trimmed.length > 0 && trimmed !== entry.agent.task;
+  if (modelChanged || effortChanged || taskChanged) {
     const patch: Partial<typeof entry.agent> = {};
     if (modelChanged) patch.model = effectiveModel;
     if (effortChanged) patch.effort = effectiveEffort;
+    if (taskChanged) patch.task = trimmed;
     registry.patch(agentId, patch);
     sinks.onPatch(agentId, patch);
   }

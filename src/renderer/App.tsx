@@ -209,7 +209,8 @@ export function App() {
   const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents(
     activeProjectId,
   );
-  const { messages, send, busy } = useDirector(activeProjectId);
+  const { messages, send, busy, refresh: refreshDirector } =
+    useDirector(activeProjectId);
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
   const [spawning, setSpawning] = useState(false);
 
@@ -624,6 +625,29 @@ export function App() {
               onWipe={async () => {
                 if (activeProjectId)
                   await window.api.wipeDirector(activeProjectId);
+              }}
+              onRewindTo={async (messageId) => {
+                if (!activeProjectId) return;
+                // F5: confirm before nuking. Truncated count is in
+                // the IPC response — surface it post-confirm so the
+                // user knows roughly what they wiped.
+                if (
+                  !window.confirm(
+                    'Rewind the Director chat to this message?\n\n' +
+                      'Every message after this point will be deleted from ' +
+                      'the conversation and the next turn will start a fresh ' +
+                      'session (no past memory). This cannot be undone.',
+                  )
+                ) {
+                  return;
+                }
+                const r = await window.api.rewindDirector(
+                  activeProjectId,
+                  messageId,
+                );
+                if (r.ok) {
+                  await refreshDirector();
+                }
               }}
               viewMode={viewMode}
               projectId={activeProjectId}

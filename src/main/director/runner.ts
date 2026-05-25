@@ -118,6 +118,37 @@ class DirectorSession {
     sharedSinks?.onPatch(this.projectId, id, patch);
   }
 
+  /**
+   * F5: rewind the conversation to (and including) the chosen
+   * message. Aborts any in-flight turn, truncates messages after
+   * the anchor in both in-memory state and the DB, and clears the
+   * saved SDK session id so the next user turn starts fresh — no
+   * `--resume` against truncated history. Returns the count of
+   * messages dropped so the renderer can surface a confirmation.
+   */
+  rewindTo(messageId: string): {
+    ok: boolean;
+    truncatedCount: number;
+    error?: string;
+  } {
+    this.abort();
+    const idx = this.messages.findIndex((m) => m.id === messageId);
+    if (idx < 0) {
+      return { ok: false, truncatedCount: 0, error: 'message not found' };
+    }
+    const dbResult = persistence.rewindDirectorMessagesTo(
+      this.projectId,
+      messageId,
+    );
+    if (!dbResult.ok) return dbResult;
+    this.messages = this.messages.slice(0, idx + 1);
+    this.sessionId = null;
+    this.queue = [];
+    this.busy = false;
+    persistence.clearDirectorSessionId(this.projectId);
+    return { ok: true, truncatedCount: dbResult.truncatedCount };
+  }
+
   sendFromUser(
     body: string,
     mode: DirectorMode,
@@ -627,6 +658,18 @@ export function wipeSession(projectId: string): void {
   sessions.get(projectId)?.abort();
   sessions.delete(projectId);
   persistence.wipeDirector(projectId);
+}
+
+/**
+ * F5: rewind the project's Director session to a chosen anchor
+ * message. Module-level entry point for the IPC handler; delegates
+ * to the session's `rewindTo`.
+ */
+export function rewindTo(
+  projectId: string,
+  messageId: string,
+): { ok: boolean; truncatedCount: number; error?: string } {
+  return getSession(projectId).rewindTo(messageId);
 }
 
 export function listMessages(projectId: string): DirectorMessage[] {
