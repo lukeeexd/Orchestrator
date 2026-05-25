@@ -139,6 +139,26 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
   const [distilling, setDistilling] = useState<
     { rowId: string; kind: 'changelog' | 'recap' } | null
   >(null);
+  // F11: in-flight export so the row's button can show a busy state
+  // during the (typically <1s) zip-build + reveal. Scoped per-row.
+  const [exporting, setExporting] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  // F11: secret-scrubber toggle for run exports. Defaults on; same
+  // shape as the F9 crash-bundle export.
+  const [exportScrub, setExportScrub] = useState(true);
+
+  const exportRun = async (row: HistoryRow): Promise<void> => {
+    setExporting(row.id);
+    setExportError(null);
+    try {
+      const r = await window.api.exportRunBundle([row.id], {
+        scrubSecrets: exportScrub,
+      });
+      if (!r.ok) setExportError(r.error);
+    } finally {
+      setExporting(null);
+    }
+  };
 
   /**
    * P12 + P16 — Spawn a one-shot researcher with a tailored prompt
@@ -265,6 +285,42 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
           </button>
         </div>
         <span className="spacer" />
+        {/* F11: secret-scrubber toggle for run exports. Affects any
+            subsequent click on a row's export button. */}
+        <label
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            fontSize: 11,
+            color: exportScrub ? 'var(--accent)' : 'var(--text-2)',
+            cursor: 'pointer',
+            userSelect: 'none',
+            marginRight: 8,
+          }}
+          title="Mask common secret shapes (Anthropic / GitHub / AWS keys, bearer JWTs, env-style assignments) inside exported .orun bundles."
+        >
+          <input
+            type="checkbox"
+            checked={exportScrub}
+            onChange={(e) => setExportScrub(e.target.checked)}
+            style={{ margin: 0 }}
+          />
+          scrub on export
+        </label>
+        {exportError && (
+          <span
+            className="dim"
+            style={{
+              fontSize: 10,
+              color: 'var(--error)',
+              marginRight: 8,
+            }}
+            title={exportError}
+          >
+            Export failed
+          </span>
+        )}
         <button
           className="tb-btn"
           onClick={() => void load()}
@@ -446,6 +502,19 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
                       style={{ width: 22, height: 22, marginLeft: 2 }}
                     >
                       <Icon name="logs" size={13} />
+                    </button>
+                    {/* F11 — export this run as a portable .orun zip. */}
+                    <button
+                      className="icon-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void exportRun(r);
+                      }}
+                      disabled={exporting === r.id}
+                      title="Export this run as a portable .orun zip (events + agent state + project Director context). The zip lands at userData/exports/ and Explorer opens to it."
+                      style={{ width: 22, height: 22, marginLeft: 2 }}
+                    >
+                      <Icon name="attach" size={13} />
                     </button>
                     {r.forkedFromName && (
                       <span

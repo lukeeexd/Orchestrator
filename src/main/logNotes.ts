@@ -1,4 +1,6 @@
 import { getDb, isDbOpen, scheduleSave } from './db';
+import { appendEvent } from './events';
+import { EventKinds } from '../shared/events';
 
 /**
  * F12: per-line notes pinned to an agent's log. Renderer-driven
@@ -75,6 +77,9 @@ export function setNote(
   );
   stmt.run([agentId, lineKey, body, now, now]);
   stmt.free();
+  // A1: audit append. Each note set / unset is one event so F11 can
+  // replay annotation history alongside the log it annotates.
+  appendEvent(EventKinds.NoteSet, { lineKey, body }, { agentId });
   scheduleSave();
 }
 
@@ -87,6 +92,7 @@ export function deleteNote(agentId: string, lineKey: string): void {
   );
   stmt.run([agentId, lineKey]);
   stmt.free();
+  appendEvent(EventKinds.NoteDelete, { lineKey }, { agentId });
   scheduleSave();
 }
 
