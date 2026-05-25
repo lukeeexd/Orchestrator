@@ -1,8 +1,129 @@
 # Spike — Per-agent worktrees (P13 re-investigation)
 
-**Status:** Doc-only spike. No code changes. Recommendation below.
-**Date:** 2026-05-21
+**Status:** Doc-spike + resume-cwd experiment complete (2026-05-25).
+Recommendation below has been updated.
+**Date:** 2026-05-21 (original doc), 2026-05-25 (resume-cwd experiment).
 **Owner:** N/A — pick this up when forks see real use.
+
+## Resume-cwd experiment — 2026-05-25 outcome
+
+The original doc flagged path (c) "fork-attached worktrees" as
+blocked on an unverified assumption: that `claude --resume <id>`
+tolerates a `cwd` change between session resumes. Ran the
+experiment, claude CLI v2.1.150:
+
+**Setup.** Two distinct workspaces (`dir-A` / `dir-B`) under a
+temp directory, each holding a `marker.txt` with workspace-
+distinguishing content.
+
+**Turn 1.** From `dir-A`, ran `claude --print --output-format
+stream-json` with the prompt "Read marker.txt and report the
+content as MARKER=...". Result:
+
+- `cwd` from the init event: `dir-A` ✓
+- Read tool called with the **absolute path**
+  `<dir-A>\marker.txt` — the CLI resolved the relative path to
+  absolute before the tool call. (Interesting detail in itself:
+  even within a single session, the relative-path → absolute-path
+  resolution happens upfront.)
+- Result: `MARKER=I am workspace A.` ✓
+- Session id captured.
+
+**Turn 2 (the spike).** From `dir-B`, ran the same `claude
+--print --resume <session-id>`. Result:
+
+```
+No conversation found with session ID: dc88647c-ba74-4efe-...
+```
+
+The CLI doesn't even **find** the session from a different cwd —
+sessions are stored under `~/.claude/projects/<encoded-cwd>/`
+(the same path-encoding F16's memory bridge uses), and `--resume`
+only looks in the current cwd's session pool.
+
+**Control.** Re-running the resume from `dir-A` works fine: the
+agent recalls "I am workspace A." So the session itself is healthy;
+the failure is specifically the cwd-scoped lookup.
+
+**Conclusion.** **`claude --resume` does NOT tolerate a cwd
+change.** Any feature where an agent's session needs to be
+resumed from a different working directory is structurally
+blocked by the CLI's session-storage design.
+
+## Implications for the three candidate paths
+
+- **(a) All plan-spawned agents in worktrees** — still dead. The
+  original M4 reason (sequential artefact flow needs a shared
+  workspace) is unaffected, and the new finding adds a second
+  death blow: redirect / fork wouldn't work because the agent's
+  session was created in workspace X but the runner would later
+  try to resume from worktree Y.
+- **(b) Opt-in "isolated experiment" checkbox** — **newly dead**.
+  Even if you opt-in to a worktree at spawn time, the redirect
+  affordance from the Drawer would fail the moment it tried to
+  resume the session from the worktree's cwd. (Spawn alone works;
+  any subsequent interaction is broken.) Could be kept alive by
+  restricting opt-in agents to "no redirect / no fork," but that
+  cripples the affordance just when isolation matters most.
+- **(c) Fork-attached worktrees** — **dead in current shape**.
+  The fork's resume would happen from the worktree's cwd, which
+  the CLI refuses. The whole point of fork-with-worktree is to
+  isolate, so the resume can't fall back to the parent's cwd.
+
+## What COULD work — different architecture
+
+The constraint is "session lookup is cwd-scoped." That bounds
+the design space:
+
+1. **Always-same-cwd for an agent's lifetime.** Today's state.
+   Locks in shared workspace per agent. No worktrees, no
+   isolation.
+2. **Per-agent FRESH workspace from spawn time, no resume across
+   sessions.** Each agent gets its own worktree at spawn; runner
+   never resumes from a different cwd. Forks would create a NEW
+   conversation (lose session memory) rather than `--resume`.
+   Some features (Drawer's Redirect button) would have to be
+   redefined to mean "start a new conversation in the same
+   workspace with the prior context summarised" rather than
+   "continue the same session."
+3. **CLI feature request.** Ask Anthropic to support `claude
+   --resume <id> --workdir <path>` or expose the session pool
+   path. Out of our hands.
+4. **Different provider where session storage is cwd-independent.**
+   The Codex CLI's session model is already different (no
+   `--resume` flag at all); a future provider abstraction could
+   make session-portability a first-class concern.
+
+The cleanest path now is **A2 (workspace as interface)** from
+`docs/product/feature-proposals.md`. Once `Workspace` is an
+interface, the runner can compose "spawn in worktree, retain
+session memory by sticking to that worktree" without leaking the
+cwd constraint into every feature that touches an agent. Today's
+"workspace = path string" assumption makes it impossible to
+*locally* fix this because every spawn / redirect / fork has its
+own implicit cwd handling.
+
+## Updated recommendation
+
+1. **F4 paths (a) / (b) / (c) all dead in their current shape.**
+   Don't ship any of them against today's runner.
+2. **A2 is now a genuine prerequisite for F4 / F14.** The
+   workspace abstraction has to express "this agent's worktree
+   path AND its CLI session pool path" so the runner can
+   reconstitute both on every redirect / fork.
+3. **F5 (rewind Director) is NOT blocked by this finding.** The
+   Director's cwd is `app.getPath('userData')` and stable across
+   the app's lifetime; rewinding doesn't change cwd. F5's
+   separate risk (resume-after-truncation semantics) is still
+   open but unrelated.
+4. **Provider plug-ins (F13) become more interesting.** A
+   provider with session-portability would unblock per-agent
+   worktrees naturally; Anthropic's CLI doesn't, but a future
+   one might.
+
+---
+
+The original 2026-05-21 doc continues below for context.
 
 ## Background — what M2 had, what M4 dropped
 
