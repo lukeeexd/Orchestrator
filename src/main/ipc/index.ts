@@ -15,6 +15,7 @@
  */
 
 import { broadcast, type IpcContext } from './_shared';
+import { captureHandlers } from './dispatch';
 import { registerAppHandlers } from './app';
 import { registerSettingsHandlers } from './settings';
 import { registerMiscHandlers } from './misc';
@@ -25,22 +26,35 @@ import { registerAttachmentsHandlers } from './attachments';
 import { registerDirectorHandlers } from './director';
 import { registerMarketplaceHandlers } from './marketplace';
 
-export function registerIpcHandlers(): void {
+/**
+ * @param opts.capture — A3 (headless): record every registered handler
+ *   into the dispatch map so headless mode can invoke them over stdio.
+ *   GUI boots skip this (byte-identical to before — no capture shim).
+ */
+export function registerIpcHandlers(opts?: { capture?: boolean }): void {
   const ctx: IpcContext = { broadcast };
 
   // Modules without state-change broadcasts skip the ctx argument
   // entirely. The asymmetry is intentional — the unused arg would just
   // be lint noise (the `_unused` convention isn't honoured here since
   // the eslint config doesn't set argsIgnorePattern).
-  registerAppHandlers();
-  registerSettingsHandlers(ctx);
-  registerMiscHandlers();
-  registerTemplatesHandlers(ctx);
-  registerProjectsHandlers(ctx);
-  // agents.ts returns the sinks so director.ts can reuse them when its
-  // DirectorAcceptPlan handler triggers spawns directly.
-  const agentSinks = registerAgentsHandlers(ctx);
-  registerAttachmentsHandlers();
-  registerDirectorHandlers(ctx, agentSinks);
-  registerMarketplaceHandlers(ctx);
+  const doRegister = (): void => {
+    registerAppHandlers();
+    registerSettingsHandlers(ctx);
+    registerMiscHandlers();
+    registerTemplatesHandlers(ctx);
+    registerProjectsHandlers(ctx);
+    // agents.ts returns the sinks so director.ts can reuse them when its
+    // DirectorAcceptPlan handler triggers spawns directly.
+    const agentSinks = registerAgentsHandlers(ctx);
+    registerAttachmentsHandlers();
+    registerDirectorHandlers(ctx, agentSinks);
+    registerMarketplaceHandlers(ctx);
+  };
+
+  if (opts?.capture) {
+    captureHandlers(doRegister);
+  } else {
+    doRegister();
+  }
 }
