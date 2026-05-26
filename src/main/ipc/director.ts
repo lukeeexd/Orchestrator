@@ -142,12 +142,25 @@ export function registerDirectorHandlers(
             req.planMessageId,
             req.rows[0]?.task ?? '',
           );
-          const result = ensureBranch(validatedWorkspace, branch);
+          const result = ensureBranch(
+            validatedWorkspace,
+            branch,
+            req.baseBranch,
+          );
           if (result.ok) {
+            // Reflect the chosen base in the audit message when a
+            // fresh branch was actually created. Reusing an
+            // existing branch ignores baseBranch (we never reset
+            // history), so the suffix is omitted there to avoid
+            // implying the base re-rooted the branch.
+            const baseNote =
+              req.baseBranch && result.created
+                ? ` (from \`${req.baseBranch}\`)`
+                : '';
             director.notifySystem(
               req.projectId,
               result.created
-                ? `⎿ auto-branch · created and checked out \`${result.branch}\``
+                ? `⎿ auto-branch · created and checked out \`${result.branch}\`${baseNote}`
                 : `⎿ auto-branch · checked out existing \`${result.branch}\``,
             );
           } else {

@@ -49,6 +49,25 @@ export function currentBranch(cwd: string): string | null {
   return r.stdout === 'HEAD' ? null : r.stdout;
 }
 
+/**
+ * Local branch names in the repo, ordered alphabetically per
+ * `git branch`'s default. Returns an empty list when the directory
+ * isn't a git repo, so the renderer can treat "no branches" and
+ * "not a repo" the same way: skip the base-branch picker.
+ */
+export function listBranches(
+  cwd: string,
+): { branches: string[]; current: string | null } {
+  if (!isGitRepo(cwd)) return { branches: [], current: null };
+  const r = run(cwd, ['branch', '--list', '--format=%(refname:short)']);
+  if (!r.ok) return { branches: [], current: currentBranch(cwd) };
+  const branches = r.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  return { branches, current: currentBranch(cwd) };
+}
+
 /** True when the working tree or index has uncommitted changes. */
 export function hasUncommitted(cwd: string): boolean {
   const r = run(cwd, ['status', '--porcelain']);
@@ -108,8 +127,19 @@ export interface EnsureBranchResult {
  * branches when the working tree is dirty: `git checkout` would
  * either complain itself or, worse, carry uncommitted edits onto
  * the new branch.
+ *
+ * When `baseBranch` is provided AND a NEW branch is being created,
+ * the new branch is rooted at `baseBranch` (`git checkout -b <name>
+ * <baseBranch>`) instead of inheriting the current HEAD's tree.
+ * An existing target branch is left untouched — we never reset its
+ * history toward `baseBranch`, since that would discard whatever
+ * the agents already committed on a re-accepted plan.
  */
-export function ensureBranch(cwd: string, name: string): EnsureBranchResult {
+export function ensureBranch(
+  cwd: string,
+  name: string,
+  baseBranch?: string,
+): EnsureBranchResult {
   if (!isGitRepo(cwd)) {
     return { ok: false, branch: name, created: false, reason: 'not a git repo' };
   }
@@ -130,7 +160,18 @@ export function ensureBranch(cwd: string, name: string): EnsureBranchResult {
     if (!r.ok) return { ok: false, branch: name, created: false, reason: r.stderr };
     return { ok: true, branch: name, created: false };
   }
-  const r = run(cwd, ['checkout', '-b', name]);
+  if (baseBranch && !branchExists(cwd, baseBranch)) {
+    return {
+      ok: false,
+      branch: name,
+      created: false,
+      reason: `base branch \`${baseBranch}\` not found`,
+    };
+  }
+  const args = baseBranch
+    ? ['checkout', '-b', name, baseBranch]
+    : ['checkout', '-b', name];
+  const r = run(cwd, args);
   if (!r.ok) return { ok: false, branch: name, created: false, reason: r.stderr };
   return { ok: true, branch: name, created: true };
 }

@@ -45,6 +45,8 @@ export const IpcChannels = {
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
   ProjectSetDirectorProvider: 'project:setDirectorProvider',
   ProjectSetAutoBranch: 'project:setAutoBranch',
+  /** F14: list local git branches for the project's workspace. */
+  GitListBranches: 'git:listBranches',
   ProjectSetMcpConfig: 'project:setMcpConfig',
   ProjectPreviewMcpConfigCommands: 'project:previewMcpConfigCommands',
   MarketplaceListSources: 'marketplace:listSources',
@@ -508,6 +510,14 @@ export interface AcceptPlanRequest {
    */
   planMessageId?: string;
   /**
+   * F14: base branch the auto-branch should root from. When set AND
+   * a fresh branch needs creating, runs `git checkout -b <name>
+   * <baseBranch>`. Omitted → the new branch inherits the current
+   * HEAD (the pre-modal behaviour). Ignored when the target branch
+   * already exists (idempotent re-accept).
+   */
+  baseBranch?: string;
+  /**
    * Attachment paths from the user message that prompted this plan.
    * Forwarded to every agent the plan auto-spawns so they see the same
    * images/text the Director did. Without this, the Director can
@@ -674,6 +684,16 @@ export interface OrchestratorApi {
    * git repo. See `src/main/git.ts` for the skip policy.
    */
   setProjectAutoBranch: (id: string, on: boolean) => Promise<{ ok: true }>;
+  /**
+   * F14: list local git branches for the project's workspace, with
+   * the current HEAD called out. Used to populate the auto-branch
+   * "base branch" picker on plan accept. Returns
+   * `{ branches: [], current: null }` when the workspace isn't a git
+   * repo — the renderer skips the picker in that case.
+   */
+  listGitBranches: (
+    projectId: string,
+  ) => Promise<{ branches: string[]; current: string | null }>;
   setProjectDirectorProvider: (
     id: string,
     provider: import('./types').Provider | null,

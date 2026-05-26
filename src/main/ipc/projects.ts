@@ -18,6 +18,7 @@ import {
   listProjects,
   renameProject,
   setActiveProjectId,
+  getProject,
   setProjectAutoBranch,
   setProjectDirectorEffort,
   setProjectDirectorModel,
@@ -27,6 +28,7 @@ import {
   setProjectWorkspace,
 } from '../projects';
 import * as registry from '../agents/registry';
+import { listBranches } from '../git';
 import type { IpcContext } from './_shared';
 
 export function registerProjectsHandlers(ctx: IpcContext): void {
@@ -157,6 +159,20 @@ export function registerProjectsHandlers(ctx: IpcContext): void {
     (_event, id: string, on: unknown): { ok: true } => {
       setProjectAutoBranch(id, on === true);
       return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.GitListBranches,
+    (
+      _event,
+      projectId: string,
+    ): { branches: string[]; current: string | null } => {
+      // F14 base-branch picker. Resolve workspace internally (the
+      // renderer never gets to pick the cwd directly) so the call
+      // is fully scoped to the project row in the DB.
+      const proj = getProject(projectId);
+      if (!proj?.workspace) return { branches: [], current: null };
+      return listBranches(proj.workspace);
     },
   );
   ipcMain.handle(
