@@ -88,6 +88,7 @@ export const acceptPlanRequestSchema = z.object({
   projectId: z.string().min(1),
   rows: z.array(planRow),
   workspace: z.string(),
+  planMessageId: z.string().optional(),
   attachments: z.array(z.string()).optional(),
 });
 

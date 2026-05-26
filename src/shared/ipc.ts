@@ -44,6 +44,7 @@ export const IpcChannels = {
   ProjectSetDirectorModel: 'project:setDirectorModel',
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
   ProjectSetDirectorProvider: 'project:setDirectorProvider',
+  ProjectSetAutoBranch: 'project:setAutoBranch',
   ProjectSetMcpConfig: 'project:setMcpConfig',
   ProjectPreviewMcpConfigCommands: 'project:previewMcpConfigCommands',
   MarketplaceListSources: 'marketplace:listSources',
@@ -498,6 +499,15 @@ export interface AcceptPlanRequest {
   rows: PlanRow[];
   workspace: string;
   /**
+   * F14: id of the DirectorMessage carrying the plan. Used to derive
+   * a stable branch name (`orchestrator/<id:8>-<slug>`) when the
+   * project has auto-branch enabled, so re-accepting the same plan
+   * re-uses the same branch instead of spawning a parallel one.
+   * Optional because callers that don't need auto-branch (or are on
+   * an older renderer build) can omit it.
+   */
+  planMessageId?: string;
+  /**
    * Attachment paths from the user message that prompted this plan.
    * Forwarded to every agent the plan auto-spawns so they see the same
    * images/text the Director did. Without this, the Director can
@@ -657,6 +667,13 @@ export interface OrchestratorApi {
    * session id — the new CLI can't resume a session created by the
    * old one, so the next turn starts fresh. Chat history stays put.
    */
+  /**
+   * F14: toggle the per-project auto-branch flag. When on, accepting
+   * a plan creates / checks out a scratch branch (`orchestrator/<...>`)
+   * before the first agent spawns — provided the workspace is a clean
+   * git repo. See `src/main/git.ts` for the skip policy.
+   */
+  setProjectAutoBranch: (id: string, on: boolean) => Promise<{ ok: true }>;
   setProjectDirectorProvider: (
     id: string,
     provider: import('./types').Provider | null,

@@ -55,6 +55,13 @@ interface Props {
   onEffortChange: (next: EffortLevel) => void;
   /** Switches the Director to a specific CLI. Pass project default to clear the override. */
   onDirectorProviderChange: (next: Provider) => void;
+  /**
+   * F14: per-project auto-branch toggle. When on, accepting a plan
+   * creates / checks out `orchestrator/<planId>-<slug>` before the
+   * first agent spawns. Undefined / false means off.
+   */
+  autoBranch: boolean;
+  onAutoBranchChange: (next: boolean) => void;
   onSend: (
     body: string,
     mode: DirectorMode,
@@ -98,6 +105,8 @@ export function DirectorPane({
   onModelChange,
   onEffortChange,
   onDirectorProviderChange,
+  autoBranch,
+  onAutoBranchChange,
   onSend,
   onSpawnPlan,
   onSaveAsTemplate,
@@ -153,6 +162,19 @@ export function DirectorPane({
         {directorProvider === 'claude' && (
           <EffortPicker value={effort} onChange={onEffortChange} compact />
         )}
+        <button
+          className={
+            'icon-btn' + (autoBranch ? ' icon-btn-on' : '')
+          }
+          title={
+            autoBranch
+              ? 'Auto-branch: ON · accepting a plan checks out orchestrator/<planId>-<slug> if the workspace is a clean git repo. Click to disable.'
+              : 'Auto-branch: OFF · plans run on whatever branch you’re on. Click to enable.'
+          }
+          onClick={() => onAutoBranchChange(!autoBranch)}
+        >
+          <Icon name="branch" size={13} />
+        </button>
         <span className="spacer" />
         {busy && (
           <span className="meta" style={{ color: 'var(--accent)' }}>

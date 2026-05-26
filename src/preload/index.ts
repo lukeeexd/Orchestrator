@@ -178,6 +178,12 @@ const api: OrchestratorApi = {
       id,
       provider,
     ) as Promise<{ ok: true }>,
+  setProjectAutoBranch: (id, on) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetAutoBranch,
+      id,
+      on,
+    ) as Promise<{ ok: true }>,
   setProjectMcpConfig: (id, config) =>
     ipcRenderer.invoke(
       IpcChannels.ProjectSetMcpConfig,

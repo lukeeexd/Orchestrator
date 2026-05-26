@@ -122,6 +122,7 @@ export function App() {
     setDirectorModel: setProjectDirectorModel,
     setDirectorEffort: setProjectDirectorEffort,
     setDirectorProvider: setProjectDirectorProvider,
+    setAutoBranch: setProjectAutoBranch,
     setMcpConfig,
     setRoleTools: setProjectRoleTools,
     remove: removeProject,
@@ -399,6 +400,7 @@ export function App() {
         projectId: activeProjectId,
         rows: effectiveRows,
         workspace: ws,
+        planMessageId: msg.id,
         ...(originatingAttachments
           ? { attachments: originatingAttachments }
           : {}),
@@ -618,6 +620,11 @@ export function App() {
                   activeProjectId,
                   p === activeProvider ? null : p,
                 );
+              }}
+              autoBranch={activeProject?.autoBranch === true}
+              onAutoBranchChange={(next) => {
+                if (!activeProjectId) return;
+                void setProjectAutoBranch(activeProjectId, next);
               }}
               onSend={send}
               onSpawnPlan={spawnPlan}

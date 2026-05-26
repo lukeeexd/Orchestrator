@@ -20,6 +20,7 @@ interface UseProjectsResult {
   setDirectorModel: (id: string, model: string) => Promise<void>;
   setDirectorEffort: (id: string, effort: EffortLevel) => Promise<void>;
   setDirectorProvider: (id: string, provider: Provider | null) => Promise<void>;
+  setAutoBranch: (id: string, on: boolean) => Promise<void>;
   setMcpConfig: (
     id: string,
     config: string | null,
@@ -110,6 +111,14 @@ export function useProjects(): UseProjectsResult {
     [reload],
   );
 
+  const setAutoBranch = useCallback(
+    async (id: string, on: boolean) => {
+      await window.api.setProjectAutoBranch(id, on);
+      await reload();
+    },
+    [reload],
+  );
+
   const setMcpConfig = useCallback(
     async (id: string, config: string | null) => {
       const res = await window.api.setProjectMcpConfig(id, config);
@@ -148,6 +157,7 @@ export function useProjects(): UseProjectsResult {
     setDirectorModel,
     setDirectorEffort,
     setDirectorProvider,
+    setAutoBranch,
     setMcpConfig,
     setRoleTools,
     remove,

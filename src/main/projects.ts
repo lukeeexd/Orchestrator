@@ -54,7 +54,7 @@ function asInt(v: unknown, fallback = 0): number {
 export function listProjects(): Project[] {
   const db = getDb();
   const res = db.exec(
-    `SELECT id, name, workspace, created_at, director_model, director_effort, role_tools, provider, director_provider, mcp_config FROM projects ORDER BY created_at ASC`,
+    `SELECT id, name, workspace, created_at, director_model, director_effort, role_tools, provider, director_provider, mcp_config, auto_branch FROM projects ORDER BY created_at ASC`,
   );
   if (res.length === 0) return [];
   return res[0].values.map((row) => {
@@ -64,6 +64,7 @@ export function listProjects(): Project[] {
     const pv = row[7];
     const dpv = row[8];
     const mcp = row[9];
+    const ab = row[10];
     return {
       id: asStr(row[0]),
       name: asStr(row[1]),
@@ -76,6 +77,7 @@ export function listProjects(): Project[] {
         dpv === 'claude' || dpv === 'codex' ? dpv : undefined,
       roleTools: parseRoleTools(rt),
       mcpConfig: typeof mcp === 'string' && mcp.length > 0 ? mcp : undefined,
+      autoBranch: ab === 1,
     };
   });
 }
@@ -197,6 +199,20 @@ function isUuid(s: string): boolean {
  * existing session id because the new CLI can't resume a session
  * created by the old one.
  */
+/**
+ * F14: toggle the per-project auto-branch flag. When true, the
+ * DirectorAcceptPlan handler creates/checks out a scratch branch
+ * before the first agent spawns (only when the workspace is a git
+ * repo and clean — see git.ts for the policy).
+ */
+export function setProjectAutoBranch(id: string, on: boolean): void {
+  const db = getDb();
+  const stmt = db.prepare(`UPDATE projects SET auto_branch = ? WHERE id = ?`);
+  stmt.run([on ? 1 : 0, id]);
+  stmt.free();
+  scheduleSave();
+}
+
 export function setProjectDirectorProvider(
   id: string,
   provider: Provider | null,

@@ -1297,6 +1297,19 @@ body.resizing * { cursor: col-resize !important; }
   border-color: var(--border);
   color: var(--text);
 }
+/* F14: toggled-on state for the auto-branch icon button (and any
+   future on/off icon toggles). Uses the same accent treatment as
+   filled badges so the user can read "this is active" at a glance. */
+.icon-btn-on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.icon-btn-on:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
 
 /* ── Status bar ───────────────────────────────────────────── */
 .statusbar {

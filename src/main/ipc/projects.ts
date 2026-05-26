@@ -18,6 +18,7 @@ import {
   listProjects,
   renameProject,
   setActiveProjectId,
+  setProjectAutoBranch,
   setProjectDirectorEffort,
   setProjectDirectorModel,
   setProjectDirectorProvider,
@@ -148,6 +149,13 @@ export function registerProjectsHandlers(ctx: IpcContext): void {
       // stays — the user can still see what was said; the next turn
       // just doesn't have model-side memory of it.
       director.resetSessionForProviderChange(id);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetAutoBranch,
+    (_event, id: string, on: unknown): { ok: true } => {
+      setProjectAutoBranch(id, on === true);
       return { ok: true };
     },
   );

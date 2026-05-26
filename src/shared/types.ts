@@ -75,6 +75,15 @@ export interface Project {
    */
   directorProvider?: Provider;
   /**
+   * F14: when true AND the workspace is a git repo, accepting a plan
+   * checks out a fresh `orchestrator/<planId>-<slug>` branch before
+   * the first agent spawns. Skipped silently when the workspace
+   * isn't a git repo, and skipped-with-warning when there are
+   * uncommitted changes (we never overwrite the user's work). Off
+   * by default to preserve pre-F14 behaviour.
+   */
+  autoBranch?: boolean;
+  /**
    * Project-level MCP server config, stored verbatim as the JSON the
    * `claude --mcp-config` flag accepts (typically `{"mcpServers": {...}}`).
    * Empty / undefined → no extra MCP servers, the spawn skips

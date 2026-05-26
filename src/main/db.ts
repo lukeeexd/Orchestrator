@@ -545,6 +545,20 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 28,
+    up: (db) => {
+      // F14: opt-in per-project auto-branch on plan accept. When
+      // enabled AND the workspace is a git repo, accepting a plan
+      // creates/checks out `orchestrator/<planId:8>-<slug>` so the
+      // agents' changes land on a scratch branch instead of whatever
+      // the user happened to be on. Stored as 0/1 because sql.js
+      // doesn't have a real BOOLEAN type; null is treated as 0.
+      db.exec(
+        `ALTER TABLE projects ADD COLUMN auto_branch INTEGER NOT NULL DEFAULT 0;`,
+      );
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

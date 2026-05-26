@@ -81,11 +81,11 @@ Orchestrator is a Windows desktop app (Electron + React + TypeScript, `package.j
 - **Impact:** **high** — opens addressable user base; lets users pin cheap providers to PM/researcher roles.
 - **Deps/risks:** event normalisation across CLIs is the same kind of work that codex onboarding already paid for, but each new provider has its own tool-allowlist semantics (codex uses sandbox-policy scopes — see `src/shared/types.ts:90`). Codex Fork is already disabled for this reason; expect more such carve-outs.
 
-**F14. Git integration: auto-branch + auto-PR per accepted plan.**
-- **Problem:** every accepted plan produces unscoped changes in the shared workspace. The user has to manually `git checkout -b ...` before spawning, and `git diff` / `gh pr create` after.
-- **Scope:** **M**. Pre-spawn hook in `src/main/agents/spawn.ts` (when project workspace is a git repo) that creates `orchestrator/<plan-id>` and optionally opens a draft PR on completion using `gh` CLI if present.
-- **Impact:** **high** — closes the loop from "described a task" to "PR ready for review".
-- **Deps/risks:** interacts with F4's worktree story; do this **after** the worktree spike resolves so we don't ship a feature that breaks the moment per-row worktrees land.
+**F14. Git integration: auto-branch per accepted plan — partial: auto-branch shipped 2026-05-26; auto-PR deferred.**
+- **Problem:** every accepted plan produced unscoped changes on whatever branch the user happened to be on. The user had to manually `git checkout -b ...` before spawning.
+- **Shipped (auto-branch half):** per-project `autoBranch` toggle (migration v28 adds `projects.auto_branch INTEGER`). The Director header gets a branch-icon toggle button next to the model picker. When on AND the workspace is a git repo, `DirectorAcceptPlan` calls `ensureBranch(workspace, 'orchestrator/<planId:8>-<slug>')` before the first agent spawns — a Director system message records whether it created, reused, or skipped the branch. `slug` is derived from the first plan row's task. Re-accepting the same plan re-uses the same branch (idempotent).
+- **Skip policy:** silent skip when the workspace isn't a git repo (most setups). Surfaced-in-chat skip when uncommitted changes exist (refuses to switch branches and carry edits silently) or the plan id is missing (older renderer). Git operations are 5s-timeout `spawnSync` calls in `src/main/git.ts` — dependency-free leaf module, 9 unit tests on the pure helpers (`slugify`, `buildBranchName`).
+- **Deferred — auto-PR half:** user explicitly chose "auto-branch only — skip PR entirely for now" (2026-05-26). Manual `gh pr create` remains the path. Revisit if the "described → PR" loop still feels broken in practice.
 
 **F15. Cross-platform builds (macOS / Linux).**
 - **Problem:** README + PLAN both lock to Windows. The only Windows-specific code is `MakerSquirrel` and the R2 update path. The CLI dependency is platform-agnostic; users on Mac/Linux are excluded by packaging, not by design.
