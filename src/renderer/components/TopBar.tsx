@@ -3,17 +3,13 @@ export type ViewMode = 'compact' | 'stream' | 'canvas';
 interface Props {
   workspace: string;
   model: string;
-  viewMode: ViewMode;
   onChangeWorkspace: () => void;
-  onViewModeChange: (next: ViewMode) => void;
 }
 
 export function TopBar({
   workspace,
   model,
-  viewMode,
   onChangeWorkspace,
-  onViewModeChange,
 }: Props) {
   return (
     <div className="topbar">
@@ -31,30 +27,6 @@ export function TopBar({
       </div>
 
       <div className="tb-spacer" />
-
-      <div
-        className="view-toggle"
-        title="Compact: chat bubbles + agent tiles. Stream: terminal-style live log. Canvas: live node-graph of the fleet (Flightdeck)."
-      >
-        <button
-          className={viewMode === 'compact' ? 'on' : ''}
-          onClick={() => onViewModeChange('compact')}
-        >
-          compact
-        </button>
-        <button
-          className={viewMode === 'stream' ? 'on' : ''}
-          onClick={() => onViewModeChange('stream')}
-        >
-          stream
-        </button>
-        <button
-          className={viewMode === 'canvas' ? 'on' : ''}
-          onClick={() => onViewModeChange('canvas')}
-        >
-          canvas
-        </button>
-      </div>
 
       <div className="tb-pill" title="Default model — set via settings.json defaultModel">
         <span className="dot" />

@@ -15,11 +15,10 @@ import { useDirector } from './hooks/useDirector';
 import { useSettings } from './hooks/useSettings';
 import { useProjects } from './hooks/useProjects';
 import { useMarketplace } from './hooks/useMarketplace';
-import { TopBar, type ViewMode } from './components/TopBar';
+import { TopBar } from './components/TopBar';
 import { LeftRail, type RailScreen } from './components/LeftRail';
 import { StatusBar } from './components/StatusBar';
 import { DirectorPane } from './components/DirectorPane';
-import { AgentsPane } from './components/AgentsPane';
 import { CanvasView } from './components/CanvasView';
 import { Drawer } from './components/Drawer';
 import { ResizeHandle } from './components/ResizeHandle';
@@ -74,10 +73,6 @@ export function App() {
   const [mode, setMode] = useLocalStorageState<DirectorMode>(
     'orchestrator.directorMode',
     'auto',
-  );
-  const [viewMode, setViewMode] = useLocalStorageState<ViewMode>(
-    'orchestrator.viewMode',
-    'compact',
   );
   const [drawerCollapsed, setDrawerCollapsed] = useLocalStorageState<boolean>(
     'orchestrator.drawerCollapsed',
@@ -226,7 +221,7 @@ export function App() {
   const spawnDefaultEffort: EffortLevel =
     activeProject?.directorEffort || fallbackEffort;
 
-  const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents(
+  const { agents, selectedId, setSelectedId } = useAgents(
     activeProjectId,
   );
   const { messages, send, busy, refresh: refreshDirector } =
@@ -736,13 +731,11 @@ export function App() {
       <TopBar
         workspace={workspace}
         model={settings?.defaultModel ?? 'claude-sonnet-4-6'}
-        viewMode={viewMode}
         onChangeWorkspace={async () => {
           if (!activeProjectId) return;
           const { path } = await window.api.pickWorkspace();
           if (path) await setProjectWorkspace(activeProjectId, path);
         }}
-        onViewModeChange={setViewMode}
       />
       <ProjectTabs
         projects={projects}
@@ -822,7 +815,7 @@ export function App() {
                   await refreshDirector();
                 }
               }}
-              viewMode={viewMode}
+              viewMode="canvas"
               projectId={activeProjectId}
               onSlashAction={runBuiltinAction}
             />
@@ -833,54 +826,27 @@ export function App() {
               max={640}
               edge="left"
             />
-            {viewMode === 'canvas' ? (
-              <CanvasView
-                agents={agents}
-                selectedId={selectedId}
-                onSelectAgent={setSelectedId}
-                projectId={activeProjectId}
-                workspace={workspace}
-                defaultModel={spawnDefaultModel}
-                defaultEffort={spawnDefaultEffort}
-                provider={activeProject?.provider ?? 'claude'}
-                spawning={spawning}
-                setSpawning={setSpawning}
-                onboardingBanner={
-                  onboardingNeeded
-                    ? {
-                        busy: onboardingBusy,
-                        onRun: () => void runOnboarding(),
-                        onSkip: skipOnboarding,
-                      }
-                    : undefined
-                }
-              />
-            ) : (
-              <AgentsPane
-                agents={agents}
-                selectedId={selectedId}
-                expanded={expanded}
-                workspace={workspace}
-                projectId={activeProjectId}
-                defaultModel={spawnDefaultModel}
-                defaultEffort={spawnDefaultEffort}
-                spawning={spawning}
-                viewMode={viewMode}
-                provider={activeProject?.provider ?? 'claude'}
-                onboardingBanner={
-                  onboardingNeeded
-                    ? {
-                        busy: onboardingBusy,
-                        onRun: () => void runOnboarding(),
-                        onSkip: skipOnboarding,
-                      }
-                    : undefined
-                }
-                setSpawning={setSpawning}
-                onSelect={setSelectedId}
-                onToggle={toggle}
-              />
-            )}
+            <CanvasView
+              agents={agents}
+              selectedId={selectedId}
+              onSelectAgent={setSelectedId}
+              projectId={activeProjectId}
+              workspace={workspace}
+              defaultModel={spawnDefaultModel}
+              defaultEffort={spawnDefaultEffort}
+              provider={activeProject?.provider ?? 'claude'}
+              spawning={spawning}
+              setSpawning={setSpawning}
+              onboardingBanner={
+                onboardingNeeded
+                  ? {
+                      busy: onboardingBusy,
+                      onRun: () => void runOnboarding(),
+                      onSkip: skipOnboarding,
+                    }
+                  : undefined
+              }
+            />
             {!drawerCollapsed && (
               <ResizeHandle
                 value={drawerW}
