@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -14,8 +14,12 @@ import {
 } from '@xyflow/react';
 import { graphlib, layout as runDagreLayout } from '@dagrejs/dagre';
 import '@xyflow/react/dist/style.css';
-import type { Agent } from '../../shared/types';
+import type { Agent, EffortLevel, Provider } from '../../shared/types';
 import { ROLE_TINT } from '../../shared/roles';
+import { Icon } from './Icon';
+import { SpawnAgentForm } from './SpawnAgentForm';
+import { FocusedFixDialog } from './FocusedFixDialog';
+import { OnboardingBanner } from './OnboardingBanner';
 
 /**
  * Flightdeck canvas — Phase 1 (read-only). Mirrors the live agent fleet as a
@@ -251,12 +255,42 @@ interface Props {
   agents: Agent[];
   selectedId: string | null;
   onSelectAgent: (id: string | null) => void;
+  // Spawn surface re-homed from AgentsPane so the canvas reaches parity
+  // before the panes are deleted.
+  projectId: string;
+  workspace: string;
+  defaultModel: string;
+  defaultEffort: EffortLevel;
+  provider: Provider;
+  spawning: boolean;
+  setSpawning: (next: boolean) => void;
+  onboardingBanner?: {
+    busy: boolean;
+    onRun: () => void;
+    onSkip: () => void;
+  };
 }
 
-export function CanvasView({ agents, selectedId, onSelectAgent }: Props) {
+export function CanvasView({
+  agents,
+  selectedId,
+  onSelectAgent,
+  projectId,
+  workspace,
+  defaultModel,
+  defaultEffort,
+  provider,
+  spawning,
+  setSpawning,
+  onboardingBanner,
+}: Props) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const sigRef = useRef<string>('');
+  const [focusedFixOpen, setFocusedFixOpen] = useState(false);
+  const activeCount = agents.filter(
+    (a) => a.status === 'running' || a.status === 'waiting',
+  ).length;
 
   // Rebuild + re-layout only when the topology changes; otherwise patch data
   // in place so a status tick never triggers a relayout.
@@ -297,39 +331,104 @@ export function CanvasView({ agents, selectedId, onSelectAgent }: Props) {
   }, [selectedId, setNodes]);
 
   return (
-    <div style={{ flex: 1, minWidth: 0, height: '100%', background: '#eceef3' }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={(_, node) =>
-          onSelectAgent(node.id === DIRECTOR_ID ? null : node.id)
-        }
-        onPaneClick={() => onSelectAgent(null)}
-        nodesConnectable={false}
-        fitView
-        minZoom={0.3}
-        maxZoom={1.75}
-      >
-        <Background gap={22} size={1} color="#ced4df" />
-        <Controls showInteractive={false} />
-      </ReactFlow>
-      {agents.length === 0 && (
-        <div
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '52%',
-            transform: 'translate(-50%, -50%)',
-            color: '#5b6473',
-            font: '13px system-ui, sans-serif',
-            pointerEvents: 'none',
-          }}
+    <div
+      style={{
+        flex: 1,
+        minWidth: 0,
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#eceef3',
+      }}
+    >
+      <div className="pane-head" style={{ flexShrink: 0 }}>
+        <span className="title">
+          Agents{' '}
+          <b>
+            · {activeCount} active
+            {agents.length > activeCount ? ` / ${agents.length} total` : ''}
+          </b>
+        </span>
+        <span className="spacer" />
+        <button
+          className="tb-btn"
+          onClick={() => setFocusedFixOpen(true)}
+          title="Skip the Director — spawn a single coder pinned to one file"
         >
-          No agents yet. Spawn a fleet from the Director to see it on the canvas.
-        </div>
+          <Icon name="file" size={11} /> Focused fix
+        </button>
+        <button className="tb-btn primary" onClick={() => setSpawning(true)}>
+          <Icon name="plus" size={11} /> New agent
+          <span className="kbd">⌘N</span>
+        </button>
+      </div>
+
+      {onboardingBanner && (
+        <OnboardingBanner
+          busy={onboardingBanner.busy}
+          onRun={onboardingBanner.onRun}
+          onSkip={onboardingBanner.onSkip}
+        />
+      )}
+
+      <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={(_, node) =>
+            onSelectAgent(node.id === DIRECTOR_ID ? null : node.id)
+          }
+          onPaneClick={() => onSelectAgent(null)}
+          nodesConnectable={false}
+          fitView
+          minZoom={0.3}
+          maxZoom={1.75}
+        >
+          <Background gap={22} size={1} color="#ced4df" />
+          <Controls showInteractive={false} />
+        </ReactFlow>
+        {agents.length === 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '52%',
+              transform: 'translate(-50%, -50%)',
+              color: '#5b6473',
+              font: '13px system-ui, sans-serif',
+              pointerEvents: 'none',
+              textAlign: 'center',
+            }}
+          >
+            No agents yet. Use New agent, or send the Director a task.
+          </div>
+        )}
+      </div>
+
+      {spawning && (
+        <SpawnAgentForm
+          projectId={projectId}
+          defaultWorkspace={workspace}
+          defaultModel={defaultModel}
+          defaultEffort={defaultEffort}
+          provider={provider}
+          onCancel={() => setSpawning(false)}
+          onSpawned={() => setSpawning(false)}
+        />
+      )}
+      {focusedFixOpen && (
+        <FocusedFixDialog
+          projectId={projectId}
+          workspace={workspace}
+          defaultModel={defaultModel}
+          defaultEffort={defaultEffort}
+          provider={provider}
+          onCancel={() => setFocusedFixOpen(false)}
+          onSpawned={() => setFocusedFixOpen(false)}
+        />
       )}
     </div>
   );

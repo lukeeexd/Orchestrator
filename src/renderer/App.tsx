@@ -838,6 +838,22 @@ export function App() {
                 agents={agents}
                 selectedId={selectedId}
                 onSelectAgent={setSelectedId}
+                projectId={activeProjectId}
+                workspace={workspace}
+                defaultModel={spawnDefaultModel}
+                defaultEffort={spawnDefaultEffort}
+                provider={activeProject?.provider ?? 'claude'}
+                spawning={spawning}
+                setSpawning={setSpawning}
+                onboardingBanner={
+                  onboardingNeeded
+                    ? {
+                        busy: onboardingBusy,
+                        onRun: () => void runOnboarding(),
+                        onSkip: skipOnboarding,
+                      }
+                    : undefined
+                }
               />
             ) : (
               <AgentsPane
