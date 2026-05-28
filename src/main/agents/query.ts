@@ -137,6 +137,9 @@ export function buildQuery(args: BuildQueryArgs): AsyncIterable<unknown> {
     ...(resume ? { resume } : {}),
     ...(forkSession ? { forkSession: true } : {}),
     agent: 'main',
+    // Top-level --effort is what the CLI actually honors; the per-agent
+    // effort in the agents block below is ignored by the CLI.
+    effort,
     agents: {
       main: {
         description: `${role.label} for the Orchestrator app`,

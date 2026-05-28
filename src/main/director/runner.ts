@@ -514,6 +514,9 @@ class DirectorSession {
               ),
               abortController: this.controller,
               agent: 'director',
+              // Top-level --effort is the only effort the CLI honors; the
+              // effort inside the agents block below is ignored by the CLI.
+              effort: directorEffort,
               agents: {
                 director: {
                   description: 'Orchestrator director — plans and supervises agents.',
