@@ -138,6 +138,18 @@ export const IpcChannels = {
   UpdaterEventSecondaryAvailable: 'updater:event:secondary-available',
   /** S6: opens the secondary channel's public download URL in the user's browser. */
   UpdaterOpenSecondaryDownload: 'updater:openSecondaryDownload',
+  /**
+   * v0.23.0 (R-U1): expose updater state to the renderer so the
+   * Settings screen can show what the auto-updater is actually doing.
+   * Pre-v0.23, `update-electron-app` failures were swallowed and the
+   * pill was the only UI signal — leaving silent-no-op failures
+   * indistinguishable from "no update available yet."
+   */
+  UpdaterGetState: 'updater:getState',
+  /** Force an immediate primary poll. Returns the resulting state. */
+  UpdaterCheckNow: 'updater:checkNow',
+  /** Broadcast on every updater state change (poll started/finished, download progress, errors). */
+  UpdaterEventStateChanged: 'updater:event:state-changed',
   // Renderer-bound streaming events:
   AgentEventAgent: 'agent:event:agent',
   AgentEventLog: 'agent:event:log',
@@ -156,6 +168,57 @@ export interface AppPingResponse {
   ok: true;
   version: string;
   startedAt: number;
+}
+
+/**
+ * Primary updater status surfaced to the renderer so Settings can show
+ * the user what the auto-updater is doing. Each value names a state
+ * the updater can be observed in via the `electron`/`update-electron-app`
+ * event stream:
+ *   - `disabled`: dev build, or setup error swallowed by safe-guard
+ *   - `idle`: between polls
+ *   - `checking`: a poll is in flight
+ *   - `no-update`: latest poll said we're current
+ *   - `available`: a poll found a newer version; download will start
+ *   - `downloading`: Squirrel is fetching the .nupkg
+ *   - `ready`: download finished; restart applies it
+ *   - `error`: a poll or download errored — see `lastError`
+ */
+export type UpdaterPrimaryStatus =
+  | 'disabled'
+  | 'idle'
+  | 'checking'
+  | 'no-update'
+  | 'available'
+  | 'downloading'
+  | 'ready'
+  | 'error';
+
+/**
+ * Snapshot of the auto-updater's state. Returned by `UpdaterGetState`
+ * and broadcast on `UpdaterEventStateChanged`. Times are epoch-ms.
+ */
+export interface UpdaterStateSnapshot {
+  /** Running app version (so the renderer can render diffs without an extra IPC). */
+  appVersion: string;
+  /** Whether `setupAutoUpdater` completed without throwing. */
+  setupOk: boolean;
+  /** If setup failed: the error message. */
+  setupError?: string;
+  /** Current primary-channel status. */
+  primaryStatus: UpdaterPrimaryStatus;
+  /** Epoch-ms of the most recent status transition. */
+  primaryStatusAt?: number;
+  /** Most recent error message, if any. */
+  primaryLastError?: string;
+  /** Version string of the downloaded update, when `primaryStatus === 'ready'`. */
+  downloadedVersion?: string;
+  /** Release notes for the downloaded update, if Squirrel surfaced them. */
+  downloadedNotes?: string;
+  /** Secondary channel's latest detected version, if any. */
+  secondaryVersion?: string;
+  /** Secondary channel's public download URL, if any. */
+  secondaryDownloadUrl?: string;
 }
 
 export interface Settings {
@@ -1117,6 +1180,19 @@ export interface OrchestratorApi {
   ) => () => void;
   /** S6: opens the secondary channel's download URL via the OS's default browser. */
   openSecondaryDownload: (url: string) => Promise<{ ok: boolean }>;
+  /**
+   * R-U1 (v0.23.0): updater diagnostic surface for Settings.
+   * `getUpdaterState` returns a snapshot suitable for one-shot rendering;
+   * `checkForUpdatesNow` forces an immediate primary poll and returns
+   * the post-call snapshot; `onUpdaterStateChanged` subscribes to
+   * subsequent state transitions (poll → no-update / available /
+   * downloading → ready / error).
+   */
+  getUpdaterState: () => Promise<UpdaterStateSnapshot>;
+  checkForUpdatesNow: () => Promise<UpdaterStateSnapshot>;
+  onUpdaterStateChanged: (
+    cb: (state: UpdaterStateSnapshot) => void,
+  ) => () => void;
   // Streams
   onAgent: (cb: (p: AgentEventAgentPayload) => void) => () => void;
   onLog: (cb: (p: AgentEventLogPayload) => void) => () => void;

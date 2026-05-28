@@ -1,5 +1,9 @@
 import { app, BrowserWindow } from 'electron';
 import { IpcChannels } from '../shared/ipc';
+import { scoped } from './log';
+import { setSecondaryUpdateInfo } from './updater';
+
+const log = scoped('secondary-updater');
 
 /**
  * S6: secondary update channel.
@@ -92,20 +96,18 @@ async function pollOnce(): Promise<void> {
       headers: { 'User-Agent': `Orchestrator/${app.getVersion()} (secondary-updater)` },
     });
     if (!res.ok) {
-      console.warn('[secondary-updater] feed returned', res.status);
+      log.warn('feed returned', res.status);
       return;
     }
     // Refuse oversize payloads before buffering them into memory.
     const declaredLen = Number(res.headers.get('content-length') ?? '0');
     if (declaredLen > MAX_MANIFEST_BYTES) {
-      console.warn(
-        `[secondary-updater] manifest too large (${declaredLen} bytes)`,
-      );
+      log.warn(`manifest too large (${declaredLen} bytes)`);
       return;
     }
     manifest = (await res.json()) as LatestManifest;
   } catch (err) {
-    console.warn('[secondary-updater] poll failed:', err);
+    log.warn('poll failed:', err);
     return;
   }
 
@@ -114,14 +116,26 @@ async function pollOnce(): Promise<void> {
     typeof manifest.version !== 'string' ||
     typeof manifest.downloadUrl !== 'string'
   ) {
-    console.warn('[secondary-updater] malformed manifest');
+    log.warn('malformed manifest');
     return;
   }
 
   if (!isNewer(manifest.version, app.getVersion())) {
+    log.info(`current=${app.getVersion()} feed=${manifest.version} — no update`);
     return;
   }
 
+  log.info(
+    `update detected: current=${app.getVersion()} feed=${manifest.version}`,
+  );
+  // R-U1: mirror the secondary detect into the shared updater state so
+  // the Settings screen can show "primary downloading, secondary
+  // already detected" without juggling two event subscriptions in the
+  // renderer.
+  setSecondaryUpdateInfo({
+    version: manifest.version,
+    downloadUrl: manifest.downloadUrl,
+  });
   const payload: SecondaryUpdateEvent = {
     version: manifest.version,
     downloadUrl: manifest.downloadUrl,

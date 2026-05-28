@@ -3,6 +3,7 @@ import type { Settings } from '../../shared/ipc';
 import { Icon } from './Icon';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
+import { UpdaterPanel } from './UpdaterPanel';
 
 export function SettingsScreen() {
   const [draft, setDraft] = useState<Settings | null>(null);
@@ -428,6 +429,8 @@ export function SettingsScreen() {
             </div>
           </div>
         </section>
+
+        <UpdaterPanel />
 
         <section className="settings-section">
           <h3 className="settings-h">About</h3>
