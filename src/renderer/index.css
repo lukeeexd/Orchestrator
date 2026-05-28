@@ -3,31 +3,41 @@
  * mac traffic-lights block removed (we use native Electron chrome). */
 
 :root {
-  --ink: #08090b;
-  --bg: #0b0d10;
-  --panel: #111317;
-  --sub: #16181c;
-  --sub-2: #1a1d22;
-  --border: #1f2229;
-  --border-2: #262932;
-  --text: #e6e6ea;
-  --text-2: #c5c7cd;
-  --muted: #6b7080;
-  --muted-2: #4a4e58;
+  /* Flightdeck — light "blueprint" operator console (5c re-theme).
+     Cool light surfaces, near-navy ink, one electric-blue accent.
+     Pivots off the old dark terminal-green palette. */
+  --ink: #dfe3ea;          /* outer window frame / deepest */
+  --bg: #eceff4;           /* base pane bg (blueprint canvas) */
+  --panel: #f7f9fc;        /* pane head, top bar, status bar */
+  --sub: #e8ecf3;          /* chips, cards, sub-panels */
+  --sub-2: #dde3ec;        /* pressed / selected */
+  --border: #d4dae3;       /* 1px hairlines */
+  --border-2: #c3cbd7;     /* emphasized borders */
+  --text: #161b25;         /* primary ink */
+  --text-2: #44505f;       /* secondary ink */
+  --muted: #6b7484;        /* labels, timestamps */
+  --muted-2: #9aa3b2;      /* tree connectors, scale ticks */
 
-  --accent: #4ade80;
-  --accent-dim: rgba(74, 222, 128, 0.18);
-  --accent-line: rgba(74, 222, 128, 0.42);
+  --accent: #1d4ed8;       /* electric blue (was terminal green) */
+  --accent-dim: rgba(29, 78, 216, 0.12);
+  --accent-line: rgba(29, 78, 216, 0.40);
 
-  --running: #4ade80;
-  --waiting: #f5b544;
-  --paused: #4cc9f0;
-  --approved: #4ade80;
-  --error: #ef5b5b;
-  --done: #6b7080;
+  --running: #1d4ed8;      /* electric blue */
+  --waiting: #b45309;      /* burnt amber */
+  --paused: #64748b;       /* slate */
+  --approved: #1d4ed8;     /* blue (non-green success) */
+  --error: #dc2626;
+  --done: #64748b;         /* slate */
 
   --mono: 'JetBrains Mono', 'Berkeley Mono', 'IBM Plex Mono', ui-monospace,
           SFMono-Regular, Menlo, Consolas, monospace;
+  /* Alias used by newer CSS; was undefined (silently inherited the body
+     font). Defined now so data text stays mono after the UI font flip. */
+  --font-mono: 'JetBrains Mono', 'Berkeley Mono', 'IBM Plex Mono', ui-monospace,
+          SFMono-Regular, Menlo, Consolas, monospace;
+  /* UI font (Flightdeck): clean geometric sans for chrome; mono is for
+     logs / ids / numbers only. */
+  --ui: 'Outfit', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -35,9 +45,9 @@
 html, body {
   margin: 0;
   height: 100%;
-  background: #000;
+  background: var(--ink);
   color: var(--text);
-  font-family: var(--mono);
+  font-family: var(--ui);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
@@ -166,7 +176,7 @@ html, body {
   min-width: 14px; height: 14px;
   padding: 0 4px;
   background: var(--accent);
-  color: #0b0d10;
+  color: #fff;
   font-size: 9px; font-weight: 700;
   border-radius: 7px;
   display: flex; align-items: center; justify-content: center;
@@ -269,7 +279,7 @@ html, body {
 }
 .project-tab .pt-count {
   background: var(--accent);
-  color: #0b0d10;
+  color: #fff;
   font-size: 9px;
   font-weight: 700;
   padding: 0 4px;
@@ -659,6 +669,7 @@ body.resizing * { cursor: col-resize !important; }
 .log-divider { height: 6px; }
 .log-line {
   display: grid;
+  font-family: var(--mono);
   grid-template-columns: 88px 60px minmax(0, 1fr) auto;
   gap: 10px;
   padding: 2px 0;
@@ -723,13 +734,13 @@ body.resizing * { cursor: col-resize !important; }
   text-transform: uppercase;
   color: var(--muted);
 }
-.log-line.thought .kind { color: #9aa0aa; }
-.log-line.tool .kind    { color: #60a5fa; }
-.log-line.result .kind  { color: #4ade80; }
+.log-line.thought .kind { color: #6b7280; }
+.log-line.tool .kind    { color: #2563eb; }
+.log-line.result .kind  { color: #15803d; }
 .log-line.warn .kind    { color: var(--waiting); }
 .log-line.error .kind   { color: var(--error); }
-.log-line.note .kind    { color: #c084fc; }
-.log-line.handoff .kind { color: #f97316; }
+.log-line.note .kind    { color: #0f766e; }
+.log-line.handoff .kind { color: #c2410c; }
 .log-line .msg {
   color: var(--text-2);
   word-break: break-word;
@@ -738,8 +749,8 @@ body.resizing * { cursor: col-resize !important; }
   white-space: pre-wrap;
 }
 .log-line .msg .arg { color: var(--text); }
-.log-line .msg .str { color: #f5b544; }
-.log-line .msg .fn  { color: #4ade80; }
+.log-line .msg .str { color: #a16207; }
+.log-line .msg .fn  { color: #15803d; }
 .log-line .msg .dim { color: var(--muted); }
 
 /* ── Spawn-agent modal ─────────────────────────────────────── */
