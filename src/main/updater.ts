@@ -87,6 +87,16 @@ export function setupAutoUpdater(): void {
 
   try {
     updateElectronApp({
+      // R-U2 (v0.22.3): pass `repo` explicitly even though package.json
+      // now carries a `repository` field. update-electron-app derives
+      // this from package.json by default — when that field was
+      // missing (every release through v0.22.2), setup threw
+      // `AssertionError: repo not found` and the catch below swallowed
+      // it silently, leaving the app with no in-app updater for the
+      // entire release history. Pinning the value here means a future
+      // accidental drop of the package.json field doesn't reopen the
+      // same hole.
+      repo: 'lukeeexd/Orchestrator',
       // 10 minutes is the package default; explicit so it's easy to tune.
       updateInterval: '10 minutes',
       // Skip the bundled UpdateDownloaded notification — we surface our
@@ -101,7 +111,9 @@ export function setupAutoUpdater(): void {
       },
     });
     state = { ...state, setupOk: true };
-    log.info('setup complete: feed=update.electronjs.org, interval=10m');
+    log.info(
+      'setup complete: feed=update.electronjs.org, interval=10m, repo=lukeeexd/Orchestrator',
+    );
   } catch (err) {
     // R-U1: don't swallow. Surface the failure to the user via state
     // so Settings can show what went wrong instead of leaving them
