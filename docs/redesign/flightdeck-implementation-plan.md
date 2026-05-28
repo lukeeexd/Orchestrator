@@ -253,9 +253,11 @@ Decide its interaction before Phase 3 to avoid an awkward retrofit (see Open dec
 
 ## 6. Rollout strategy (NON-NEGOTIABLE: do not break the working app)
 
-The canvas ships as a **third view alongside the existing panes**, behind the existing
-view-mode toggle — built incrementally; the pane view stays the default until the canvas is
-at parity.
+The canvas ships as a **third view alongside the existing panes**, behind the view-mode
+toggle, built incrementally so the working app is never broken mid-build. The panes are
+**scaffolding**: they stay the default through Phases 1-4, then are **removed entirely** once
+the canvas reaches parity (decision #1, revised 2026-05-28) and the canvas becomes the sole
+main view.
 
 - Add `'canvas'` to the `viewMode` union and a third toggle option in `TopBar`/`CommandBar`.
   Default stays `'compact'`; the canvas is opt-in (and gated behind a feature flag in early
@@ -264,9 +266,10 @@ at parity.
   render exactly as today. The canvas is purely additive.
 - The canvas consumes the **same state and IPC** as the panes (`useAgents`, `useDirector`),
   so both views stay live and correct simultaneously — switching the toggle is free.
-- Promotion to default (Phase 5) is a one-line default change, fully reversible. No data
-  migration, no main-process behavior change for Phases 1–3 (only Phase 4 adds an optional,
-  backward-compatible handoff field).
+- The final phase flips the default to canvas AND **deletes** the pane shells
+  (DirectorPane/AgentsPane/Drawer) plus the `viewMode` toggle — canvas is then the only view.
+  No data migration; the only main-process change is Phase 4's optional, backward-compatible
+  handoff field.
 
 ---
 
@@ -305,11 +308,15 @@ handoff edges; `animated` live edges; layout spacing/fit polish; reduced-motion 
 **Outcome:** the orchestration is fully drawn and live. *Effort: includes the one
 main-process change — backward-compatible, gated.*
 
-### Phase 5 — Make it the default (one patch/minor; ~1 day)
-Remove the feature flag, flip default `viewMode` to `'canvas'`, keep compact/stream as
-selectable fallbacks (decision pending — see §9). Docs, release notes, a11y pass.
-**Outcome:** Flightdeck is the main screen, panes retained as alternates. *Effort: small,
-mostly verification.*
+### Phase 5 — Full Flightdeck design + make it the sole view (one minor; ~3-4 days)
+Make canvas the only main view: remove the feature flag, and **delete** the compact/stream
+pane shells (DirectorPane/AgentsPane/Drawer) and the view-mode toggle. Apply the full
+Flightdeck visual design to the canvas (blueprint grid, electric-blue accent, refined node
+cards + edges, dark Director anchor per the mockup) and **re-theme the surrounding chrome**
+(top bar, status bar, left rail) to match, so the whole app reads as Flightdeck rather than a
+light canvas under a dark terminal shell. Docs + release notes.
+**Outcome:** the app *is* Flightdeck; no other views. *Effort: the visual pass + chrome
+re-theme make this bigger than a flag flip.*
 
 ---
 
@@ -348,9 +355,11 @@ mostly verification.*
 These were the open forks; all are now locked as working assumptions. Any can be revisited
 before the phase that depends on it, but the build proceeds on these unless changed.
 
-1. **Keep both views long-term: YES.** The compact/stream panes stay as permanently
-   selectable views (safety net + accessibility fallback) through at least one release after
-   the canvas reaches parity. The canvas does not delete the panes.
+1. **Canvas is the SOLE view — REVISED 2026-05-28: drop the panes.** The compact/stream
+   panes are build-time scaffolding only: kept untouched through Phases 1-4 so nothing breaks
+   mid-build, then DELETED in Phase 5 along with the view-mode toggle. Canvas becomes the only
+   main screen, carrying the full Flightdeck visual design (chrome re-themed to match).
+   Trade-off accepted: no plain-text / accessibility fallback (fine for a single-user app).
 2. **Edge/handoff data: MINIMAL.** Phase 4 adds a minimal `handoffFromId`/`handoffToId` on
    `Agent`, broadcast on the existing `onPatch` channel. Plan rows also record their spawned
    agent id at spawn time so Director-to-agent fan-out edges are exact rather than
