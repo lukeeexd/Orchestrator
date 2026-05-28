@@ -339,13 +339,39 @@ export function countCrashes(): number {
  * numeric fields are passed through unchanged. False-positive
  * redaction in stack traces is preferable to leaking a token.
  */
+/**
+ * R-Vuln2-2026-05-28: crashId must match the mint format below.
+ * Without this guard the renderer-supplied value flows into
+ * `path.join(crashDir, "${crashId}.json")` and an attacker who
+ * passes `../../../foo` reads any `.json` and writes any
+ * `-bundle.zip` outside the crashes dir. The format is set by
+ * `recordCrash` (line ~127):
+ *   ts = new Date().toISOString().replace(/[:.]/g, '-')
+ *      = YYYY-MM-DDTHH-MM-SS-sssZ
+ *   id = `${ts}-${randomUUID().slice(0, 8)}`
+ */
+const CRASH_ID_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-[0-9a-f]{8}$/;
+
 export function exportCrashBundle(
   crashId: string,
   opts: { scrubSecrets: boolean },
 ): { ok: true; path: string } | { ok: false; error: string } {
+  // R-Vuln2: format check first, before anything reads from `crashId`.
+  if (!CRASH_ID_PATTERN.test(crashId)) {
+    return { ok: false, error: `invalid crash id: ${crashId}` };
+  }
   // Locate the crash JSON. The id is the file basename without extension.
   const dir = crashDir();
   const crashPath = path.join(dir, `${crashId}.json`);
+  // R-Vuln2 belt-and-suspenders: the format check above already
+  // rejects `..` segments, but verify containment too so a future
+  // pattern relaxation can't reopen the hole. `path.resolve` is
+  // enough here — the format check rules out symlink-based escapes
+  // (there's no symlink in a date-time-uuid string).
+  if (!path.resolve(crashPath).startsWith(path.resolve(dir) + path.sep)) {
+    return { ok: false, error: `invalid crash path: ${crashId}` };
+  }
   if (!fs.existsSync(crashPath)) {
     return { ok: false, error: `crash not found: ${crashId}` };
   }
@@ -365,7 +391,7 @@ export function exportCrashBundle(
   // race / corrupt boot) we still ship the crash JSON alone.
   let directorMessages: unknown[] = [];
   let agents: Array<{ id: string; role: string; model: string; tokens: number; cost: number; status: string; startedAt: number }> = [];
-  let logsPerAgent = new Map<string, string>();
+  const logsPerAgent = new Map<string, string>();
   if (isDbOpen()) {
     try {
       directorMessages = readRecentDirectorMessages(50);
