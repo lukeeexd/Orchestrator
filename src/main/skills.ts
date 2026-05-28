@@ -79,6 +79,21 @@ export function writeSkill(
   key: SkillKey,
   content: string,
 ): SkillEntry {
+  // R-Vuln3-2026-05-28: `key` arrives untyped from the IPC boundary —
+  // SkillKey is a TS-only contract that nothing enforces at runtime, and
+  // this handler is not in the `validated()` zod pipeline. Pre-fix, a
+  // renderer-supplied `key` like '../../../CLAUDE' would land in
+  // path.join and write a `.md` file anywhere reachable from the
+  // workspace. The sharpest pivot is planting `~/.claude/CLAUDE.md`:
+  // claude loads it as global memory on every invocation (any project,
+  // any cwd), and our worker spawns are `--permission-mode
+  // bypassPermissions` (cli/spawn.ts), so the planted memory becomes
+  // a one-step RCE on the user's next claude session. Sibling handlers
+  // already gate this way — see `isUuid` in projects.ts (MCP config)
+  // and CRASH_ID_PATTERN in crashes.ts (R-Vuln2).
+  if (!ALL_SKILL_KEYS.includes(key)) {
+    throw new Error(`Invalid skill key: ${key}`);
+  }
   const p = skillPathFor(projectId, key);
   if (!p) {
     throw new Error(

@@ -141,11 +141,14 @@ export function listDirectory(absPath: string): MarkdownListing {
  * means something downstream is broken.
  */
 export function readMarkdownFile(absPath: string): MarkdownFileContent {
-  if (!hasMarkdownExtension(absPath)) {
-    throw new Error(
-      `Refusing to read non-markdown file: ${path.basename(absPath)}`,
-    );
-  }
+  // R-Vuln4-2026-05-28: realpath FIRST, then re-check the extension on
+  // the resolved path. Pre-fix order was extension-check-then-realpath:
+  // a symlink named `foo.md` pointing at `~/.ssh/config` (or any other
+  // sensitive non-markdown file) passed the link-name extension gate,
+  // then realpath silently followed to the target, and the function
+  // happily returned the target's content up to the 5 MiB cap. Same
+  // shape applies to listDirectory below, but that path realpaths
+  // before any name filter already.
   let realPath: string;
   try {
     realPath = fs.realpathSync(absPath);
@@ -154,6 +157,11 @@ export function readMarkdownFile(absPath: string): MarkdownFileContent {
       `Cannot read file "${absPath}": ${
         err instanceof Error ? err.message : String(err)
       }`,
+    );
+  }
+  if (!hasMarkdownExtension(realPath)) {
+    throw new Error(
+      `Refusing to read non-markdown file: ${path.basename(realPath)}`,
     );
   }
   const stat = fs.statSync(realPath);
