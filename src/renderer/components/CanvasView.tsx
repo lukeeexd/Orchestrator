@@ -7,6 +7,7 @@ import {
   Position,
   useNodesState,
   useEdgesState,
+  MarkerType,
   type Node,
   type Edge,
   type NodeProps,
@@ -178,6 +179,74 @@ function layoutLR(nodes: Node[], edges: Edge[]): Node[] {
   });
 }
 
+const REDUCE_MOTION =
+  typeof window !== 'undefined' &&
+  !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Build the edge set that draws the orchestration flow:
+ *  - fork ancestry: parent -> fork (dashed), from the existing `forkedFromId`;
+ *  - handoff chain: Director-spawned plan agents run sequentially, so start-time
+ *    order IS the handoff order — chain each to the next (solid accent). An
+ *    explicit `handoffFromId` field is deferred until parallel spawning lands;
+ *    until then this is exact, not a heuristic;
+ *  - root: Director -> agent for the chain head and any user-spawned standalone
+ *    agent.
+ * Exactly one incoming edge per agent. Cheap to rebuild on every update.
+ */
+function buildEdges(agents: Agent[]): Edge[] {
+  const ids = new Set(agents.map((a) => a.id));
+  const chain = agents
+    .filter((a) => a.spawnedBy === 'director' && !a.forkedFromId)
+    .slice()
+    .sort((a, b) => a.startedAt - b.startedAt);
+  const prevOf = new Map<string, string>();
+  for (let i = 1; i < chain.length; i++) prevOf.set(chain[i].id, chain[i - 1].id);
+
+  const arrow = (color: string) => ({
+    type: MarkerType.ArrowClosed,
+    width: 15,
+    height: 15,
+    color,
+  });
+
+  return agents.map((a): Edge => {
+    const live = !REDUCE_MOTION && a.status === 'running';
+    if (a.forkedFromId && ids.has(a.forkedFromId)) {
+      return {
+        id: `fork-${a.id}`,
+        source: a.forkedFromId,
+        target: a.id,
+        label: 'fork',
+        animated: false,
+        markerEnd: arrow('#94a3b8'),
+        style: { stroke: '#94a3b8', strokeWidth: 1.5, strokeDasharray: '5 4' },
+        labelStyle: { fill: '#5b6473', fontSize: 10, fontFamily: 'system-ui, sans-serif' },
+        labelBgStyle: { fill: '#eceef3', fillOpacity: 0.9 },
+      };
+    }
+    const prev = prevOf.get(a.id);
+    if (prev) {
+      return {
+        id: `ho-${a.id}`,
+        source: prev,
+        target: a.id,
+        animated: live,
+        markerEnd: arrow('#1d4ed8'),
+        style: { stroke: '#1d4ed8', strokeWidth: 1.75 },
+      };
+    }
+    return {
+      id: `e-${a.id}`,
+      source: DIRECTOR_ID,
+      target: a.id,
+      animated: live,
+      markerEnd: arrow('#9aa3b2'),
+      style: { stroke: '#9aa3b2', strokeWidth: 1.5 },
+    };
+  });
+}
+
 interface Props {
   agents: Agent[];
   selectedId: string | null;
@@ -205,15 +274,9 @@ export function CanvasView({ agents, selectedId, onSelectAgent }: Props) {
           selected: a.id === selectedId,
         })),
       ];
-      const rawEdges: Edge[] = agents.map((a) => ({
-        id: `e-${a.id}`,
-        source: DIRECTOR_ID,
-        target: a.id,
-        animated: a.status === 'running',
-        style: { stroke: '#aab2c0', strokeWidth: 1.5 },
-      }));
-      setNodes(layoutLR(rawNodes, rawEdges));
-      setEdges(rawEdges);
+      const newEdges = buildEdges(agents);
+      setNodes(layoutLR(rawNodes, newEdges));
+      setEdges(newEdges);
     } else {
       setNodes((prev) =>
         prev.map((n) => {
@@ -222,12 +285,9 @@ export function CanvasView({ agents, selectedId, onSelectAgent }: Props) {
           return a ? { ...n, data: agentData(a) } : n;
         }),
       );
-      setEdges((prev) =>
-        prev.map((e) => {
-          const a = agents.find((x) => x.id === e.target);
-          return a ? { ...e, animated: a.status === 'running' } : e;
-        }),
-      );
+      // Edges are cheap to rebuild and depend only on immutable fields + status;
+      // rebuilding picks up status -> animated changes without a relayout.
+      setEdges(buildEdges(agents));
     }
   }, [agents, selectedId, setNodes, setEdges]);
 
