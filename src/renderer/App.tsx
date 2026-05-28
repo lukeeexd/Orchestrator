@@ -761,32 +761,6 @@ export function App() {
         />
 
         {isHome && activeProjectId ? (
-          viewMode === 'canvas' ? (
-            <>
-              <CanvasView
-                agents={agents}
-                selectedId={selectedId}
-                onSelectAgent={setSelectedId}
-              />
-              {!drawerCollapsed && (
-                <ResizeHandle
-                  value={drawerW}
-                  onChange={setDrawerW}
-                  min={340}
-                  max={680}
-                  edge="right"
-                />
-              )}
-              <Drawer
-                width={drawerW}
-                agent={selectedAgent}
-                collapsed={drawerCollapsed}
-                provider={activeProject?.provider ?? 'claude'}
-                onAbort={(id) => void window.api.abortAgent(id)}
-                onToggleCollapsed={() => setDrawerCollapsed(!drawerCollapsed)}
-              />
-            </>
-          ) : (
           <>
             <DirectorPane
               width={dirW}
@@ -859,30 +833,38 @@ export function App() {
               max={640}
               edge="left"
             />
-            <AgentsPane
-              agents={agents}
-              selectedId={selectedId}
-              expanded={expanded}
-              workspace={workspace}
-              projectId={activeProjectId}
-              defaultModel={spawnDefaultModel}
-              defaultEffort={spawnDefaultEffort}
-              spawning={spawning}
-              viewMode={viewMode}
-              provider={activeProject?.provider ?? 'claude'}
-              onboardingBanner={
-                onboardingNeeded
-                  ? {
-                      busy: onboardingBusy,
-                      onRun: () => void runOnboarding(),
-                      onSkip: skipOnboarding,
-                    }
-                  : undefined
-              }
-              setSpawning={setSpawning}
-              onSelect={setSelectedId}
-              onToggle={toggle}
-            />
+            {viewMode === 'canvas' ? (
+              <CanvasView
+                agents={agents}
+                selectedId={selectedId}
+                onSelectAgent={setSelectedId}
+              />
+            ) : (
+              <AgentsPane
+                agents={agents}
+                selectedId={selectedId}
+                expanded={expanded}
+                workspace={workspace}
+                projectId={activeProjectId}
+                defaultModel={spawnDefaultModel}
+                defaultEffort={spawnDefaultEffort}
+                spawning={spawning}
+                viewMode={viewMode}
+                provider={activeProject?.provider ?? 'claude'}
+                onboardingBanner={
+                  onboardingNeeded
+                    ? {
+                        busy: onboardingBusy,
+                        onRun: () => void runOnboarding(),
+                        onSkip: skipOnboarding,
+                      }
+                    : undefined
+                }
+                setSpawning={setSpawning}
+                onSelect={setSelectedId}
+                onToggle={toggle}
+              />
+            )}
             {!drawerCollapsed && (
               <ResizeHandle
                 value={drawerW}
@@ -901,7 +883,6 @@ export function App() {
               onToggleCollapsed={() => setDrawerCollapsed(!drawerCollapsed)}
             />
           </>
-          )
         ) : active === 'settings' ? (
           <SettingsScreen />
         ) : active === 'tools' ? (
