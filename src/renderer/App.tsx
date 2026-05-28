@@ -26,7 +26,6 @@ import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { ToolsScreen } from './components/ToolsScreen';
 import { MarketplaceScreen } from './components/MarketplaceScreen';
-import { SpendScreen } from './components/SpendScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { TemplatesScreen } from './components/TemplatesScreen';
 import { DocsScreen } from './components/DocsScreen';
@@ -53,7 +52,7 @@ const AUTO_REDIRECT_DELAY_MS = 3000;
 const PLACEHOLDERS: Record<
   Exclude<
     RailScreen,
-    'agents' | 'settings' | 'tools' | 'cost' | 'history' | 'marketplace' | 'docs'
+    'agents' | 'settings' | 'tools' | 'history' | 'marketplace' | 'docs'
   >,
   { title: string; icon: Parameters<typeof PlaceholderScreen>[0]['icon']; body: string }
 > = {
@@ -233,9 +232,6 @@ export function App() {
     useDirector(activeProjectId);
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
   const [spawning, setSpawning] = useState(false);
-
-  const totalTokens = agents.reduce((s, a) => s + a.tokens, 0);
-  const totalCost = agents.reduce((s, a) => s + a.cost, 0);
 
   // Track agent counts per project for the tab badges. Hydrate from registry
   // on mount, then update from broadcast events for all projects (not just
@@ -674,9 +670,6 @@ export function App() {
         case 'go-agents':
           setActive('agents');
           break;
-        case 'go-spend':
-          setActive('cost');
-          break;
         case 'go-history':
           setActive('history');
           break;
@@ -742,8 +735,6 @@ export function App() {
       <TopBar
         workspace={workspace}
         model={settings?.defaultModel ?? 'claude-sonnet-4-6'}
-        totalTokens={totalTokens}
-        totalCost={totalCost}
         viewMode={viewMode}
         onChangeWorkspace={async () => {
           if (!activeProjectId) return;
@@ -905,8 +896,6 @@ export function App() {
             projectProvider={activeProject?.provider ?? null}
             directorProvider={activeProject ? directorProvider : null}
           />
-        ) : active === 'cost' ? (
-          <SpendScreen onDeepLink={(rail) => setActive(rail)} />
         ) : active === 'history' ? (
           <HistoryScreen
             projects={projects}

@@ -5,7 +5,6 @@ import type {
 } from '../../shared/types';
 import { ROLES } from '../../shared/roles';
 import { resolveModel } from '../../shared/models';
-import { estimateCost } from '../../shared/rates';
 import * as registry from './registry';
 import { classify, nowTs } from './classifier';
 import { buildHandoffPayload } from './handoffPayload';
@@ -18,7 +17,6 @@ import { runClaudeQuery } from '../cli/spawn';
 import { runCodexQuery } from '../cli/codex';
 import {
   buildSystemPromptFor,
-  checkBudget,
   LOG_TAIL_CAP,
   resolveTools,
   TERMINAL_STATUSES,
@@ -169,17 +167,10 @@ export async function consumeQuery(
   agentId: string,
   q: AsyncIterable<unknown>,
   controller: AbortController,
-  model: string,
   sinks: RunnerSinks,
 ): Promise<void> {
   const entry0 = registry.get(agentId);
   if (!entry0) return;
-  // Cumulative tracking — start from the agent's existing totals so
-  // a redirect run accumulates onto the original spawn's numbers.
-  const baseTokens = entry0.agent.tokens;
-  const baseCost = entry0.agent.cost;
-  let runInput = 0;
-  let runOutput = 0;
   let turn = 0;
 
   // Resolve the loadout once per consumeQuery for skill-fire
@@ -194,10 +185,9 @@ export async function consumeQuery(
 
   for await (const event of q) {
     if (controller.signal.aborted) break;
-    // Once a terminal status has been written (typically by the
-    // wall-clock budget timer aborting the run), stop draining the
-    // CLI tail. Otherwise a buffered `result` event lands and the
-    // is_error subtype overwrites "Budget exceeded".
+    // Once a terminal status has been written, stop draining the CLI
+    // tail. Otherwise a buffered `result` event lands and its is_error
+    // subtype overwrites a terminal status we already set (e.g. on abort).
     const guard = registry.get(agentId);
     if (guard && TERMINAL_STATUSES.has(guard.agent.status)) break;
     const ev = event as { type: string; session_id?: string; [k: string]: unknown };
@@ -262,133 +252,15 @@ export async function consumeQuery(
 
     if (ev.type === 'assistant') {
       turn += 1;
-      const msg = (ev as { message?: { usage?: Record<string, number | null | undefined> } }).message;
-      if (msg?.usage) {
-        const u = msg.usage;
-        const turnInput =
-          (Number(u.input_tokens) || 0) +
-          (Number(u.cache_creation_input_tokens) || 0) +
-          (Number(u.cache_read_input_tokens) || 0);
-        const turnOutput = Number(u.output_tokens) || 0;
-        runInput += turnInput;
-        runOutput += turnOutput;
-        const totalTokens = baseTokens + runInput + runOutput;
-        const totalCost = baseCost + estimateCost(model, runInput, runOutput);
-
-        // Diagnostic note showing per-turn cost and current cap state.
-        const entryNow = registry.get(agentId);
-        const budgetView = entryNow
-          ? `cap ${entryNow.agent.budget.tokens.toLocaleString()}tok / $${entryNow.agent.budget.usd.toFixed(2)} / ${entryNow.agent.budget.seconds}s`
-          : 'no budget';
-        sinks.onLog(agentId, {
-          ts: nowTs(),
-          kind: 'note',
-          msg: `turn ${turn} · in ${turnInput.toLocaleString()} · out ${turnOutput.toLocaleString()} · cumulative ${totalTokens.toLocaleString()} · $${totalCost.toFixed(4)} · ${budgetView}`,
-        });
-
-        registry.patch(agentId, {
-          step: `${turn}/?`,
-          tokens: totalTokens,
-          cost: totalCost,
-        });
-        sinks.onPatch(agentId, {
-          step: `${turn}/?`,
-          tokens: totalTokens,
-          cost: totalCost,
-        });
-        // Budget enforcement after each assistant turn — against cumulative.
-        const entry = registry.get(agentId);
-        const breach = entry
-          ? checkBudget(
-              entry.agent.budget,
-              totalTokens,
-              totalCost,
-              entry.agent.startedAt,
-            )
-          : null;
-        if (breach) {
-          sinks.onLog(agentId, {
-            ts: nowTs(),
-            kind: 'error',
-            msg: `Budget exceeded — ${breach}. Aborting.`,
-          });
-          controller.abort();
-          registry.patch(agentId, {
-            status: 'error',
-            statusLabel: 'Budget exceeded',
-          });
-          sinks.onPatch(agentId, {
-            status: 'error',
-            statusLabel: 'Budget exceeded',
-          });
-          break;
-        }
-      } else {
-        registry.patch(agentId, { step: `${turn}/?` });
-        sinks.onPatch(agentId, { step: `${turn}/?` });
-      }
+      registry.patch(agentId, { step: `${turn}/?` });
+      sinks.onPatch(agentId, { step: `${turn}/?` });
     } else if (ev.type === 'result') {
       const result = ev as unknown as {
         subtype: string;
-        total_cost_usd?: number;
-        usage?: {
-          input_tokens?: number;
-          output_tokens?: number;
-          cache_creation_input_tokens?: number;
-          cache_read_input_tokens?: number;
-        };
-        modelUsage?: Record<
-          string,
-          {
-            inputTokens?: number;
-            outputTokens?: number;
-            cacheReadInputTokens?: number;
-            cacheCreationInputTokens?: number;
-            costUSD?: number;
-          }
-        >;
         is_error?: boolean;
         errors?: string[];
         result?: string;
       };
-      // result.usage is for THIS run only; combine with base for cumulative.
-      // Include cache_* token totals so we don't undercount Sonnet/Opus
-      // prompts that hit cache (the bulk of input is usually a cached read).
-      const u = result.usage ?? {};
-      const resultRunInput =
-        (Number(u.input_tokens) || 0) +
-        (Number(u.cache_creation_input_tokens) || 0) +
-        (Number(u.cache_read_input_tokens) || 0);
-      const resultRunOutput = Number(u.output_tokens) || 0;
-      const finalTokens = baseTokens + resultRunInput + resultRunOutput;
-      const finalCost = baseCost + (result.total_cost_usd ?? 0);
-
-      // Merge per-model usage cumulatively. A redirect run produces a
-      // second result event with its own modelUsage; we add to whatever
-      // the agent already had so the Drawer + Spend screen see the full
-      // cross-turn breakdown.
-      const currentUsage = registry.get(agentId)?.agent.modelUsage ?? {};
-      const mergedUsage: Record<string, { tokens: number; cost: number }> = {
-        ...currentUsage,
-      };
-      if (result.modelUsage) {
-        // R-M1: `usageModel` instead of `model` so we don't shadow
-        // the outer per-run `model` parameter of consumeQuery.
-        for (const [usageModel, m] of Object.entries(result.modelUsage)) {
-          const turnTokens =
-            (Number(m.inputTokens) || 0) +
-            (Number(m.outputTokens) || 0) +
-            (Number(m.cacheReadInputTokens) || 0) +
-            (Number(m.cacheCreationInputTokens) || 0);
-          const turnCost = Number(m.costUSD) || 0;
-          const prev = mergedUsage[usageModel] ?? { tokens: 0, cost: 0 };
-          mergedUsage[usageModel] = {
-            tokens: prev.tokens + turnTokens,
-            cost: prev.cost + turnCost,
-          };
-        }
-      }
-      const usageChanged = Object.keys(mergedUsage).length > 0;
       if (result.subtype === 'success') {
         sinks.onLog(agentId, {
           ts: nowTs(),
@@ -398,10 +270,7 @@ export async function consumeQuery(
         const successPatch: Partial<Agent> = {
           status: 'done',
           statusLabel: 'Done',
-          tokens: finalTokens,
-          cost: finalCost,
         };
-        if (usageChanged) successPatch.modelUsage = mergedUsage;
         registry.patch(agentId, successPatch);
         sinks.onPatch(agentId, successPatch);
         const entry = registry.get(agentId);
@@ -428,10 +297,7 @@ export async function consumeQuery(
         const errorPatch: Partial<Agent> = {
           status: 'error',
           statusLabel: result.subtype,
-          tokens: finalTokens,
-          cost: finalCost,
         };
-        if (usageChanged) errorPatch.modelUsage = mergedUsage;
         registry.patch(agentId, errorPatch);
         sinks.onPatch(agentId, errorPatch);
       }

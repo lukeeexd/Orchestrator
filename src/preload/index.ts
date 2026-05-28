@@ -435,18 +435,6 @@ const api: OrchestratorApi = {
     ipcRenderer.invoke(IpcChannels.DocsPickFolder) as Promise<{
       path: string | null;
     }>,
-  getSpendSummary: () =>
-    ipcRenderer.invoke(IpcChannels.SpendGet) as Promise<
-      import('../shared/types').SpendSummary
-    >,
-  getSpendRecommendations: () =>
-    ipcRenderer.invoke(IpcChannels.SpendRecommendations) as Promise<
-      import('../shared/types').SpendRecommendation[]
-    >,
-  forecastPlanCost: (rows) =>
-    ipcRenderer.invoke(IpcChannels.SpendForecastPlan, rows) as Promise<
-      import('../shared/types').PlanCostForecast
-    >,
   listLogNotes: (agentId) =>
     ipcRenderer.invoke(IpcChannels.LogNotesList, agentId) as Promise<
       import('../shared/types').LogNote[]

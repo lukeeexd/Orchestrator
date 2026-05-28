@@ -333,29 +333,6 @@ export interface SpawnAgentRequest {
 // imported but drifted independently when ipc.ts gained the
 // `ok: true` literal.
 
-export interface SpendBucket {
-  /** Display label for the bucket (project name, model id, or role label). */
-  label: string;
-  /** Stable id — used by the renderer for keys and for "drill in" later. */
-  id: string;
-  agentCount: number;
-  tokens: number;
-  cost: number;
-}
-
-export interface SpendAgentRow {
-  id: string;
-  name: string;
-  role: AgentRole;
-  model: string;
-  status: AgentStatus;
-  projectId: string;
-  projectName: string;
-  cost: number;
-  tokens: number;
-  startedAt: number;
-}
-
 export interface HistoryRow {
   id: string;
   name: string;
@@ -375,14 +352,6 @@ export interface HistoryRow {
   projectName: string;
   spawnedBy: AgentSpawnedBy;
   forkedFromName?: string;
-}
-
-export interface SpendDayBucket {
-  /** Local-time YYYY-MM-DD. Days with zero spend are included as gap-fillers. */
-  date: string;
-  agentCount: number;
-  tokens: number;
-  cost: number;
 }
 
 /**
@@ -408,79 +377,6 @@ export interface SecretListEntry {
   updatedAt: number;
   /** Length of the stored value — lets the UI render `••• (12)` without revealing the bytes. */
   valueLength: number;
-}
-
-export interface SpendSummary {
-  /** Aggregate totals across every agent in every project — lifetime. */
-  lifetime: { agentCount: number; tokens: number; cost: number };
-  /** Same totals filtered to agents started in the trailing 7 days. */
-  last7d: { agentCount: number; tokens: number; cost: number };
-  /** Same totals filtered to agents started in the trailing 30 days. */
-  last30d: { agentCount: number; tokens: number; cost: number };
-  /** One row per project, sorted by cost descending. */
-  byProject: SpendBucket[];
-  /** One row per model (as stored on the agent), sorted by cost descending. */
-  byModel: SpendBucket[];
-  /** One row per role, sorted by cost descending. */
-  byRole: SpendBucket[];
-  /** Trailing 30 days, one entry per day, ascending. Zero-spend days included so the chart doesn't have gaps. */
-  byDay: SpendDayBucket[];
-  /** Top 20 most expensive agents, all-time. */
-  topAgents: SpendAgentRow[];
-}
-
-/**
- * F7: pre-spawn cost forecast for a PlanCard. Per-role medians come
- * from completed agents in the agents table. We don't try to model
- * task-length or model-selection adjustments yet — the median alone
- * is a useful "have I been burned by a 5-agent Opus run before"
- * signal. ±50% band approximates the variance band wide enough that
- * the user reads it as "ballpark" rather than "promise".
- */
-export interface PlanCostForecast {
-  /** Lower bound of the forecast band, USD. Zero on no-history. */
-  lowUsd: number;
-  /** Upper bound of the forecast band, USD. Zero on no-history. */
-  highUsd: number;
-  /** Midpoint (sum of per-role medians), USD. Zero on no-history. */
-  midUsd: number;
-  /**
-   * `history` — every row's role has at least 3 completed samples.
-   * `partial` — at least one row's role has < 3 samples; estimate
-   *             uses what we have and notes the gap.
-   * `no-history` — no rows could be priced; renderer shows "no history".
-   */
-  basis: 'history' | 'partial' | 'no-history';
-  /** Per-role breakdown for tooltip display. */
-  perRole: Array<{
-    role: AgentRole;
-    /** How many completed samples this median is based on. */
-    sampleCount: number;
-    /** Per-row median used in the sum, USD. */
-    medianUsd: number;
-    /** How many plan rows this role contributes. */
-    rowCount: number;
-  }>;
-}
-
-/**
- * One rule-based recommendation surfaced on the Spend screen.
- * Recomputed every time the user opens the rail; no persistent
- * "dismissed" state in v1 (the underlying conditions resolving is the
- * dismiss signal — e.g. unsubscribing the idle bundle removes the
- * card on next load).
- */
-export interface SpendRecommendation {
-  /** Stable id — used as a React key and as a hook for future dismiss state. */
-  id: string;
-  /** Visual weight: 'info' for FYI, 'warn' for "you probably want to look at this". */
-  severity: 'info' | 'warn';
-  /** One-line headline shown in the card. */
-  title: string;
-  /** Two-or-three-sentence explanation + suggested action. */
-  body: string;
-  /** Optional rail item id to deep-link to (history / marketplace / settings / tools). */
-  deepLink?: 'settings' | 'marketplace' | 'tools' | 'history';
 }
 
 /**

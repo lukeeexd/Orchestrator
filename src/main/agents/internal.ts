@@ -1,6 +1,5 @@
 import type {
   Agent,
-  AgentBudget,
   AgentRole,
   AgentSubtype,
   LogLine,
@@ -11,7 +10,6 @@ import { effectiveSkill } from '../skills';
 import { getProject } from '../projects';
 import { getSecretsForSpawn } from '../secrets';
 import { awaitCompletion as awaitLockedCompletion } from './agent-lock';
-import { nowTs } from './classifier';
 
 /**
  * P10: Flavour-specific prompt blocks appended to a role's base
@@ -193,31 +191,6 @@ export function elapsed(startedAt: number): string {
 }
 
 /**
- * Returns a description of the first budget breach, or null if within
- * limits. A zero limit means "unlimited" (skip that check).
- */
-export function checkBudget(
-  budget: AgentBudget,
-  tokens: number,
-  cost: number,
-  startedAt: number,
-): string | null {
-  if (budget.usd > 0 && cost > budget.usd) {
-    return `cost $${cost.toFixed(2)} exceeds cap $${budget.usd.toFixed(2)}`;
-  }
-  if (budget.tokens > 0 && tokens > budget.tokens) {
-    return `tokens ${tokens.toLocaleString()} exceed cap ${budget.tokens.toLocaleString()}`;
-  }
-  if (budget.seconds > 0) {
-    const sec = (Date.now() - startedAt) / 1000;
-    if (sec > budget.seconds) {
-      return `wall-clock ${Math.round(sec)}s exceeds cap ${budget.seconds}s`;
-    }
-  }
-  return null;
-}
-
-/**
  * Returns a promise that resolves when the given agent reaches a
  * terminal status (done | error | aborted). Already-completed agents
  * resolve immediately.
@@ -231,14 +204,13 @@ export function awaitCompletion(agentId: string): Promise<void> {
 }
 
 /**
- * Per-second tick: updates the agent's elapsed display, enforces the
- * wall-clock budget, and clears itself when the agent leaves the
- * registry. Returns the interval handle so the caller (run / runFork /
- * runRedirect) can clear it on their own finally-block too.
+ * Per-second tick: updates the agent's elapsed display and clears
+ * itself when the agent leaves the registry. Returns the interval
+ * handle so the caller (run / runFork / runRedirect) can clear it on
+ * its own finally-block too.
  */
 export function startElapsedTimer(
   agentId: string,
-  controller: AbortController,
   sinks: RunnerSinks,
 ): NodeJS.Timeout {
   const elapsedTimer = setInterval(() => {
@@ -251,32 +223,6 @@ export function startElapsedTimer(
     if (next !== e.agent.elapsed) {
       registry.patch(agentId, { elapsed: next });
       sinks.onPatch(agentId, { elapsed: next });
-    }
-    if (
-      e.agent.status === 'running' &&
-      e.agent.budget.seconds > 0 &&
-      (Date.now() - e.agent.startedAt) / 1000 > e.agent.budget.seconds
-    ) {
-      // Stop the timer FIRST so a late assistant/result event in
-      // consumeQuery can't overwrite "Budget exceeded" with a
-      // generic 'is_error' subtype label. The runFork/runRedirect/
-      // run finally-blocks also clearInterval defensively, but by
-      // then consumeQuery has already drained one more event.
-      clearInterval(elapsedTimer);
-      sinks.onLog(agentId, {
-        ts: nowTs(),
-        kind: 'error',
-        msg: `Wall-clock budget ${e.agent.budget.seconds}s exceeded. Aborting.`,
-      });
-      controller.abort();
-      registry.patch(agentId, {
-        status: 'error',
-        statusLabel: 'Budget exceeded',
-      });
-      sinks.onPatch(agentId, {
-        status: 'error',
-        statusLabel: 'Budget exceeded',
-      });
     }
   }, 1000);
   return elapsedTimer;

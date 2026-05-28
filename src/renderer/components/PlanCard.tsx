@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type {
-  AgentRole,
   DirectorMode,
-  PlanCostForecast,
   PlanRow,
 } from '../../shared/types';
 import { ROLE_TINT } from '../../shared/roles';
@@ -90,42 +88,6 @@ export function PlanCard({
       /* private window / quota / etc — best-effort persistence */
     }
   }, [shipGate]);
-
-  // F7: pre-spawn cost forecast. Fetches an estimate band whenever the
-  // row set changes (or ship-gate toggles, which appends the gate rows
-  // to the forecast input). Debounced via the setTimeout in the effect
-  // so rapid edits don't fire N IPCs back-to-back.
-  const finalRowsForForecast = useMemo<PlanRow[]>(() => {
-    const gateRows: PlanRow[] = shipGate
-      ? SHIP_GATE_ROWS.map((g, idx) => ({
-          ...g,
-          i: edited.length + idx + 1,
-        }))
-      : [];
-    return [...edited, ...gateRows];
-  }, [edited, shipGate]);
-  const [forecast, setForecast] = useState<PlanCostForecast | null>(null);
-  useEffect(() => {
-    if (accepted || finalRowsForForecast.length === 0) {
-      setForecast(null);
-      return;
-    }
-    let cancelled = false;
-    const t = setTimeout(() => {
-      window.api
-        ?.forecastPlanCost(finalRowsForForecast)
-        .then((f) => {
-          if (!cancelled) setForecast(f);
-        })
-        .catch(() => {
-          if (!cancelled) setForecast(null);
-        });
-    }, 200);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [finalRowsForForecast, accepted]);
 
   const handleSpawn = async () => {
     if (edited.length === 0) return;
@@ -273,9 +235,6 @@ export function PlanCard({
                 Save as template
               </button>
             )}
-            {forecast && edited.length > 0 && (
-              <ForecastChip forecast={forecast} />
-            )}
             <button
               className="tb-btn primary"
               style={{ height: 20, marginLeft: 6 }}
@@ -347,66 +306,6 @@ export function PlanCard({
         </div>
       )}
     </div>
-  );
-}
-
-function ForecastChip({ forecast }: { forecast: PlanCostForecast }) {
-  if (forecast.basis === 'no-history') {
-    return (
-      <span
-        className="badge"
-        style={{
-          height: 18,
-          marginLeft: 6,
-          padding: '0 6px',
-          fontSize: 10,
-          background: 'var(--sub-2)',
-          color: 'var(--text-2)',
-        }}
-        title="No history yet for the roles in this plan — the forecast will populate after your first few runs."
-      >
-        ≈ no history
-      </span>
-    );
-  }
-  // The ±50% band is informational; the chip shows a clean range
-  // unless the midpoint is so small that the band collapses.
-  const fmt = (usd: number): string => {
-    if (usd < 0.01) return '<$0.01';
-    if (usd < 1) return `$${usd.toFixed(2)}`;
-    if (usd < 10) return `$${usd.toFixed(2)}`;
-    return `$${usd.toFixed(1)}`;
-  };
-  const breakdown = forecast.perRole
-    .map((p) => {
-      const med =
-        p.medianUsd > 0
-          ? `${fmt(p.medianUsd)}×${p.rowCount}`
-          : `no history×${p.rowCount}`;
-      return `${p.role}: ${med}`;
-    })
-    .join('\n');
-  return (
-    <span
-      className="badge"
-      style={{
-        height: 18,
-        marginLeft: 6,
-        padding: '0 6px',
-        fontSize: 10,
-        background: 'var(--sub-2)',
-        color: forecast.basis === 'partial' ? 'var(--waiting)' : 'var(--text-2)',
-      }}
-      title={
-        `Forecast based on per-role median cost (±50% band).` +
-        (forecast.basis === 'partial'
-          ? '\nSome roles have <3 historical runs; estimate uses what we have.'
-          : '') +
-        `\n\n${breakdown}`
-      }
-    >
-      ≈ {fmt(forecast.lowUsd)}–{fmt(forecast.highUsd)}
-    </span>
   );
 }
 

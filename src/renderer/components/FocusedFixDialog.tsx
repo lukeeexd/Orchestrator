@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { EffortLevel, Provider } from '../../shared/types';
 import { Modal } from './Modal';
 import { Icon } from './Icon';
@@ -40,26 +40,8 @@ export function FocusedFixDialog({
 }: Props) {
   const [filePath, setFilePath] = useState<string>('');
   const [task, setTask] = useState('');
-  const [budgetUsd, setBudgetUsd] = useState('');
-  const [budgetTokens, setBudgetTokens] = useState('');
-  const [budgetSeconds, setBudgetSeconds] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [defaults, setDefaults] = useState<{
-    usd: number;
-    tokens: number;
-    seconds: number;
-  } | null>(null);
-
-  useEffect(() => {
-    window.api.getSettings().then((s) => {
-      setDefaults({
-        usd: s.defaultBudgetUsd,
-        tokens: s.defaultBudgetTokens,
-        seconds: s.defaultBudgetSeconds,
-      });
-    });
-  }, []);
 
   const pickFile = async () => {
     const res = await window.api.pickAttachments();
@@ -106,15 +88,6 @@ export function FocusedFixDialog({
         `- Stop once the user-described change is implemented. Don't ` +
         `opportunistically refactor in the same pass.`;
 
-      const usd = budgetUsd ? Number(budgetUsd) : defaults?.usd ?? 0;
-      const tokens = budgetTokens
-        ? Number(budgetTokens)
-        : defaults?.tokens ?? 0;
-      const seconds = budgetSeconds
-        ? Number(budgetSeconds)
-        : defaults?.seconds ?? 0;
-      const hasBudget = usd > 0 || tokens > 0 || seconds > 0;
-
       await window.api.spawnAgent({
         projectId,
         role: 'coder',
@@ -127,7 +100,6 @@ export function FocusedFixDialog({
         // contents in the opening turn — saves a Read tool call and
         // makes "stay focused on this file" easier to honour.
         attachments: [filePath],
-        ...(hasBudget ? { budget: { usd, tokens, seconds } } : {}),
       });
       onSpawned();
     } catch (e) {
@@ -212,39 +184,6 @@ export function FocusedFixDialog({
             placeholder="What needs to change in this file? (3 lines max recommended)"
             rows={4}
             style={{ width: '100%', resize: 'vertical', fontSize: 12 }}
-          />
-        </span>
-      </div>
-
-      <div className="field">
-        <span className="lbl">Budget</span>
-        <span
-          className="v"
-          style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}
-        >
-          <input
-            className="text-input"
-            value={budgetUsd}
-            onChange={(e) => setBudgetUsd(e.target.value)}
-            placeholder={`$ (default ${defaults?.usd ?? 0})`}
-            style={{ width: 120 }}
-            inputMode="decimal"
-          />
-          <input
-            className="text-input"
-            value={budgetTokens}
-            onChange={(e) => setBudgetTokens(e.target.value)}
-            placeholder={`tokens (default ${defaults?.tokens ?? 0})`}
-            style={{ width: 150 }}
-            inputMode="numeric"
-          />
-          <input
-            className="text-input"
-            value={budgetSeconds}
-            onChange={(e) => setBudgetSeconds(e.target.value)}
-            placeholder={`secs (default ${defaults?.seconds ?? 0})`}
-            style={{ width: 140 }}
-            inputMode="numeric"
           />
         </span>
       </div>

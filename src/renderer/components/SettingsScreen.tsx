@@ -75,11 +75,6 @@ export function SettingsScreen() {
 
   const revert = () => setDraft(original);
 
-  const parseNum = (raw: string): number => {
-    const n = Number(raw);
-    return Number.isFinite(n) && n >= 0 ? n : 0;
-  };
-
   return (
     <div className="pane settings-pane" style={{ flex: 1 }}>
       <div className="pane-head">
@@ -196,63 +191,6 @@ export function SettingsScreen() {
               value={draft.defaultEffort}
               onChange={(v) => patch('defaultEffort', v)}
             />
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <h3 className="settings-h">Budget defaults</h3>
-          <p className="settings-help">
-            Per-agent caps applied when a spawn doesn&apos;t override them.{' '}
-            <strong>0 means no cap.</strong> Hit the cap and the agent is
-            aborted with status &quot;Budget exceeded&quot;.
-          </p>
-
-          <div className="settings-budget-grid">
-            <div className="field">
-              <span className="lbl">Max cost</span>
-              <div className="settings-input-row">
-                <span className="settings-unit">$</span>
-                <input
-                  className="text-input"
-                  inputMode="decimal"
-                  value={draft.defaultBudgetUsd}
-                  onChange={(e) =>
-                    patch('defaultBudgetUsd', parseNum(e.target.value))
-                  }
-                />
-                <span className="settings-unit-trail">USD</span>
-              </div>
-            </div>
-
-            <div className="field">
-              <span className="lbl">Max tokens</span>
-              <div className="settings-input-row">
-                <input
-                  className="text-input"
-                  inputMode="numeric"
-                  value={draft.defaultBudgetTokens}
-                  onChange={(e) =>
-                    patch('defaultBudgetTokens', parseNum(e.target.value))
-                  }
-                />
-                <span className="settings-unit-trail">tokens</span>
-              </div>
-            </div>
-
-            <div className="field">
-              <span className="lbl">Max wall-clock</span>
-              <div className="settings-input-row">
-                <input
-                  className="text-input"
-                  inputMode="numeric"
-                  value={draft.defaultBudgetSeconds}
-                  onChange={(e) =>
-                    patch('defaultBudgetSeconds', parseNum(e.target.value))
-                  }
-                />
-                <span className="settings-unit-trail">seconds</span>
-              </div>
-            </div>
           </div>
         </section>
 

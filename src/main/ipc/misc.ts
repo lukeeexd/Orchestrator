@@ -1,8 +1,5 @@
 import { ipcMain, shell, BrowserWindow, dialog } from 'electron';
 import { IpcChannels } from '../../shared/ipc';
-import { getSpendSummary } from '../spend';
-import { getSpendRecommendations } from '../spendRecommendations';
-import { forecastPlanCost } from '../spendForecast';
 import { listNotes as listLogNotes, setNote as setLogNote } from '../logNotes';
 import { exportRunBundle } from '../runBundle';
 import {
@@ -52,26 +49,6 @@ import type {
  * sprawling.
  */
 export function registerMiscHandlers(): void {
-  ipcMain.handle(
-    IpcChannels.SpendGet,
-    (): import('../../shared/types').SpendSummary => getSpendSummary(),
-  );
-
-  ipcMain.handle(
-    IpcChannels.SpendRecommendations,
-    (): import('../../shared/types').SpendRecommendation[] =>
-      getSpendRecommendations(),
-  );
-
-  ipcMain.handle(
-    IpcChannels.SpendForecastPlan,
-    (
-      _event,
-      rows: import('../../shared/types').PlanRow[],
-    ): import('../../shared/types').PlanCostForecast =>
-      forecastPlanCost(Array.isArray(rows) ? rows : []),
-  );
-
   // ─────────────────────────── F12: log notes ───────────────────────────
 
   ipcMain.handle(

@@ -13,20 +13,7 @@ import { EffortPicker } from './EffortPicker';
 import { computeLogLineKey } from '../../shared/logNotes';
 import { useLogNotes } from '../hooks/useLogNotes';
 
-const CONTEXT_CAP_DEFAULT = 200_000;
-const CONTEXT_CAP_1M = 1_000_000;
-
-function contextCapFor(model: string): number {
-  return model.endsWith('-1m') ? CONTEXT_CAP_1M : CONTEXT_CAP_DEFAULT;
-}
-
-function formatCap(cap: number): string {
-  return cap >= 1_000_000
-    ? `${(cap / 1_000_000).toFixed(0)}M`
-    : `${cap / 1000}k`;
-}
-
-type TabId = 'logs' | 'tools' | 'memory' | 'context' | 'config';
+type TabId = 'logs' | 'tools' | 'memory' | 'config';
 
 const COLLAPSED_WIDTH = 36;
 
@@ -109,7 +96,7 @@ export function Drawer({
         className="tabs"
         role="tablist"
         onKeyDown={(e) => {
-          const tabIds: TabId[] = ['logs', 'tools', 'memory', 'context', 'config'];
+          const tabIds: TabId[] = ['logs', 'tools', 'memory', 'config'];
           const idx = tabIds.indexOf(tab);
           if (e.key === 'ArrowRight') {
             e.preventDefault();
@@ -129,7 +116,6 @@ export function Drawer({
         <TabHead id="logs" label="Logs" count={agent.log.length} active={tab} onSelect={setTab} />
         <TabHead id="tools" label="Tools" count={toolCount} active={tab} onSelect={setTab} />
         <TabHead id="memory" label="Memory" count={memoryCount} active={tab} onSelect={setTab} />
-        <TabHead id="context" label="Context" active={tab} onSelect={setTab} />
         <TabHead id="config" label="Config" active={tab} onSelect={setTab} />
       </div>
 
@@ -137,7 +123,6 @@ export function Drawer({
         {tab === 'logs' && <LogsTab agent={agent} />}
         {tab === 'tools' && <ToolsTab agent={agent} />}
         {tab === 'memory' && <MemoryTab agent={agent} />}
-        {tab === 'context' && <ContextTab agent={agent} />}
         {tab === 'config' && <ConfigTab agent={agent} provider={provider} />}
       </div>
     </div>
@@ -202,8 +187,6 @@ function Header({
 
       <div className="drawer-kpis">
         <Kpi label="Step" value={agent.step} />
-        <Kpi label="Tokens" value={`${(agent.tokens / 1000).toFixed(1)}k`} />
-        <Kpi label="Cost" value={`$${agent.cost.toFixed(2)}`} />
         <Kpi label="Elapsed" value={agent.elapsed} />
       </div>
 
@@ -680,33 +663,6 @@ function MemoryTab({ agent }: { agent: Agent }) {
   );
 }
 
-function ContextTab({ agent }: { agent: Agent }) {
-  const used = agent.tokens;
-  const cap = contextCapFor(agent.model);
-  const pct = Math.min(100, Math.round((used / cap) * 100));
-  return (
-    <>
-      <div className="field">
-        <span className="lbl">
-          Context window · {(used / 1000).toFixed(1)}k / {formatCap(cap)} ·{' '}
-          {pct}%
-        </span>
-        <div className="ctx-bar">
-          <div
-            className="ctx-seg"
-            style={{ width: `${pct}%`, background: 'var(--accent)' }}
-          />
-        </div>
-      </div>
-      <div className="inline-empty">
-        Per-segment breakdown (System / Tools / Files / History / Memory)
-        lands when we plumb model-side usage telemetry. For v1 the totals come
-        from <code>result</code> events.
-      </div>
-    </>
-  );
-}
-
 function ConfigTab({
   agent,
   provider,
@@ -794,149 +750,7 @@ function ConfigTab({
           <code>{agent.workspace}</code>
         </span>
       </div>
-      {agent.modelUsage && Object.keys(agent.modelUsage).length > 0 && (
-        <div className="field">
-          <span className="lbl">Per-model spend</span>
-          <ModelUsageTable usage={agent.modelUsage} />
-        </div>
-      )}
-      <div className="field">
-        <span className="lbl">Budget caps</span>
-        <BudgetBars agent={agent} />
-      </div>
     </>
-  );
-}
-
-function ModelUsageTable({
-  usage,
-}: {
-  usage: NonNullable<Agent['modelUsage']>;
-}) {
-  const entries = Object.entries(usage).sort((a, b) => b[1].cost - a[1].cost);
-  const totalCost = entries.reduce((s, [, v]) => s + v.cost, 0);
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 4,
-        fontFamily: 'var(--font-mono)',
-        fontSize: 11,
-      }}
-    >
-      {entries.map(([model, v]) => {
-        const pct = totalCost > 0 ? Math.round((v.cost / totalCost) * 100) : 0;
-        return (
-          <div
-            key={model}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 60px 70px 40px',
-              gap: 6,
-              alignItems: 'center',
-            }}
-            title={`${model} — ${v.tokens.toLocaleString()} tokens · $${v.cost.toFixed(4)}`}
-          >
-            <span
-              style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                color: 'var(--text)',
-              }}
-            >
-              {model}
-            </span>
-            <span style={{ textAlign: 'right', color: 'var(--muted)' }}>
-              {v.tokens >= 1000
-                ? `${(v.tokens / 1000).toFixed(1)}k`
-                : v.tokens}
-            </span>
-            <span style={{ textAlign: 'right', color: 'var(--text)' }}>
-              ${v.cost.toFixed(4)}
-            </span>
-            <span style={{ textAlign: 'right', color: 'var(--muted)' }}>
-              {pct}%
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function BudgetBars({ agent }: { agent: Agent }) {
-  const elapsedSeconds = Math.max(
-    0,
-    Math.floor((Date.now() - agent.startedAt) / 1000),
-  );
-  return (
-    <div className="budget-bars">
-      <BudgetBar
-        label="Cost"
-        used={agent.cost}
-        cap={agent.budget.usd}
-        formatUsed={(v) => `$${v.toFixed(2)}`}
-        formatCap={(v) => `$${v.toFixed(2)}`}
-      />
-      <BudgetBar
-        label="Tokens"
-        used={agent.tokens}
-        cap={agent.budget.tokens}
-        formatUsed={(v) => v.toLocaleString()}
-        formatCap={(v) => v.toLocaleString()}
-      />
-      <BudgetBar
-        label="Time"
-        used={elapsedSeconds}
-        cap={agent.budget.seconds}
-        formatUsed={(v) => `${v}s`}
-        formatCap={(v) => `${v}s`}
-      />
-    </div>
-  );
-}
-
-function BudgetBar({
-  label,
-  used,
-  cap,
-  formatUsed,
-  formatCap,
-}: {
-  label: string;
-  used: number;
-  cap: number;
-  formatUsed: (v: number) => string;
-  formatCap: (v: number) => string;
-}) {
-  if (cap <= 0) {
-    return (
-      <div className="budget-bar">
-        <span className="b-lbl">{label}</span>
-        <div className="b-track">
-          <div className="b-fill" style={{ width: '0%' }} />
-        </div>
-        <span className="b-val">{formatUsed(used)} / ∞</span>
-      </div>
-    );
-  }
-  const pct = Math.min(100, Math.max(0, (used / cap) * 100));
-  const cls = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : '';
-  return (
-    <div className="budget-bar">
-      <span className="b-lbl">{label}</span>
-      <div className="b-track">
-        <div
-          className={'b-fill' + (cls ? ' ' + cls : '')}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="b-val">
-        {formatUsed(used)} / {formatCap(cap)}
-      </span>
-    </div>
   );
 }
 

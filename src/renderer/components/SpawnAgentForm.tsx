@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ClipboardEvent, DragEvent } from 'react';
 import type {
   AgentRole,
@@ -125,25 +125,7 @@ export function SpawnAgentForm({
   const [task, setTask] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [budgetUsd, setBudgetUsd] = useState('');
-  const [budgetTokens, setBudgetTokens] = useState('');
-  const [budgetSeconds, setBudgetSeconds] = useState('');
   const [attachments, setAttachments] = useState<AttachmentChip[]>([]);
-  const [defaults, setDefaults] = useState<{
-    usd: number;
-    tokens: number;
-    seconds: number;
-  } | null>(null);
-
-  useEffect(() => {
-    window.api.getSettings().then((s) => {
-      setDefaults({
-        usd: s.defaultBudgetUsd,
-        tokens: s.defaultBudgetTokens,
-        seconds: s.defaultBudgetSeconds,
-      });
-    });
-  }, []);
 
   const pickWorkspace = async () => {
     const { path } = await window.api.pickWorkspace();
@@ -165,14 +147,6 @@ export function SpawnAgentForm({
     if (path) void window.api.disposeAttachment(path);
   };
 
-  const parseNum = (raw: string): number | undefined => {
-    const trimmed = raw.trim();
-    if (!trimmed) return undefined;
-    const n = Number(trimmed);
-    if (!Number.isFinite(n) || n < 0) return undefined;
-    return n;
-  };
-
   const submit = async () => {
     setError(null);
     if (!workspace.trim()) {
@@ -185,13 +159,6 @@ export function SpawnAgentForm({
     }
     setBusy(true);
     try {
-      const budget = {
-        usd: parseNum(budgetUsd),
-        tokens: parseNum(budgetTokens),
-        seconds: parseNum(budgetSeconds),
-      };
-      const hasBudget =
-        budget.usd != null || budget.tokens != null || budget.seconds != null;
       const okAttachments = attachments.filter((a) => a.ok).map((a) => a.path);
       await window.api.spawnAgent({
         projectId,
@@ -201,7 +168,6 @@ export function SpawnAgentForm({
         ...(model ? { model } : {}),
         ...(effort ? { effort } : {}),
         ...(agentProvider !== provider ? { provider: agentProvider } : {}),
-        ...(hasBudget ? { budget } : {}),
         ...(okAttachments.length > 0 ? { attachments: okAttachments } : {}),
         ...(role === 'qa' && qaFlavour === 'playwright'
           ? { subtype: 'playwright' as const }
@@ -407,56 +373,6 @@ export function SpawnAgentForm({
               >
                 <Icon name="attach" size={11} /> Attach files
               </button>
-            </div>
-          </div>
-
-          <div className="field">
-            <span className="lbl">
-              Budget caps · optional · leave blank for defaults
-            </span>
-            <div className="budget-row">
-              <label>
-                <span className="budget-prefix">$</span>
-                <input
-                  className="text-input"
-                  value={budgetUsd}
-                  onChange={(e) => setBudgetUsd(e.target.value)}
-                  placeholder={
-                    defaults && defaults.usd > 0
-                      ? defaults.usd.toFixed(2)
-                      : 'no cap'
-                  }
-                  inputMode="decimal"
-                />
-              </label>
-              <label>
-                <input
-                  className="text-input"
-                  value={budgetTokens}
-                  onChange={(e) => setBudgetTokens(e.target.value)}
-                  placeholder={
-                    defaults && defaults.tokens > 0
-                      ? defaults.tokens.toLocaleString()
-                      : 'no cap'
-                  }
-                  inputMode="numeric"
-                />
-                <span className="budget-suffix">tokens</span>
-              </label>
-              <label>
-                <input
-                  className="text-input"
-                  value={budgetSeconds}
-                  onChange={(e) => setBudgetSeconds(e.target.value)}
-                  placeholder={
-                    defaults && defaults.seconds > 0
-                      ? defaults.seconds.toString()
-                      : 'no cap'
-                  }
-                  inputMode="numeric"
-                />
-                <span className="budget-suffix">seconds</span>
-              </label>
             </div>
           </div>
 
