@@ -157,13 +157,14 @@ export function SettingsScreen() {
           <h3 className="settings-h">Model &amp; effort</h3>
           <p className="settings-help">
             Defaults used when a project hasn&apos;t picked its own values.
-            The Director gets a heavier model out of the box (Opus 4.7 1M,
+            The Director gets a heavier model out of the box (Opus 4.8 1M,
             xhigh) since it has to hold the whole fleet + conversation in
             its head; agents default to Sonnet 4.6 at <code>high</code>.
             Effort levels mirror Claude Code:&nbsp;
             <code>low</code>/<code>medium</code>/<code>high</code> on all
-            models, <code>xhigh</code>/<code>max</code> on Opus 4.6/4.7 +
-            Sonnet 4.6.
+            models, <code>xhigh</code>/<code>max</code> on the Opus + Sonnet
+            tiers, and <code>ultracode</code> — Opus 4.8&apos;s deepest
+            tier.
           </p>
 
           <div className="field">

@@ -10,12 +10,17 @@
  * The `-1m` suffix is our pseudo-id for "same base model, 1M context
  * window beta enabled". The runner resolves it to the real model id +
  * the `context-1m-2025-08-07` beta flag at SDK-call time. Claude Code's
- * picker does the same trick — `Opus 4.7 1M` and `Opus 4.7` both report
- * `claude-opus-4-7` as the underlying id.
+ * picker does the same trick — `Opus 4.8 1M` and `Opus 4.8` both report
+ * `claude-opus-4-8` as the underlying id.
+ *
+ * Ordering matters: the first claude entry is the flagship fallback
+ * returned by `defaultModelForProvider`, so the newest Opus leads.
  */
 import type { Provider } from './types';
 
 export const KNOWN_MODELS: readonly string[] = [
+  'claude-opus-4-8',
+  'claude-opus-4-8-1m',
   'claude-opus-4-7',
   'claude-opus-4-7-1m',
   'claude-sonnet-4-6',
@@ -23,6 +28,8 @@ export const KNOWN_MODELS: readonly string[] = [
 ];
 
 export const MODEL_LABELS: Record<string, string> = {
+  'claude-opus-4-8': 'claude-opus-4-8',
+  'claude-opus-4-8-1m': 'claude-opus-4-8 · 1M context',
   'claude-opus-4-7': 'claude-opus-4-7',
   'claude-opus-4-7-1m': 'claude-opus-4-7 · 1M context',
   'claude-sonnet-4-6': 'claude-sonnet-4-6',
@@ -86,6 +93,8 @@ export function modelMatchesProvider(id: string, provider: Provider): boolean {
  * faking a number.
  */
 export const MODEL_CONTEXT_TOKENS: Record<string, number> = {
+  'claude-opus-4-8': 200_000,
+  'claude-opus-4-8-1m': 1_000_000,
   'claude-opus-4-7': 200_000,
   'claude-opus-4-7-1m': 1_000_000,
   'claude-sonnet-4-6': 200_000,

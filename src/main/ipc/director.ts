@@ -177,7 +177,7 @@ export function registerDirectorHandlers(
       // settings.defaultModel/Effort). Just reading project.directorModel
       // wasn't enough: when the user leaves the Director on the global
       // defaults, project.directorModel is null and agents fall through
-      // to the cheap agent defaults — so an Opus 4.7 1M xhigh Director
+      // to the cheap agent defaults — so an Opus 4.8 1M xhigh Director
       // would quietly spawn Sonnet 4.6 high workers.
       const project = getProject(req.projectId);
       const cascadeSettings = readSettings();

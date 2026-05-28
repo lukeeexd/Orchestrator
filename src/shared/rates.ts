@@ -11,6 +11,11 @@ interface ModelRate {
 }
 
 const RATES: Record<string, ModelRate> = {
+  // Opus 4.8 keeps the standing Opus per-token pricing ($15 in / $75 out
+  // per 1M). Update if Anthropic publishes a different rate. The -1m and
+  // [1m] variants normalise to this base id, so the 1M flavour is priced
+  // the same per token.
+  'claude-opus-4-8': { inputPerMillion: 15, outputPerMillion: 75 },
   'claude-opus-4-7': { inputPerMillion: 15, outputPerMillion: 75 },
   'claude-sonnet-4-6': { inputPerMillion: 3, outputPerMillion: 15 },
   'claude-haiku-4-5': { inputPerMillion: 0.8, outputPerMillion: 4 },

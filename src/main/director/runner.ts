@@ -416,7 +416,7 @@ class DirectorSession {
     // defaults, which are separate from the agent defaults — the Director
     // gets a heavier model out of the box. The fallback respects the
     // project's provider so a codex project doesn't end up trying to
-    // spawn `codex exec -m claude-opus-4-7-1m` (which is what happened
+    // spawn `codex exec -m claude-opus-4-8-1m` (which is what happened
     // before this branch was provider-aware — silent empty response).
     const project = getProject(this.projectId);
     // The Director can opt into a different CLI than the agents via
@@ -429,7 +429,7 @@ class DirectorSession {
     // before the project was a codex project, or hand-edited). Validate
     // it matches the Director's effective provider — if not, fall
     // through to the provider's default. Without this, `codex exec -m
-    // claude-opus-4-7-1m` returns an empty agent_message and the
+    // claude-opus-4-8-1m` returns an empty agent_message and the
     // Director chat shows "(empty response)" with no clue why.
     const persistedDirector =
       project?.directorModel && modelMatchesProvider(project.directorModel, provider)
@@ -440,7 +440,7 @@ class DirectorSession {
       (provider === 'claude'
         ? settings.defaultDirectorModel ||
           settings.defaultModel ||
-          'claude-opus-4-7-1m'
+          'claude-opus-4-8-1m'
         : defaultModelForProvider(provider));
     const directorEffort: EffortLevel =
       project?.directorEffort ||
