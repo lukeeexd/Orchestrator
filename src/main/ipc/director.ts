@@ -14,6 +14,7 @@ import {
 import { getProject } from '../projects';
 import { readSettings } from '../settings';
 import { assertWorkspaceMatchesProject } from '../security/workspace';
+import { buildBranchName, ensureBranch, isGitRepo } from '../git';
 import type { IpcContext } from './_shared';
 import { validated } from './_shared';
 import { acceptPlanRequestSchema } from './_schemas';
@@ -116,6 +117,60 @@ export function registerDirectorHandlers(
         req.projectId,
         req.workspace,
       );
+      // F14: auto-branch on plan accept. Runs once per plan, before
+      // any agent spawns, so the spawn's cwd already sees the new
+      // branch. Skipped silently when:
+      //   - the project doesn't have auto-branch on, OR
+      //   - the workspace isn't a git repo (most setups are bare
+      //     scratch dirs — silent skip is the right default).
+      // Skipped *loudly* via a Director system message when:
+      //   - planMessageId is missing (older renderer build), OR
+      //   - the worktree is dirty (we refuse to switch branches
+      //     when uncommitted edits would silently move with us).
+      const projectForBranch = getProject(req.projectId);
+      if (
+        projectForBranch?.autoBranch === true &&
+        isGitRepo(validatedWorkspace)
+      ) {
+        if (!req.planMessageId) {
+          director.notifySystem(
+            req.projectId,
+            '⎿ auto-branch skipped — plan id missing (renderer needs a refresh).',
+          );
+        } else {
+          const branch = buildBranchName(
+            req.planMessageId,
+            req.rows[0]?.task ?? '',
+          );
+          const result = ensureBranch(
+            validatedWorkspace,
+            branch,
+            req.baseBranch,
+          );
+          if (result.ok) {
+            // Reflect the chosen base in the audit message when a
+            // fresh branch was actually created. Reusing an
+            // existing branch ignores baseBranch (we never reset
+            // history), so the suffix is omitted there to avoid
+            // implying the base re-rooted the branch.
+            const baseNote =
+              req.baseBranch && result.created
+                ? ` (from \`${req.baseBranch}\`)`
+                : '';
+            director.notifySystem(
+              req.projectId,
+              result.created
+                ? `⎿ auto-branch · created and checked out \`${result.branch}\`${baseNote}`
+                : `⎿ auto-branch · checked out existing \`${result.branch}\``,
+            );
+          } else {
+            director.notifySystem(
+              req.projectId,
+              `⎿ auto-branch skipped — ${result.reason ?? 'unknown error'}. Agents will run on the current branch.`,
+            );
+          }
+        }
+      }
       // Director auto-spawns inherit the Director's effective model +
       // effort — using the same cascade the Director itself uses
       // (per-project override → settings.defaultDirectorModel/Effort →

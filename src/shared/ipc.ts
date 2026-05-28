@@ -44,6 +44,9 @@ export const IpcChannels = {
   ProjectSetDirectorModel: 'project:setDirectorModel',
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
   ProjectSetDirectorProvider: 'project:setDirectorProvider',
+  ProjectSetAutoBranch: 'project:setAutoBranch',
+  /** F14: list local git branches for the project's workspace. */
+  GitListBranches: 'git:listBranches',
   ProjectSetMcpConfig: 'project:setMcpConfig',
   ProjectPreviewMcpConfigCommands: 'project:previewMcpConfigCommands',
   MarketplaceListSources: 'marketplace:listSources',
@@ -498,6 +501,23 @@ export interface AcceptPlanRequest {
   rows: PlanRow[];
   workspace: string;
   /**
+   * F14: id of the DirectorMessage carrying the plan. Used to derive
+   * a stable branch name (`orchestrator/<id:8>-<slug>`) when the
+   * project has auto-branch enabled, so re-accepting the same plan
+   * re-uses the same branch instead of spawning a parallel one.
+   * Optional because callers that don't need auto-branch (or are on
+   * an older renderer build) can omit it.
+   */
+  planMessageId?: string;
+  /**
+   * F14: base branch the auto-branch should root from. When set AND
+   * a fresh branch needs creating, runs `git checkout -b <name>
+   * <baseBranch>`. Omitted → the new branch inherits the current
+   * HEAD (the pre-modal behaviour). Ignored when the target branch
+   * already exists (idempotent re-accept).
+   */
+  baseBranch?: string;
+  /**
    * Attachment paths from the user message that prompted this plan.
    * Forwarded to every agent the plan auto-spawns so they see the same
    * images/text the Director did. Without this, the Director can
@@ -657,6 +677,23 @@ export interface OrchestratorApi {
    * session id — the new CLI can't resume a session created by the
    * old one, so the next turn starts fresh. Chat history stays put.
    */
+  /**
+   * F14: toggle the per-project auto-branch flag. When on, accepting
+   * a plan creates / checks out a scratch branch (`orchestrator/<...>`)
+   * before the first agent spawns — provided the workspace is a clean
+   * git repo. See `src/main/git.ts` for the skip policy.
+   */
+  setProjectAutoBranch: (id: string, on: boolean) => Promise<{ ok: true }>;
+  /**
+   * F14: list local git branches for the project's workspace, with
+   * the current HEAD called out. Used to populate the auto-branch
+   * "base branch" picker on plan accept. Returns
+   * `{ branches: [], current: null }` when the workspace isn't a git
+   * repo — the renderer skips the picker in that case.
+   */
+  listGitBranches: (
+    projectId: string,
+  ) => Promise<{ branches: string[]; current: string | null }>;
   setProjectDirectorProvider: (
     id: string,
     provider: import('./types').Provider | null,

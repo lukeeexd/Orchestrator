@@ -19,6 +19,8 @@ import { installCrashHandlers } from './crashes';
 installCrashHandlers();
 
 import { registerIpcHandlers } from './ipc';
+import { setEmitSink } from './ipc/_shared';
+import { startHeadless, headlessEmit } from './headless';
 import { openDb, closeDb } from './db';
 import { markRunningAgentsAsInterrupted } from './persistence';
 import * as director from './director/runner';
@@ -31,6 +33,11 @@ import { setupSecondaryUpdater } from './secondaryUpdater';
 import { cleanupPastedImagesAtStart, pasteTempDir } from './attachments';
 import * as marketplace from './marketplace';
 import { seedBuiltins as seedBuiltinTemplates } from './templates';
+
+// A3: headless mode boots the main process without a window and drives
+// the IPC surface over stdio. Detected from argv so the same binary
+// serves both GUI and scripted use.
+const headless = process.argv.includes('--headless');
 
 if (started) {
   app.quit();
@@ -53,6 +60,16 @@ if (started) {
 // stay attached for the lifetime of the process.
 const gotInstanceLock = app.requestSingleInstanceLock();
 if (!gotInstanceLock) {
+  // Another instance (GUI or headless) already holds the userData
+  // lock. Two processes sharing the sql.js file would race and
+  // corrupt it, so we bail. Headless callers get a stderr reason
+  // since they have no UI to show the conflict.
+  if (headless) {
+    process.stderr.write(
+      'orchestrator --headless: another instance is running; ' +
+        'close it before starting a headless session.\n',
+    );
+  }
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -162,6 +179,23 @@ app.whenReady().then(async () => {
     ensureDefaultProject();
     director.hydrateAll(listProjects().map((p) => p.id));
     registry.hydrate();
+    // Idempotent — INSERT OR IGNORE; runs on every boot to make sure
+    // the built-ins are present after a fresh install / v20 migration.
+    // Needed in both modes so scripted runs can reference templates.
+    seedBuiltinTemplates();
+
+    if (headless) {
+      // Headless: capture handlers into the dispatch map, route
+      // broadcast events to stdout, and start the stdio JSON loop.
+      // Skip every GUI-only concern — no window, no auto-updater
+      // (its console.log would corrupt the stdout protocol), no
+      // marketplace background sync (best-effort GUI nicety).
+      setEmitSink(headlessEmit);
+      registerIpcHandlers({ capture: true });
+      startHeadless();
+      return;
+    }
+
     registerIpcHandlers();
     setupAutoUpdater();
     // S6: secondary channel polls the Cloudflare Pages `latest.json`
@@ -180,9 +214,6 @@ app.whenReady().then(async () => {
       defaultBranch: 'main',
     });
     void syncStaleMarketplaceSources();
-    // Idempotent — INSERT OR IGNORE; runs on every boot to make sure
-    // the built-ins are present after a fresh install / v20 migration.
-    seedBuiltinTemplates();
     createWindow();
 
     app.on('activate', () => {
@@ -192,10 +223,21 @@ app.whenReady().then(async () => {
     const msg = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error && err.stack ? `\n\n${err.stack}` : '';
     console.error('[startup] fatal:', err);
-    dialog.showErrorBox(
-      'Orchestrator failed to start',
-      `Startup error:\n\n${msg}${stack}`,
-    );
+    // No display surface in headless — a native dialog would block on
+    // a window-server call that may not exist. Emit a structured
+    // error to stdout so the controlling process sees it, plus the
+    // human-readable detail on stderr.
+    if (headless) {
+      process.stdout.write(
+        JSON.stringify({ type: 'fatal', error: msg }) + '\n',
+      );
+      process.stderr.write(`[startup] fatal: ${msg}${stack}\n`);
+    } else {
+      dialog.showErrorBox(
+        'Orchestrator failed to start',
+        `Startup error:\n\n${msg}${stack}`,
+      );
+    }
     app.quit();
   }
 });

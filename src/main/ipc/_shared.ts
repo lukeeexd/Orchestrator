@@ -3,16 +3,38 @@ import type { IpcMainInvokeEvent } from 'electron';
 import type { ZodType } from 'zod';
 import type { IpcChannel } from '../../shared/ipc';
 
+type EmitSink = (channel: string, payload: unknown) => void;
+
 /**
- * Broadcast a payload to every renderer process. Used for state-change
- * events that any open window should see (DirectorEventMessage,
- * MarketplaceEventSourcesChanged, etc.) — the renderer-side `subscribe`
- * helper in preload/index.ts pairs with this.
+ * Default emit sink: fan a payload out to every renderer process via
+ * `webContents.send`. This is the GUI transport.
  */
-export function broadcast(channel: string, payload: unknown): void {
+const browserWindowSink: EmitSink = (channel, payload) => {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send(channel, payload);
   }
+};
+
+let emitSink: EmitSink = browserWindowSink;
+
+/**
+ * A3 (headless): swap the transport that `broadcast` writes through.
+ * GUI mode leaves the default (renderer fan-out); headless mode points
+ * it at stdout so state-change events stream to the controlling
+ * process. Passing null restores the default.
+ */
+export function setEmitSink(sink: EmitSink | null): void {
+  emitSink = sink ?? browserWindowSink;
+}
+
+/**
+ * Broadcast a payload for state-change events any consumer should see
+ * (DirectorEventMessage, MarketplaceEventSourcesChanged, etc.). In GUI
+ * mode the renderer-side `subscribe` helper in preload/index.ts pairs
+ * with this; in headless mode it streams to stdout.
+ */
+export function broadcast(channel: string, payload: unknown): void {
+  emitSink(channel, payload);
 }
 
 /**

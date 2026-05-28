@@ -31,6 +31,7 @@ import { HistoryScreen } from './components/HistoryScreen';
 import { TemplatesScreen } from './components/TemplatesScreen';
 import { DocsScreen } from './components/DocsScreen';
 import { SaveTemplateDialog } from './components/SaveTemplateDialog';
+import { BaseBranchModal } from './components/BaseBranchModal';
 import { CliMissingGate } from './components/CliMissingGate';
 import { CommandPalette } from './components/CommandPalette';
 import type { BuiltinAction } from '../shared/builtinCommands';
@@ -80,6 +81,15 @@ export function App() {
     null,
   );
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  // F14 base-branch modal. Populated on plan accept when autoBranch is on
+  // and the workspace is a git repo; the modal resolves through `resolve`
+  // and clears the state. Held outside React state via a ref-y resolver
+  // because the modal returns a value (the user's choice).
+  const [basePrompt, setBasePrompt] = useState<{
+    branches: string[];
+    current: string | null;
+    resolve: (choice: string | null) => void;
+  } | null>(null);
   // F1: Ctrl-K command palette state. Opens via the global keymap below
   // and via any future caller (e.g. an empty-state "Try Ctrl-K" hint).
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -122,6 +132,7 @@ export function App() {
     setDirectorModel: setProjectDirectorModel,
     setDirectorEffort: setProjectDirectorEffort,
     setDirectorProvider: setProjectDirectorProvider,
+    setAutoBranch: setProjectAutoBranch,
     setMcpConfig,
     setRoleTools: setProjectRoleTools,
     remove: removeProject,
@@ -394,11 +405,35 @@ export function App() {
         }
       }
     }
+    // F14: if the project has auto-branch on, fetch the local
+    // branch list and ask the user which one to root the scratch
+    // branch from. Skip the modal when:
+    //   - the toggle is off (no auto-branch), OR
+    //   - the workspace isn't a git repo (empty branches list).
+    // Cancelling the modal aborts the spawn entirely.
+    let baseBranch: string | undefined;
+    if (activeProject?.autoBranch === true) {
+      const { branches, current } =
+        await window.api.listGitBranches(activeProjectId);
+      if (branches.length > 0) {
+        const choice = await new Promise<string | null>((resolve) => {
+          setBasePrompt({ branches, current, resolve });
+        });
+        setBasePrompt(null);
+        if (choice === null) {
+          handledPlans.current.delete(msg.id);
+          return;
+        }
+        baseBranch = choice;
+      }
+    }
     try {
       await window.api.acceptPlan({
         projectId: activeProjectId,
         rows: effectiveRows,
         workspace: ws,
+        planMessageId: msg.id,
+        ...(baseBranch ? { baseBranch } : {}),
         ...(originatingAttachments
           ? { attachments: originatingAttachments }
           : {}),
@@ -619,6 +654,11 @@ export function App() {
                   p === activeProvider ? null : p,
                 );
               }}
+              autoBranch={activeProject?.autoBranch === true}
+              onAutoBranchChange={(next) => {
+                if (!activeProjectId) return;
+                void setProjectAutoBranch(activeProjectId, next);
+              }}
               onSend={send}
               onSpawnPlan={spawnPlan}
               onSaveAsTemplate={(rows) => setSaveTemplateRows(rows)}
@@ -789,6 +829,13 @@ export function App() {
         onClose={() => setPaletteOpen(false)}
         onRun={runBuiltinAction}
       />
+      {basePrompt && (
+        <BaseBranchModal
+          branches={basePrompt.branches}
+          current={basePrompt.current}
+          onResolve={basePrompt.resolve}
+        />
+      )}
       {saveTemplateRows && (
         <SaveTemplateDialog
           rows={saveTemplateRows}
