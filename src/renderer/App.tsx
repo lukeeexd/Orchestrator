@@ -20,6 +20,7 @@ import { LeftRail, type RailScreen } from './components/LeftRail';
 import { StatusBar } from './components/StatusBar';
 import { DirectorPane } from './components/DirectorPane';
 import { AgentsPane } from './components/AgentsPane';
+import { CanvasView } from './components/CanvasView';
 import { Drawer } from './components/Drawer';
 import { ResizeHandle } from './components/ResizeHandle';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
@@ -760,6 +761,13 @@ export function App() {
         />
 
         {isHome && activeProjectId ? (
+          viewMode === 'canvas' ? (
+            <CanvasView
+              agents={agents}
+              selectedId={selectedId}
+              onSelectAgent={setSelectedId}
+            />
+          ) : (
           <>
             <DirectorPane
               width={dirW}
@@ -874,6 +882,7 @@ export function App() {
               onToggleCollapsed={() => setDrawerCollapsed(!drawerCollapsed)}
             />
           </>
+          )
         ) : active === 'settings' ? (
           <SettingsScreen />
         ) : active === 'tools' ? (

@@ -1,4 +1,4 @@
-export type ViewMode = 'compact' | 'stream';
+export type ViewMode = 'compact' | 'stream' | 'canvas';
 
 interface Props {
   workspace: string;
@@ -34,7 +34,7 @@ export function TopBar({
 
       <div
         className="view-toggle"
-        title="Compact: chat bubbles + agent tiles. Stream: terminal-style live log for Director and every agent."
+        title="Compact: chat bubbles + agent tiles. Stream: terminal-style live log. Canvas: live node-graph of the fleet (Flightdeck)."
       >
         <button
           className={viewMode === 'compact' ? 'on' : ''}
@@ -47,6 +47,12 @@ export function TopBar({
           onClick={() => onViewModeChange('stream')}
         >
           stream
+        </button>
+        <button
+          className={viewMode === 'canvas' ? 'on' : ''}
+          onClick={() => onViewModeChange('canvas')}
+        >
+          canvas
         </button>
       </div>
 

@@ -1,7 +1,7 @@
 {
   "name": "orchestrator",
   "productName": "Orchestrator",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Desktop app for orchestrating Claude agents with distinct roles.",
   "main": ".vite/build/main.js",
   "private": true,
@@ -46,7 +46,9 @@
     "vitest": "^4.1.7"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@fontsource/jetbrains-mono": "^5.2.8",
+    "@xyflow/react": "^12.10.2",
     "adm-zip": "^0.5.17",
     "electron-log": "^5.4.4",
     "electron-squirrel-startup": "^1.0.1",
