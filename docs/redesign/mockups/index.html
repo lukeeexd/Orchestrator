@@ -27,7 +27,7 @@
   }
   .title { font-weight: 600; letter-spacing: 0.02em; margin-right: 6px; }
   .title small { color: #6b7080; font-weight: 400; margin-left: 8px; }
-  .tabs { display: flex; gap: 8px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; }
   button.tab {
     display: inline-flex;
     align-items: center;
@@ -83,17 +83,21 @@
     <span class="title">Orchestrator redesign <small>3 directions, same session, pick one</small></span>
     <div class="tabs" id="tabs">
       <button class="tab" data-src="atelier.html" aria-selected="false">A. Atelier <span class="score">83</span></button>
-      <button class="tab" data-src="broadsheet.html" aria-selected="true">B. Broadsheet <span class="score">86</span></button>
+      <button class="tab" data-src="broadsheet.html" aria-selected="false">B. Broadsheet <span class="score">86</span></button>
       <button class="tab" data-src="aurora.html" aria-selected="false">C. Aurora <span class="score">71</span></button>
+      <button class="tab" data-src="hybrid.html" aria-selected="false">D. Hybrid <span class="score">v1</span></button>
+      <button class="tab" data-src="bold-control.html" aria-selected="false">E. Mission Control <span class="score">70</span></button>
+      <button class="tab" data-src="bold-daylight.html" aria-selected="true">F. Daylight <span class="score">78</span></button>
+      <button class="tab" data-src="bold-flightdeck.html" aria-selected="false">G. Flightdeck <span class="score">88</span></button>
     </div>
     <span class="spacer"></span>
-    <a class="open" id="openTab" href="broadsheet.html" target="_blank" rel="noopener">Open in new tab</a>
+    <a class="open" id="openTab" href="bold-daylight.html" target="_blank" rel="noopener">Open in new tab</a>
   </header>
   <div class="frame-wrap">
-    <iframe id="frame" src="broadsheet.html" title="design mockup"></iframe>
+    <iframe id="frame" src="bold-daylight.html" title="design mockup"></iframe>
   </div>
   <div class="note">
-    Judge's pick: <b>Broadsheet</b> (editorial instrument, best fit for a dense operator tool). Suggested plan: take Broadsheet forward, graft <b>Atelier</b>'s ergonomics (Cmd-K bar, status filter chips, collapsed log-hint rows), keep <b>Aurora</b> as an optional dark theme with its drifting backdrop off by default. If a tab shows blank, use "Open in new tab".
+    Bold round (E-G) deliberately breaks the current-app DNA. Judge's pick: <b>F. Daylight</b> (bright coral, focused thread, cleanest escape and most buildable). <b>G. Flightdeck</b> is the boldest (a spatial node-graph canvas) but the riskiest to build for real. <b>E. Mission Control</b> is a dense navy + amber command board. A-D are the earlier, tamer rounds. The score chip is a boldness/escape rating. If a tab shows blank, use "Open in new tab".
   </div>
   <script>
     const tabs = document.getElementById('tabs');
