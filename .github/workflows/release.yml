@@ -71,7 +71,19 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
-          node-version: '24'
+          # Pinned to 24.15.0. The v0.22.0 build broke on 24.16.0
+          # (then-latest 24.x): `electron-forge make` exited cleanly
+          # mid-`Finalizing package` with no maker output and no
+          # `out/Orchestrator-win32-x64/Orchestrator.exe`, which read
+          # as `step succeeded` to GitHub while producing no
+          # installer. 24.15.0 was the version on the 20260518.141
+          # runner image that shipped v0.21.0 successfully and is
+          # the version local `npm run make` is verified against.
+          # Re-evaluate the pin when bumping forge or electron —
+          # locking forever to a single 24.x patch is debt, but a
+          # deterministic build is worth more than whatever the
+          # latest 24.x happens to be.
+          node-version: '24.15.0'
           cache: npm
 
       - name: Install dependencies
