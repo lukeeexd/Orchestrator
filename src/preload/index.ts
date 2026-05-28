@@ -550,6 +550,20 @@ const api: OrchestratorApi = {
       IpcChannels.UpdaterOpenSecondaryDownload,
       url,
     ) as Promise<{ ok: boolean }>,
+  // R-U1 (v0.23.0): updater diagnostic surface for Settings.
+  getUpdaterState: () =>
+    ipcRenderer.invoke(
+      IpcChannels.UpdaterGetState,
+    ) as Promise<import('../shared/ipc').UpdaterStateSnapshot>,
+  checkForUpdatesNow: () =>
+    ipcRenderer.invoke(
+      IpcChannels.UpdaterCheckNow,
+    ) as Promise<import('../shared/ipc').UpdaterStateSnapshot>,
+  onUpdaterStateChanged: (cb) =>
+    subscribe<import('../shared/ipc').UpdaterStateSnapshot>(
+      IpcChannels.UpdaterEventStateChanged,
+      cb,
+    ),
 
   onAgent: (cb) => subscribe<AgentEventAgentPayload>(IpcChannels.AgentEventAgent, cb),
   onLog: (cb) => subscribe<AgentEventLogPayload>(IpcChannels.AgentEventLog, cb),

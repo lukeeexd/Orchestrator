@@ -14,7 +14,11 @@ import {
 import { listHistory } from '../history';
 import { listSlashCommands } from '../commands';
 import { listSkills, writeSkill } from '../skills';
-import { quitAndInstallUpdate } from '../updater';
+import {
+  quitAndInstallUpdate,
+  getUpdaterState,
+  checkForUpdatesNow,
+} from '../updater';
 import {
   listCrashes,
   clearCrashes,
@@ -214,6 +218,21 @@ export function registerMiscHandlers(): void {
   ipcMain.handle(IpcChannels.UpdaterRestart, (): void => {
     quitAndInstallUpdate();
   });
+
+  // R-U1 (v0.23.0): expose updater state + manual check to the renderer.
+  // GetState is a pure read — Settings calls it on mount to render the
+  // current updater diagnostic panel. CheckNow forces an immediate poll
+  // bypassing the 10-minute interval; returns the post-call snapshot so
+  // the renderer can update its display without waiting for the
+  // `state-changed` event (which still fires too).
+  ipcMain.handle(
+    IpcChannels.UpdaterGetState,
+    (): import('../../shared/ipc').UpdaterStateSnapshot => getUpdaterState(),
+  );
+  ipcMain.handle(
+    IpcChannels.UpdaterCheckNow,
+    (): import('../../shared/ipc').UpdaterStateSnapshot => checkForUpdatesNow(),
+  );
 
   ipcMain.handle(
     IpcChannels.UpdaterOpenSecondaryDownload,

@@ -1,7 +1,18 @@
 import { app, BrowserWindow, dialog } from 'electron';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+// R-U1 (v0.23.0): persistent main-process logging. Imports first so
+// any module-init `log.info` / `log.error` calls below land in the
+// file from boot. Writes to `%APPDATA%\Orchestrator\logs\main.log`
+// (or platform equivalent). The v0.22.1 post-mortem could only
+// inspect Squirrel installer logs because the in-app updater had
+// no persistent log file — this module closes that gap.
+import { log } from './log';
 import { installCrashHandlers } from './crashes';
+
+log.info(
+  `Orchestrator starting · version=${app.getVersion()} · platform=${process.platform} · electron=${process.versions.electron}`,
+);
 
 // S5: install crash handlers as early as the module body lets us.
 //
