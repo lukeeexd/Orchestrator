@@ -762,11 +762,30 @@ export function App() {
 
         {isHome && activeProjectId ? (
           viewMode === 'canvas' ? (
-            <CanvasView
-              agents={agents}
-              selectedId={selectedId}
-              onSelectAgent={setSelectedId}
-            />
+            <>
+              <CanvasView
+                agents={agents}
+                selectedId={selectedId}
+                onSelectAgent={setSelectedId}
+              />
+              {!drawerCollapsed && (
+                <ResizeHandle
+                  value={drawerW}
+                  onChange={setDrawerW}
+                  min={340}
+                  max={680}
+                  edge="right"
+                />
+              )}
+              <Drawer
+                width={drawerW}
+                agent={selectedAgent}
+                collapsed={drawerCollapsed}
+                provider={activeProject?.provider ?? 'claude'}
+                onAbort={(id) => void window.api.abortAgent(id)}
+                onToggleCollapsed={() => setDrawerCollapsed(!drawerCollapsed)}
+              />
+            </>
           ) : (
           <>
             <DirectorPane
