@@ -1,10 +1,14 @@
 {
   "name": "orchestrator",
   "productName": "Orchestrator",
-  "version": "0.22.2",
+  "version": "0.22.3",
   "description": "Desktop app for orchestrating Claude agents with distinct roles.",
   "main": ".vite/build/main.js",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lukeeexd/Orchestrator.git"
+  },
   "scripts": {
     "start": "electron-forge start",
     "package": "electron-forge package",
