@@ -327,6 +327,45 @@ export function readSkillContent(
 }
 
 /**
+ * R-Vuln5-2026-05-28: `name` and `description` come from third-party
+ * marketplace SKILL.md frontmatter and flow into the Director's
+ * `[project skills]` block on every turn (runner.ts buildSkillsBlock).
+ * The Director system prompt instructs naming skills in plan task lines,
+ * so a bundle author can stuff prompt-injection directives into the
+ * metadata and steer worker tasks — with `bypassPermissions` on the
+ * worker. Pre-fix `name` had no length cap at all, defeating the
+ * description's 80-char truncation. We cap both fields and strip
+ * characters that don't belong in legitimate skill metadata:
+ *   - backticks (markdown-code framing the LLM imitates),
+ *   - angle brackets / square brackets / braces (tag-like markers
+ *     that look like instructions),
+ *   - pipes / semicolons / ampersands (shell-flavoured punctuation
+ *     that primes the LLM toward "run this"),
+ *   - backslashes (the main vector for smuggling YAML escapes past
+ *     the line-bounded parser).
+ * Newlines can't survive `block.split(/\r?\n/)` anyway, so the residual
+ * surface is plain-text directive language — which we further blunt
+ * by capping length so even if a directive slips through it can't carry
+ * a full instruction payload.
+ *
+ * Independent of this, marketplace bundles remain a trust delegation:
+ * subscribing to a skill grants its SKILL.md body access to the
+ * worker prompt via `--plugin-dir`. The fix here is specifically the
+ * "metadata UI shows one thing, Director sees another" mismatch.
+ */
+export const SKILL_NAME_MAX = 64;
+export const SKILL_DESCRIPTION_MAX = 200;
+
+export function sanitizeSkillMetaValue(value: string, max: number): string {
+  // Strip characters that don't appear in legitimate skill metadata
+  // (see comment block above for rationale).
+  const stripped = value.replace(/[`<>[\]{}|;&\\]/g, '');
+  // Collapse runs of whitespace, trim, then cap length.
+  const collapsed = stripped.replace(/\s+/g, ' ').trim();
+  return collapsed.length > max ? collapsed.slice(0, max) : collapsed;
+}
+
+/**
  * Minimal YAML frontmatter parser: pulls `name:` and `description:`
  * out of the leading `---` block of a SKILL.md. Not a real YAML
  * parser — handles flat string fields only. Anything more exotic
@@ -354,8 +393,11 @@ function parseSkillFrontmatter(raw: string): {
     ) {
       value = value.slice(1, -1);
     }
-    if (key === 'name') out.name = value;
-    else if (key === 'description') out.description = value;
+    if (key === 'name') {
+      out.name = sanitizeSkillMetaValue(value, SKILL_NAME_MAX);
+    } else if (key === 'description') {
+      out.description = sanitizeSkillMetaValue(value, SKILL_DESCRIPTION_MAX);
+    }
   }
   return out;
 }

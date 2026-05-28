@@ -10,6 +10,7 @@ import {
 } from '../attachments';
 import {
   allowAttachment,
+  allowDroppedAttachment,
   isAttachmentAllowed,
 } from '../security/attachments';
 
@@ -87,23 +88,34 @@ export function registerAttachmentsHandlers(): void {
 
   ipcMain.handle(
     IpcChannels.AttachmentDescribePaths,
-    (_event, paths: string[]) => {
+    (_event, paths: unknown) => {
       // Wraps describeAttachments so the drag-drop handler can validate
       // non-image files (text, PDF) the same way the picker does. Image
       // drops go through savePastedImage instead — we don't have a
       // ready disk path for an in-memory blob.
-      const list = Array.isArray(paths) ? paths : [];
-      // M2: drag-drop is a user gesture too — allow-list each path
-      // we describe. Paths that fail realpath are skipped here and
-      // chip as ok:false via describeAttachments below.
-      for (const p of list) {
+      //
+      // R-Vuln1-2026-05-28: this is the renderer-supplied entry into
+      // the per-session attachment allow-list. Pre-fix, any renderer-
+      // controlled value would land in the allow-list and become
+      // inlinable into the LLM prompt — a one-step exfil primitive
+      // for `.env` / `~/.claude/settings.json` / etc. The drop guard
+      // (allowDroppedAttachment) now enforces extension + project-
+      // workspace containment via realpath before the path joins the
+      // allow-list. Files outside any workspace need the file picker
+      // (server-minted path) instead. Belt-and-suspenders: runtime
+      // type / cap guard on the incoming array, replacing the
+      // implicit `string[]` type-only contract.
+      const safeList: string[] = Array.isArray(paths)
+        ? paths.filter((p): p is string => typeof p === 'string').slice(0, 32)
+        : [];
+      for (const p of safeList) {
         try {
-          allowAttachment(p);
+          allowDroppedAttachment(p);
         } catch {
-          /* skip */
+          /* skip — the chip surfaces as ok:false via describeAttachments */
         }
       }
-      return describeAttachments(list);
+      return describeAttachments(safeList);
     },
   );
 

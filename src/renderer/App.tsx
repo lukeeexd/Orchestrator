@@ -34,12 +34,21 @@ import { SaveTemplateDialog } from './components/SaveTemplateDialog';
 import { BaseBranchModal } from './components/BaseBranchModal';
 import { CliMissingGate } from './components/CliMissingGate';
 import { CommandPalette } from './components/CommandPalette';
+import { PendingRedirectBanner } from './components/PendingRedirectBanner';
 import type { BuiltinAction } from '../shared/builtinCommands';
 import {
   ProjectTabs,
   NewProjectForm,
   ConfirmDeleteProject,
 } from './components/ProjectTabs';
+
+/**
+ * R-Vuln6-2026-05-28: how long auto-mode waits before firing a
+ * Director-emitted redirect. Long enough for the user to glance at
+ * the banner and hit Cancel if the instruction looks wrong;
+ * short enough to preserve the auto-mode "stay out of my way" feel.
+ */
+const AUTO_REDIRECT_DELAY_MS = 3000;
 
 const PLACEHOLDERS: Record<
   Exclude<
@@ -289,6 +298,42 @@ export function App() {
 
   const handledPlans = useRef<Set<string>>(new Set());
   const handledRedirects = useRef<Set<string>>(new Set());
+
+  /**
+   * R-Vuln6-2026-05-28: auto-mode redirects no longer fire instantly —
+   * they queue up, get staged in `pendingRedirect` for a few seconds
+   * with a Cancel banner, and only then fire (or get ack'd as cancelled).
+   * Queue + processor flag let multiple redirects in quick succession
+   * serialize through a single banner — without that, a new redirect
+   * arriving during the cancel window would steal the banner from the
+   * pending one and the user might cancel the wrong instruction.
+   */
+  const [pendingRedirect, setPendingRedirect] = useState<{
+    messageId: string;
+    agentName: string;
+    instruction: string;
+    firesAt: number;
+    cancel: () => void;
+  } | null>(null);
+  // Queue items capture their own projectId so an ack from a redirect
+  // staged before a project switch lands on the right project's audit
+  // log, not whatever the user navigated to.
+  const redirectQueue = useRef<
+    Array<{
+      messageId: string;
+      agentName: string;
+      instruction: string;
+      projectId: string;
+    }>
+  >([]);
+  const redirectProcessorRunning = useRef(false);
+  // Ref for the async processor: agent state may update mid-loop
+  // (a worker spawned in the cancel window should still be findable).
+  const agentsRef = useRef(agents);
+  useEffect(() => {
+    agentsRef.current = agents;
+  }, [agents]);
+
   // M10: drop the dedupe sets on project switch. They tracked
   // message ids local to the previous project and grew unbounded
   // otherwise — every session-long active project accumulated one
@@ -296,6 +341,10 @@ export function App() {
   useEffect(() => {
     handledPlans.current = new Set();
     handledRedirects.current = new Set();
+    // Note: we don't clear `redirectQueue` here — its items carry
+    // their own projectId and will ack against the originating
+    // project even after the user switches away. The user can still
+    // see + cancel the banner during its window.
   }, [activeProjectId]);
 
   // P2 — recompute the onboarding banner state whenever the active
@@ -444,15 +493,21 @@ export function App() {
     }
   };
 
+  // R-Vuln6-2026-05-28: the dedupe gate moved up into the auto-fire
+  // processor — by the time this function runs the redirect has
+  // already passed the cancel window. `agentsRef` is read inside so
+  // a stale `agents` closure (the processor outlives renders) can't
+  // miss a target that arrived during the cancel countdown. The
+  // projectId is passed by the caller (captured at enqueue time) so
+  // a project switch during the cancel window doesn't redirect the
+  // ack to the wrong project's audit log.
   const fireRedirect = async (
     messageId: string,
     agentName: string,
     instruction: string,
+    projectId: string,
   ) => {
-    if (!activeProjectId) return;
-    if (handledRedirects.current.has(messageId)) return;
-    handledRedirects.current.add(messageId);
-    const target = agents.find((a) => a.name === agentName);
+    const target = agentsRef.current.find((a) => a.name === agentName);
     if (!target) {
       console.warn(`[orchestrator] redirect target not found: @${agentName}`);
       handledRedirects.current.delete(messageId);
@@ -464,7 +519,7 @@ export function App() {
         body: instruction,
       });
       await window.api.ackDirectorRedirect({
-        projectId: activeProjectId,
+        projectId,
         messageId,
         agentName,
         ok: res.ok,
@@ -475,6 +530,42 @@ export function App() {
       handledRedirects.current.delete(messageId);
     }
   };
+
+  /**
+   * R-Vuln6-2026-05-28: stage a redirect for auto-fire and return a
+   * promise that resolves when the timer expires or the user cancels.
+   * The pending state drives the cancel banner; the timer's resolution
+   * value tells the caller whether to actually fire the redirect.
+   */
+  const scheduleAutoFireRedirect = (
+    messageId: string,
+    agentName: string,
+    instruction: string,
+  ): Promise<'fire' | 'cancel'> =>
+    new Promise<'fire' | 'cancel'>((resolve) => {
+      const firesAt = Date.now() + AUTO_REDIRECT_DELAY_MS;
+      let resolved = false;
+      const timer = setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        setPendingRedirect(null);
+        resolve('fire');
+      }, AUTO_REDIRECT_DELAY_MS);
+      const cancel = () => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        setPendingRedirect(null);
+        resolve('cancel');
+      };
+      setPendingRedirect({
+        messageId,
+        agentName,
+        instruction,
+        firesAt,
+        cancel,
+      });
+    });
 
   // Auto mode used to spawn plans the moment they landed. That meant a
   // 6-agent plan you didn't expect could already be three agents deep
@@ -501,20 +592,70 @@ export function App() {
     prevModeRef.current = mode;
   }, [mode, messages]);
 
+  // R-Vuln6-2026-05-28: auto-fire is now staged — every effect run
+  // enqueues new redirects (deduped via handledRedirects), and a
+  // single async processor consumes the queue one item at a time
+  // with a visible cancel window. The processor reads the queue
+  // and refs (activeProjectIdRef, agentsRef) freshly inside the
+  // loop so late-arriving redirects and agent state updates are
+  // visible without restarting the loop.
   useEffect(() => {
     if (mode !== 'auto' || !activeProjectId) return;
+    // Enqueue any newly-arrived unhandled redirects. Capture the
+    // current projectId so an ack lands on the originating project
+    // even if the user switches away during the cancel window.
+    for (const msg of messages) {
+      if (
+        msg.redirect &&
+        !msg.redirectFired &&
+        !handledRedirects.current.has(msg.id)
+      ) {
+        handledRedirects.current.add(msg.id);
+        redirectQueue.current.push({
+          messageId: msg.id,
+          agentName: msg.redirect.agent,
+          instruction: msg.redirect.instruction,
+          projectId: activeProjectId,
+        });
+      }
+    }
+    if (redirectQueue.current.length === 0) return;
+    if (redirectProcessorRunning.current) return;
+    redirectProcessorRunning.current = true;
     void (async () => {
-      for (const msg of messages) {
-        if (msg.redirect && !msg.redirectFired) {
-          await fireRedirect(
-            msg.id,
-            msg.redirect.agent,
-            msg.redirect.instruction,
+      try {
+        while (redirectQueue.current.length > 0) {
+          const item = redirectQueue.current.shift();
+          if (!item) break;
+          const verdict = await scheduleAutoFireRedirect(
+            item.messageId,
+            item.agentName,
+            item.instruction,
           );
+          if (verdict === 'fire') {
+            await fireRedirect(
+              item.messageId,
+              item.agentName,
+              item.instruction,
+              item.projectId,
+            );
+          } else {
+            // User cancelled — ack as failed so the audit trail in
+            // the chat shows the redirect was intentionally skipped.
+            await window.api.ackDirectorRedirect({
+              projectId: item.projectId,
+              messageId: item.messageId,
+              agentName: item.agentName,
+              ok: false,
+              error: 'cancelled by user',
+            });
+          }
         }
+      } finally {
+        redirectProcessorRunning.current = false;
       }
     })();
-  }, [messages, mode, activeProjectId, agents]);
+  }, [messages, mode, activeProjectId]);
 
   // F1: shared action handler for both the Director-composer slash menu
   // and the global Ctrl-K palette. Adding a new BuiltinAction to
@@ -829,6 +970,14 @@ export function App() {
         onClose={() => setPaletteOpen(false)}
         onRun={runBuiltinAction}
       />
+      {pendingRedirect && (
+        <PendingRedirectBanner
+          agentName={pendingRedirect.agentName}
+          instruction={pendingRedirect.instruction}
+          firesAt={pendingRedirect.firesAt}
+          onCancel={pendingRedirect.cancel}
+        />
+      )}
       {basePrompt && (
         <BaseBranchModal
           branches={basePrompt.branches}

@@ -160,6 +160,16 @@ function classifyExt(ext: string): AttachmentKind {
   return 'unsupported';
 }
 
+/**
+ * Classify a file path by its extension, using the same rules the
+ * inline-prompt pipeline applies. Exported so security/attachments.ts
+ * can deny renderer-supplied drop paths whose extension isn't one
+ * the pipeline knows how to handle anyway (R-Vuln1-2026-05-28).
+ */
+export function classifyAttachmentPath(absPath: string): AttachmentKind {
+  return classifyExt(path.extname(absPath).toLowerCase());
+}
+
 export function describeAttachments(paths: string[]): AttachmentInfo[] {
   return paths.map((p) => {
     const name = path.basename(p);
