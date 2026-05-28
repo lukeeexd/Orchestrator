@@ -56,9 +56,11 @@ const DEFAULTS: Settings = {
   defaultEffort: DEFAULT_EFFORT,
   // The Director benefits from deeper reasoning + bigger context (it has
   // to keep the whole fleet, prior conversation, and plan in its head),
-  // so the global default is Opus 4.7 with the 1M context beta and xhigh
-  // effort. Agents stay on the cheaper Sonnet path above.
-  defaultDirectorModel: 'claude-opus-4-7-1m',
+  // so the global default is Opus 4.8 with the 1M context beta and xhigh
+  // effort. (Opus 4.8 also exposes an `ultracode` tier above xhigh; left
+  // opt-in so the default Director run doesn't burn the deepest level on
+  // every turn.) Agents stay on the cheaper Sonnet path above.
+  defaultDirectorModel: 'claude-opus-4-8-1m',
   defaultDirectorEffort: 'xhigh',
   // Budgets default to 0 (unlimited). Caps are opt-in — set a non-zero
   // value here (or per spawn) to enforce one. The old $1 / 100k / 600s

@@ -45,8 +45,13 @@ export interface LogLine {
   msg: string | ToolCall;
 }
 
-/** Reasoning effort levels supported by the Agent SDK. Default is 'high'. */
-export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+/**
+ * Reasoning effort levels supported by the Agent SDK. Default is 'high'.
+ * `ultracode` is Opus 4.8's deepest tier — it shipped with its own effort
+ * ladder, so the level sits above `max`. Only meaningful on Opus 4.8; the
+ * picker offers it everywhere but lower-tier models treat it like `max`.
+ */
+export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultracode';
 
 /**
  * Which agent CLI to spawn. Default 'claude' — the original runtime.
