@@ -163,8 +163,7 @@ export function SettingsScreen() {
             Effort levels mirror Claude Code:&nbsp;
             <code>low</code>/<code>medium</code>/<code>high</code> on all
             models, <code>xhigh</code>/<code>max</code> on the Opus + Sonnet
-            tiers, and <code>ultracode</code> — Opus 4.8&apos;s deepest
-            tier.
+            tiers.
           </p>
 
           <div className="field">

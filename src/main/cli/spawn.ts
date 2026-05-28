@@ -6,6 +6,14 @@ import type {
 } from '../attachments';
 
 /**
+ * Effort levels the `claude` CLI's top-level `--effort` flag accepts
+ * (CLI v2.1.x: low/medium/high/xhigh/max). The CLI strictly validates
+ * this enum and exits 1 at arg-parse on anything else, so we gate on it
+ * before passing the flag. Keep in sync with the CLI's documented set.
+ */
+const CLI_EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+
+/**
  * The shape of options we pass to a single claude-CLI invocation. Mirrors
  * the bits of the SDK options object we used before — kept as a flat
  * struct so each call site is self-documenting.
@@ -50,6 +58,16 @@ export interface ClaudeQueryOptions {
   >;
   /** Which agent inside `agents` to run. Passed as `--agent <name>`. */
   agent: string;
+  /**
+   * Reasoning effort for the session, passed as the top-level
+   * `--effort <level>` flag. This is the ONLY effort mechanism the CLI
+   * honors — the `effort` field inside `agents` (SDK-shaped) is silently
+   * ignored by the CLI, which is why per-agent/Director effort was inert
+   * for the whole CLI era until this flag was added. Gated against
+   * CLI_EFFORT_LEVELS in buildArgs: an unrecognised value is dropped
+   * (CLI default) rather than passed, since the CLI exits 1 on a bad one.
+   */
+  effort?: string;
   /** Session id to resume. Passed as `--resume <id>`. */
   resume?: string;
   /** When true, resuming creates a new session id instead of reusing. */
@@ -186,6 +204,15 @@ function buildArgs(o: ClaudeQueryOptions): string[] {
     '--agent',
     o.agent,
   ];
+
+  // Reasoning effort — the top-level flag is the only one the CLI reads.
+  // Gate on the accepted enum so a legacy/hand-edited value (e.g. the
+  // removed 'ultracode', or an empty string) is dropped instead of
+  // crashing the spawn with `error: option '--effort' argument '…' is
+  // invalid`.
+  if (o.effort && CLI_EFFORT_LEVELS.has(o.effort)) {
+    args.push('--effort', o.effort);
+  }
 
   // When sending images or documents, switch the input format to
   // stream-json so we can wrap the prompt + content blocks in a single

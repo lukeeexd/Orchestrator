@@ -6,7 +6,6 @@ export const EFFORT_LEVELS: readonly EffortLevel[] = [
   'high',
   'xhigh',
   'max',
-  'ultracode',
 ];
 
 export const DEFAULT_EFFORT: EffortLevel = 'high';

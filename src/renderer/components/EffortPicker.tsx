@@ -16,13 +16,11 @@ const LABELS: Record<EffortLevel, string> = {
   high: 'high · default',
   xhigh: 'xhigh',
   max: 'max · top-tier',
-  ultracode: 'ultracode · Opus 4.8',
 };
 
 /**
  * Shared reasoning-effort dropdown. Mirrors Claude Code's effort levels:
- * low → fastest, ultracode → deepest (Opus 4.8's top tier). Default
- * applied throughout the app is 'high'.
+ * low → fastest, max → deepest. Default applied throughout the app is 'high'.
  */
 export function EffortPicker({
   value,
