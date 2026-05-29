@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   ReactFlow,
   Background,
@@ -11,6 +18,7 @@ import {
   type Node,
   type Edge,
   type NodeProps,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import { graphlib, layout as runDagreLayout } from '@dagrejs/dagre';
 import '@xyflow/react/dist/style.css';
@@ -36,6 +44,18 @@ import { OnboardingBanner } from './OnboardingBanner';
 const NODE_W = 224;
 const NODE_H = 88;
 const DIRECTOR_ID = '__director__';
+
+// The Director is a first-class anchor node that hosts the live chat/plan/
+// composer (Phase 5c "faithful" — the mockup draws it ON the canvas, wired to
+// the agents it spawns). It's a fixed-size, non-draggable box; its content is
+// fed in from App via context (see DirectorSlotContext) so message/stream
+// ticks reconcile the real DirectorPane in place — scroll, focus, and
+// streaming survive — without churning React Flow's node data.
+export const DIRECTOR_NODE_W = 384;
+const DIRECTOR_NODE_H = 564;
+
+/** Live Director UI piped from App into the `director` node. */
+const DirectorSlotContext = createContext<ReactNode>(null);
 
 // Explicit, AA-legible status hues for a light canvas (the app's CSS status
 // vars are tuned for the dark terminal theme; on the blueprint canvas we pick
@@ -138,27 +158,27 @@ function AgentNodeView({ data, selected }: NodeProps) {
 }
 
 function DirectorNodeView() {
+  // `nodrag` so interacting with the chat/composer never starts a node drag;
+  // `nowheel` so scrolling the chat doesn't zoom the canvas. The live pane is
+  // pulled from context — see DirectorSlotContext.
+  const slot = useContext(DirectorSlotContext);
   return (
     <div
+      className="nodrag nowheel director-anchor"
       style={{
-        width: 150,
-        height: NODE_H,
+        width: DIRECTOR_NODE_W,
+        height: DIRECTOR_NODE_H,
         boxSizing: 'border-box',
-        background: '#11161f',
-        color: '#eef1f5',
-        borderRadius: 12,
-        border: '1px solid #1d4ed8',
-        boxShadow: '0 6px 18px -8px rgba(20,30,60,0.5)',
-        padding: '10px 12px',
         display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        gap: 4,
-        font: '13px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif',
+        borderRadius: 14,
+        border: '1px solid var(--accent-line)',
+        boxShadow:
+          '0 0 0 1px rgba(111,155,255,0.18), 0 22px 48px -22px rgba(8,14,28,0.65)',
+        overflow: 'hidden',
+        background: 'var(--panel)',
       }}
     >
-      <span style={{ fontWeight: 700, letterSpacing: '0.02em' }}>Director</span>
-      <span style={{ fontSize: 10.5, color: '#9aa3b2' }}>plans + delegates</span>
+      {slot}
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
@@ -171,15 +191,17 @@ function layoutLR(nodes: Node[], edges: Edge[]): Node[] {
   g.setGraph({ rankdir: 'LR', nodesep: 26, ranksep: 110, marginx: 28, marginy: 28 });
   g.setDefaultEdgeLabel(() => ({}));
   for (const n of nodes) {
-    const w = n.type === 'director' ? 150 : NODE_W;
-    g.setNode(n.id, { width: w, height: NODE_H });
+    const w = n.type === 'director' ? DIRECTOR_NODE_W : NODE_W;
+    const h = n.type === 'director' ? DIRECTOR_NODE_H : NODE_H;
+    g.setNode(n.id, { width: w, height: h });
   }
   for (const e of edges) g.setEdge(e.source, e.target);
   runDagreLayout(g);
   return nodes.map((n) => {
     const p = g.node(n.id);
-    const w = n.type === 'director' ? 150 : NODE_W;
-    return { ...n, position: { x: p.x - w / 2, y: p.y - NODE_H / 2 } };
+    const w = n.type === 'director' ? DIRECTOR_NODE_W : NODE_W;
+    const h = n.type === 'director' ? DIRECTOR_NODE_H : NODE_H;
+    return { ...n, position: { x: p.x - w / 2, y: p.y - h / 2 } };
   });
 }
 
@@ -255,6 +277,13 @@ interface Props {
   agents: Agent[];
   selectedId: string | null;
   onSelectAgent: (id: string | null) => void;
+  /**
+   * The live Director UI (chat + plans + composer). Rendered inside the
+   * Director anchor node so it sits ON the canvas, wired by edges to the
+   * agents it spawns. Piped through context so streaming/scroll/focus survive
+   * data ticks (see DirectorSlotContext).
+   */
+  director: ReactNode;
   // Spawn surface re-homed from AgentsPane so the canvas reaches parity
   // before the panes are deleted.
   projectId: string;
@@ -275,6 +304,7 @@ export function CanvasView({
   agents,
   selectedId,
   onSelectAgent,
+  director,
   projectId,
   workspace,
   defaultModel,
@@ -287,6 +317,8 @@ export function CanvasView({
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const sigRef = useRef<string>('');
+  const rfRef = useRef<ReactFlowInstance | null>(null);
+  const didFitRef = useRef(false);
   const [focusedFixOpen, setFocusedFixOpen] = useState(false);
   const activeCount = agents.filter(
     (a) => a.status === 'running' || a.status === 'waiting',
@@ -299,7 +331,14 @@ export function CanvasView({
     if (sig !== sigRef.current) {
       sigRef.current = sig;
       const rawNodes: Node[] = [
-        { id: DIRECTOR_ID, type: 'director', position: { x: 0, y: 0 }, data: {} },
+        {
+          id: DIRECTOR_ID,
+          type: 'director',
+          position: { x: 0, y: 0 },
+          data: {},
+          draggable: false,
+          selectable: false,
+        },
         ...agents.map((a) => ({
           id: a.id,
           type: 'agent',
@@ -311,6 +350,22 @@ export function CanvasView({
       const newEdges = buildEdges(agents);
       setNodes(layoutLR(rawNodes, newEdges));
       setEdges(newEdges);
+      // Frame the fleet ONCE, the first time nodes appear (the `fitView` prop
+      // fits on mount — before this async layout exists — so the tall Director
+      // node + a long handoff chain would otherwise run off-screen). We don't
+      // refit on every spawn: that would yank the viewport out from under
+      // someone reading the chat as a plan spawns its agents. The Controls'
+      // fit button reframes on demand. Double rAF so the freshly-added nodes
+      // are measured first — a single frame can fit a still-unmeasured
+      // rightmost node off-screen.
+      if (!didFitRef.current && agents.length > 0) {
+        didFitRef.current = true;
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() =>
+            rfRef.current?.fitView({ padding: 0.16, maxZoom: 0.9, duration: 350 }),
+          ),
+        );
+      }
     } else {
       setNodes((prev) =>
         prev.map((n) => {
@@ -331,6 +386,7 @@ export function CanvasView({
   }, [selectedId, setNodes]);
 
   return (
+    <DirectorSlotContext.Provider value={director}>
     <div
       style={{
         flex: 1,
@@ -376,11 +432,16 @@ export function CanvasView({
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          onInit={(inst) => {
+            rfRef.current = inst;
+          }}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
-          onNodeClick={(_, node) =>
-            onSelectAgent(node.id === DIRECTOR_ID ? null : node.id)
-          }
+          onNodeClick={(_, node) => {
+            // Clicking inside the Director node = interacting with its chat;
+            // don't disturb the agent selection driving the inspector.
+            if (node.id !== DIRECTOR_ID) onSelectAgent(node.id);
+          }}
           onPaneClick={() => onSelectAgent(null)}
           nodesConnectable={false}
           fitView
@@ -431,5 +492,6 @@ export function CanvasView({
         />
       )}
     </div>
+    </DirectorSlotContext.Provider>
   );
 }

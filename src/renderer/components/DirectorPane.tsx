@@ -7,6 +7,7 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   Agent,
   DirectorMessage,
@@ -244,7 +245,11 @@ function ConfirmWipe({
   onCancel: () => void;
 }) {
   const [busy, setBusy] = useState(false);
-  return (
+  // Portal to <body>: the Director now lives inside a React Flow node, whose
+  // viewport carries a CSS transform. A position:fixed backdrop rendered
+  // inside it would resolve against the transformed ancestor (mis-placed +
+  // zoom-scaled), so escape to the document root.
+  return createPortal(
     <div className="modal-backdrop" onClick={onCancel}>
       <div
         className="modal"
@@ -288,7 +293,8 @@ function ConfirmWipe({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -950,7 +956,9 @@ function SlashHelpModal({
     project: commands.filter((c) => c.scope === 'project'),
     user: commands.filter((c) => c.scope === 'user'),
   };
-  return (
+  // Portal to <body> for the same reason as ConfirmWipe — the Director sits
+  // inside the React Flow viewport transform.
+  return createPortal(
     <div className="modal-backdrop" onClick={onClose}>
       <div
         className="modal"
@@ -1028,6 +1036,7 @@ function SlashHelpModal({
           </p>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

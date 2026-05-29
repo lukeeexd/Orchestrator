@@ -19,7 +19,7 @@ import { TopBar } from './components/TopBar';
 import { LeftRail, type RailScreen } from './components/LeftRail';
 import { StatusBar } from './components/StatusBar';
 import { DirectorPane } from './components/DirectorPane';
-import { CanvasView } from './components/CanvasView';
+import { CanvasView, DIRECTOR_NODE_W } from './components/CanvasView';
 import { Drawer } from './components/Drawer';
 import { ResizeHandle } from './components/ResizeHandle';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
@@ -65,7 +65,6 @@ const PLACEHOLDERS: Record<
 
 export function App() {
   const [active, setActive] = useState<RailScreen>('agents');
-  const [dirW, setDirW] = useLocalStorageState<number>('orchestrator.dirW', 400);
   const [drawerW, setDrawerW] = useLocalStorageState<number>(
     'orchestrator.drawerW',
     460,
@@ -755,81 +754,78 @@ export function App() {
 
         {isHome && activeProjectId ? (
           <>
-            <DirectorPane
-              width={dirW}
-              messages={messages}
-              agents={agents}
-              busy={busy}
-              mode={mode}
-              model={directorModel}
-              effort={directorEffort}
-              directorProvider={directorProvider}
-              projectProvider={activeProvider}
-              onModeChange={setMode}
-              onModelChange={(m) => {
-                if (activeProjectId) void setProjectDirectorModel(activeProjectId, m);
-              }}
-              onEffortChange={(e) => {
-                if (activeProjectId) void setProjectDirectorEffort(activeProjectId, e);
-              }}
-              onDirectorProviderChange={(p) => {
-                if (!activeProjectId) return;
-                // null = clear override → fall back to project default.
-                void setProjectDirectorProvider(
-                  activeProjectId,
-                  p === activeProvider ? null : p,
-                );
-              }}
-              autoBranch={activeProject?.autoBranch === true}
-              onAutoBranchChange={(next) => {
-                if (!activeProjectId) return;
-                void setProjectAutoBranch(activeProjectId, next);
-              }}
-              onSend={send}
-              onSpawnPlan={spawnPlan}
-              onSaveAsTemplate={(rows) => setSaveTemplateRows(rows)}
-              onWipe={async () => {
-                if (activeProjectId)
-                  await window.api.wipeDirector(activeProjectId);
-              }}
-              onRewindTo={async (messageId) => {
-                if (!activeProjectId) return;
-                // F5: confirm before nuking. Truncated count is in
-                // the IPC response — surface it post-confirm so the
-                // user knows roughly what they wiped.
-                if (
-                  !window.confirm(
-                    'Rewind the Director chat to this message?\n\n' +
-                      'Every message after this point will be deleted from ' +
-                      'the conversation and the next turn will start a fresh ' +
-                      'session (no past memory). This cannot be undone.',
-                  )
-                ) {
-                  return;
-                }
-                const r = await window.api.rewindDirector(
-                  activeProjectId,
-                  messageId,
-                );
-                if (r.ok) {
-                  await refreshDirector();
-                }
-              }}
-              viewMode="canvas"
-              projectId={activeProjectId}
-              onSlashAction={runBuiltinAction}
-            />
-            <ResizeHandle
-              value={dirW}
-              onChange={setDirW}
-              min={300}
-              max={640}
-              edge="left"
-            />
             <CanvasView
               agents={agents}
               selectedId={selectedId}
               onSelectAgent={setSelectedId}
+              director={
+                <DirectorPane
+                  width={DIRECTOR_NODE_W}
+                  messages={messages}
+                  agents={agents}
+                  busy={busy}
+                  mode={mode}
+                  model={directorModel}
+                  effort={directorEffort}
+                  directorProvider={directorProvider}
+                  projectProvider={activeProvider}
+                  onModeChange={setMode}
+                  onModelChange={(m) => {
+                    if (activeProjectId)
+                      void setProjectDirectorModel(activeProjectId, m);
+                  }}
+                  onEffortChange={(e) => {
+                    if (activeProjectId)
+                      void setProjectDirectorEffort(activeProjectId, e);
+                  }}
+                  onDirectorProviderChange={(p) => {
+                    if (!activeProjectId) return;
+                    // null = clear override → fall back to project default.
+                    void setProjectDirectorProvider(
+                      activeProjectId,
+                      p === activeProvider ? null : p,
+                    );
+                  }}
+                  autoBranch={activeProject?.autoBranch === true}
+                  onAutoBranchChange={(next) => {
+                    if (!activeProjectId) return;
+                    void setProjectAutoBranch(activeProjectId, next);
+                  }}
+                  onSend={send}
+                  onSpawnPlan={spawnPlan}
+                  onSaveAsTemplate={(rows) => setSaveTemplateRows(rows)}
+                  onWipe={async () => {
+                    if (activeProjectId)
+                      await window.api.wipeDirector(activeProjectId);
+                  }}
+                  onRewindTo={async (messageId) => {
+                    if (!activeProjectId) return;
+                    // F5: confirm before nuking. Truncated count is in
+                    // the IPC response — surface it post-confirm so the
+                    // user knows roughly what they wiped.
+                    if (
+                      !window.confirm(
+                        'Rewind the Director chat to this message?\n\n' +
+                          'Every message after this point will be deleted from ' +
+                          'the conversation and the next turn will start a fresh ' +
+                          'session (no past memory). This cannot be undone.',
+                      )
+                    ) {
+                      return;
+                    }
+                    const r = await window.api.rewindDirector(
+                      activeProjectId,
+                      messageId,
+                    );
+                    if (r.ok) {
+                      await refreshDirector();
+                    }
+                  }}
+                  viewMode="canvas"
+                  projectId={activeProjectId}
+                  onSlashAction={runBuiltinAction}
+                />
+              }
               projectId={activeProjectId}
               workspace={workspace}
               defaultModel={spawnDefaultModel}
