@@ -10,6 +10,7 @@ import { prepareAttachments } from '../attachments';
 import { getProject } from '../projects';
 import {
   buildEnv,
+  elapsed,
   startElapsedTimer,
   type RunnerSinks,
 } from './internal';
@@ -103,7 +104,13 @@ async function runRedirect(
   if (!entry || !entry.agent.sessionId) return;
   const settings = readSettings();
   const env = buildEnv(settings, entry.agent.projectId);
-  const elapsedTimer = startElapsedTimer(agentId, sinks);
+  // Time this redirect turn from NOW, not the original spawn — the agent may
+  // have been done/idle for minutes. Reset the displayed elapsed immediately
+  // so it doesn't flash the prior turn's value before the first tick.
+  const turnStart = Date.now();
+  registry.patch(agentId, { elapsed: elapsed(turnStart) });
+  sinks.onPatch(agentId, { elapsed: elapsed(turnStart) });
+  const elapsedTimer = startElapsedTimer(agentId, sinks, turnStart);
 
   // If the redirect comes with a new model/effort, persist it on the
   // agent so future redirects + the Drawer's Config tab show the latest.

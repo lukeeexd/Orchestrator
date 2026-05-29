@@ -212,6 +212,15 @@ export function awaitCompletion(agentId: string): Promise<void> {
 export function startElapsedTimer(
   agentId: string,
   sinks: RunnerSinks,
+  /**
+   * When this turn's clock started. Defaults to the agent's spawn time
+   * (`startedAt`) — correct for spawn + fork. A redirect resumes an agent
+   * that may have sat idle (done) for a long time, so it passes the redirect
+   * moment instead; otherwise elapsed would count the idle gap (a "done at
+   * 00:06 → 12:46 on redirect" jump). `startedAt` itself is left untouched so
+   * canvas/history ordering by spawn time is preserved.
+   */
+  since?: number,
 ): NodeJS.Timeout {
   const elapsedTimer = setInterval(() => {
     const e = registry.get(agentId);
@@ -219,7 +228,7 @@ export function startElapsedTimer(
       clearInterval(elapsedTimer);
       return;
     }
-    const next = elapsed(e.agent.startedAt);
+    const next = elapsed(since ?? e.agent.startedAt);
     if (next !== e.agent.elapsed) {
       registry.patch(agentId, { elapsed: next });
       sinks.onPatch(agentId, { elapsed: next });
