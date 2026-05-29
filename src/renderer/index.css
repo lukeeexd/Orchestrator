@@ -221,7 +221,9 @@ html, body {
   align-items: center;
   gap: 14px;
   padding: 0 14px;
-  background: linear-gradient(180deg, #15171c 0%, #0f1115 100%);
+  /* Flightdeck light chrome (was a hardcoded dark gradient that the 5c
+     re-theme missed). Matches the pane-head + status bar surfaces. */
+  background: var(--panel);
   border-bottom: 1px solid var(--border);
   user-select: none;
 }
@@ -253,6 +255,15 @@ html, body {
 }
 .tb-pill .label { color: var(--muted); }
 .tb-pill .val { color: var(--text); }
+
+/* Top-bar model picker (the model is now editable here, not a read-only pill). */
+.tb-model { display: inline-flex; align-items: center; gap: 7px; }
+.tb-model .tb-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-line);
+  flex: none;
+}
 
 .tb-btn {
   height: 24px; padding: 0 10px;

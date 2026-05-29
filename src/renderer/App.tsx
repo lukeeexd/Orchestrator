@@ -125,7 +125,7 @@ export function App() {
     })();
   }, []);
 
-  const { settings } = useSettings();
+  const { settings, save: saveSettings } = useSettings();
   const {
     projects,
     activeId: activeProjectId,
@@ -730,6 +730,7 @@ export function App() {
       <TopBar
         workspace={workspace}
         model={settings?.defaultModel ?? 'claude-sonnet-4-6'}
+        onChangeModel={(m) => void saveSettings({ defaultModel: m })}
         onChangeWorkspace={async () => {
           if (!activeProjectId) return;
           const { path } = await window.api.pickWorkspace();

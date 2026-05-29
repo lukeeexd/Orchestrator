@@ -1,14 +1,18 @@
+import { ModelPicker } from './ModelPicker';
+
 export type ViewMode = 'compact' | 'stream' | 'canvas';
 
 interface Props {
   workspace: string;
   model: string;
+  onChangeModel: (next: string) => void;
   onChangeWorkspace: () => void;
 }
 
 export function TopBar({
   workspace,
   model,
+  onChangeModel,
   onChangeWorkspace,
 }: Props) {
   return (
@@ -28,9 +32,12 @@ export function TopBar({
 
       <div className="tb-spacer" />
 
-      <div className="tb-pill" title="Default model — set via settings.json defaultModel">
-        <span className="dot" />
-        <span className="val">{model}</span>
+      <div
+        className="tb-model"
+        title="Default model — used by the Director and new agents unless overridden per-project"
+      >
+        <span className="tb-dot" />
+        <ModelPicker value={model} onChange={onChangeModel} compact />
       </div>
     </div>
   );
