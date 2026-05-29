@@ -149,6 +149,28 @@ export function SettingsScreen() {
         </section>
 
         <section className="settings-section">
+          <h3 className="settings-h">Appearance</h3>
+          <p className="settings-help">
+            Theme for the whole app. <code>System</code> follows your OS and
+            switches live; the top-bar sun/moon is a quick light/dark toggle.
+          </p>
+          <div className="field">
+            <span className="lbl">Theme</span>
+            <div className="mode-toggle">
+              {(['light', 'dark', 'system'] as const).map((m) => (
+                <button
+                  key={m}
+                  className={draft.theme === m ? 'on' : ''}
+                  onClick={() => patch('theme', m)}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-section">
           <h3 className="settings-h">Model &amp; effort</h3>
           <p className="settings-help">
             Defaults used when a project hasn&apos;t picked its own values.

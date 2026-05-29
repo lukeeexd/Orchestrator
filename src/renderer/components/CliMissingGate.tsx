@@ -119,8 +119,8 @@ export function CliMissingGate({
         <div
           style={{
             padding: 8,
-            background: 'rgba(74, 222, 128, 0.08)',
-            border: '1px solid rgba(74, 222, 128, 0.3)',
+            background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
             borderRadius: 6,
             color: 'var(--accent)',
             fontSize: 12,

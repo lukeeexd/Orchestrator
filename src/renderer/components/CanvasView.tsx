@@ -399,14 +399,40 @@ const REDUCE_MOTION =
   typeof window !== 'undefined' &&
   !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-// Edge palette, faithful to the mockup's SVG edge styles (.edge / .edge.dim /
-// .flow). Active Director plan-lanes ride the soft accent (--acc-edge); handoff
-// + live arrowheads use the full accent; settled lanes dim to dashed slate.
-const ACC_EDGE = 'rgba(29,78,216,0.55)'; // active director plan-lane stroke
-const ACC = '#1d4ed8'; // handoff stroke + active arrowheads
-const DIM = 'rgba(58,68,92,0.34)'; // settled / dim slate stroke
-const DIM_ARROW = 'rgba(58,68,92,0.5)'; // arrowhead on settled lanes
-const FORK = '#94a3b8'; // fork slate
+// Edge + grid colours per theme. The canvas sets these in JS (edge strokes,
+// SVG-marker arrowheads, grid pattern fill), so unlike the chrome they can't
+// ride CSS vars — we key concrete values on the resolved theme and rebuild
+// the edges on a theme flip. Values mirror the --cv-edge-*/--cv-grid-* tokens.
+interface EdgePalette {
+  acc: string; // handoff stroke + active arrowheads
+  accSoft: string; // active Director plan-lane stroke (--acc-edge)
+  accArrow: string; // active plan-lane arrowhead
+  dim: string; // settled slate stroke
+  dimArrow: string; // settled arrowhead
+  fork: string; // fork slate
+}
+const EDGE_PALETTE: Record<'light' | 'dark', EdgePalette> = {
+  light: {
+    acc: '#1d4ed8',
+    accSoft: 'rgba(29,78,216,0.55)',
+    accArrow: 'rgba(29,78,216,0.7)',
+    dim: 'rgba(58,68,92,0.34)',
+    dimArrow: 'rgba(58,68,92,0.5)',
+    fork: '#94a3b8',
+  },
+  dark: {
+    acc: '#6f9bff',
+    accSoft: 'rgba(111,155,255,0.60)',
+    accArrow: 'rgba(111,155,255,0.7)',
+    dim: 'rgba(150,165,195,0.30)',
+    dimArrow: 'rgba(150,165,195,0.5)',
+    fork: '#5b657a',
+  },
+};
+const GRID_PALETTE: Record<'light' | 'dark', { line: string; dot: string }> = {
+  light: { line: 'rgba(29,49,90,0.045)', dot: 'rgba(29,49,90,0.10)' },
+  dark: { line: 'rgba(150,170,210,0.06)', dot: 'rgba(150,170,210,0.14)' },
+};
 
 /**
  * Build the edge set that draws the orchestration flow as smooth cubic beziers
@@ -422,7 +448,7 @@ const FORK = '#94a3b8'; // fork slate
  * across a box. Solid strokes (full lines read better than dashes); only the
  * fork keeps a dash, to mark it as ancestry rather than flow.
  */
-function buildEdges(agents: Agent[], cm: ChainModel): Edge[] {
+function buildEdges(agents: Agent[], cm: ChainModel, p: EdgePalette): Edge[] {
   const ids = new Set(agents.map((a) => a.id));
   const arrow = (color: string) => ({
     type: MarkerType.ArrowClosed,
@@ -469,10 +495,10 @@ function buildEdges(agents: Agent[], cm: ChainModel): Edge[] {
         type: 'floating',
         label: 'fork',
         animated: false,
-        markerEnd: arrow(FORK),
-        style: { stroke: FORK, strokeWidth: 1.5, strokeDasharray: '5 4' },
-        labelStyle: { fill: '#5b6473', fontSize: 10, fontFamily: 'system-ui, sans-serif' },
-        labelBgStyle: { fill: '#eceef3', fillOpacity: 0.9 },
+        markerEnd: arrow(p.fork),
+        style: { stroke: p.fork, strokeWidth: 1.5, strokeDasharray: '5 4' },
+        labelStyle: { fill: 'var(--muted)', fontSize: 10, fontFamily: 'system-ui, sans-serif' },
+        labelBgStyle: { fill: 'var(--cv-canvas-bg)', fillOpacity: 0.9 },
       };
     }
     // (2) handoff: previous chain agent -> this. Live = accent marching-ants;
@@ -486,8 +512,8 @@ function buildEdges(agents: Agent[], cm: ChainModel): Edge[] {
         ...handles(prev, a.id),
         type: 'floating',
         ...(live ? { className: 'cv-flow' } : {}),
-        markerEnd: arrow(settled ? DIM_ARROW : ACC),
-        style: { stroke: settled ? DIM : ACC, strokeWidth: settled ? 1.4 : 1.6 },
+        markerEnd: arrow(settled ? p.dimArrow : p.acc),
+        style: { stroke: settled ? p.dim : p.acc, strokeWidth: settled ? 1.4 : 1.6 },
       };
     }
     // (3) Director plan-lane: Director -> chain head / standalone. Live = soft
@@ -500,8 +526,8 @@ function buildEdges(agents: Agent[], cm: ChainModel): Edge[] {
       ...handles(DIRECTOR_ID, a.id),
       type: 'floating',
       ...(live ? { className: 'cv-flow' } : {}),
-      markerEnd: arrow(settled ? DIM_ARROW : live ? ACC : 'rgba(29,78,216,0.7)'),
-      style: { stroke: settled ? DIM : ACC_EDGE, strokeWidth: settled ? 1.4 : 1.6 },
+      markerEnd: arrow(settled ? p.dimArrow : live ? p.acc : p.accArrow),
+      style: { stroke: settled ? p.dim : p.accSoft, strokeWidth: settled ? 1.4 : 1.6 },
     };
   });
 }
@@ -510,6 +536,9 @@ interface Props {
   agents: Agent[];
   selectedId: string | null;
   onSelectAgent: (id: string | null) => void;
+  /** Resolved UI theme ('light' | 'dark') — drives the canvas's JS colours
+   *  (edge strokes, arrowheads, grid) that can't ride CSS vars. */
+  theme: 'light' | 'dark';
   /**
    * The live Director UI (chat + plans + composer). Rendered inside the
    * Director anchor node so it sits ON the canvas, wired by edges to the
@@ -537,6 +566,7 @@ export function CanvasView({
   agents,
   selectedId,
   onSelectAgent,
+  theme,
   director,
   projectId,
   workspace,
@@ -556,6 +586,10 @@ export function CanvasView({
   const activeCount = agents.filter(
     (a) => a.status === 'running' || a.status === 'waiting',
   ).length;
+  // Concrete per-theme colours for the bits drawn in JS (edges + grid). Stable
+  // per theme (module consts), so they only change deps when the theme flips.
+  const ep = EDGE_PALETTE[theme];
+  const grid = GRID_PALETTE[theme];
 
   // Rebuild + re-layout only when the topology changes; otherwise patch data
   // in place so a status tick never triggers a relayout.
@@ -564,7 +598,7 @@ export function CanvasView({
     if (sig !== sigRef.current) {
       sigRef.current = sig;
       const cm = buildChainModel(agents);
-      const newEdges = buildEdges(agents, cm);
+      const newEdges = buildEdges(agents, cm, ep);
       setNodes(layoutStagger(agents, cm));
       setEdges(newEdges);
       // Frame the fleet ONCE, the first time nodes appear (the `fitView` prop
@@ -593,9 +627,12 @@ export function CanvasView({
       );
       // Edges are cheap to rebuild and depend only on immutable fields + status;
       // rebuilding picks up status -> animated changes without a relayout.
-      setEdges(buildEdges(agents, buildChainModel(agents)));
+      setEdges(buildEdges(agents, buildChainModel(agents), ep));
     }
-  }, [agents, selectedId, setNodes, setEdges]);
+    // `ep` in deps: a theme flip rebuilds the edges with the new palette (the
+    // else-branch path, since the agent id-set is unchanged). Nodes + grid +
+    // wrapper re-theme via CSS vars / re-render, so they need no rebuild.
+  }, [agents, selectedId, setNodes, setEdges, ep]);
 
   // Reflect externally-driven selection (e.g. ⌘1-9 jumps) onto the nodes.
   useEffect(() => {
@@ -611,7 +648,7 @@ export function CanvasView({
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        background: '#eceef3',
+        background: 'var(--cv-canvas-bg)',
       }}
     >
       <div className="pane-head" style={{ flexShrink: 0 }}>
@@ -678,14 +715,14 @@ export function CanvasView({
             variant={BackgroundVariant.Lines}
             gap={26}
             lineWidth={1}
-            color="rgba(29,49,90,0.045)"
+            color={grid.line}
           />
           <Background
             id="grid-dots"
             variant={BackgroundVariant.Dots}
             gap={26}
             size={1}
-            color="rgba(29,49,90,0.10)"
+            color={grid.dot}
           />
           <Controls showInteractive={false} />
         </ReactFlow>
@@ -696,7 +733,7 @@ export function CanvasView({
               left: '50%',
               top: '52%',
               transform: 'translate(-50%, -50%)',
-              color: '#5b6473',
+              color: 'var(--cv-empty-ink)',
               font: '13px system-ui, sans-serif',
               pointerEvents: 'none',
               textAlign: 'center',

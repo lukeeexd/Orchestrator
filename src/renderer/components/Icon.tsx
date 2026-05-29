@@ -28,7 +28,9 @@ export type IconName =
   | 'context'
   | 'expand'
   | 'more'
-  | 'branch';
+  | 'branch'
+  | 'sun'
+  | 'moon';
 
 interface Props {
   name: IconName;
@@ -62,6 +64,19 @@ export function Icon({
         <svg {...common}>
           <path d="M8 1.5l5.5 3.2v6.6L8 14.5 2.5 11.3V4.7L8 1.5z" />
           <path d="M8 5.5v5M5.5 7v2M10.5 7v2" />
+        </svg>
+      );
+    case 'sun':
+      return (
+        <svg {...common}>
+          <circle cx="8" cy="8" r="3" />
+          <path d="M8 1.3v1.6M8 13.1v1.6M1.3 8h1.6M13.1 8h1.6M3.3 3.3l1.1 1.1M11.6 11.6l1.1 1.1M3.3 12.7l1.1-1.1M11.6 4.4l1.1-1.1" />
+        </svg>
+      );
+    case 'moon':
+      return (
+        <svg {...common}>
+          <path d="M13.5 9.4A5.7 5.7 0 0 1 6.6 2.5 5.7 5.7 0 1 0 13.5 9.4z" />
         </svg>
       );
     case 'agents':

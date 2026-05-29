@@ -13,8 +13,9 @@
  * picker does the same trick — `Opus 4.8 1M` and `Opus 4.8` both report
  * `claude-opus-4-8` as the underlying id.
  *
- * Ordering matters: the first claude entry is the flagship fallback
- * returned by `defaultModelForProvider`, so the newest Opus leads.
+ * Ordering controls the dropdown order (each base model followed by its
+ * 1M variant). The flagship default is set explicitly in
+ * `defaultModelForProvider` (DEFAULT_CLAUDE_MODEL), not by list position.
  */
 import type { Provider } from './types';
 
@@ -45,6 +46,13 @@ export const MODEL_LABELS: Record<string, string> = {
  */
 export const DEFAULT_CODEX_MODEL = 'gpt-5-codex';
 
+/**
+ * The flagship claude default — Opus 4.8 with the 1M-context beta. Used by
+ * `defaultModelForProvider` for the Director, new agents, and fresh state when
+ * nothing else is saved.
+ */
+export const DEFAULT_CLAUDE_MODEL = 'claude-opus-4-8-1m';
+
 /** Which provider's CLI accepts a given model id. Used to filter the picker. */
 export function modelProvider(id: string): Provider {
   if (id.startsWith('gpt-')) return 'codex';
@@ -71,7 +79,7 @@ export function modelsForProvider(provider: Provider): readonly string[] {
  */
 export function defaultModelForProvider(provider: Provider): string {
   if (provider === 'codex') return DEFAULT_CODEX_MODEL;
-  return modelsForProvider(provider)[0] ?? 'claude-sonnet-4-6';
+  return DEFAULT_CLAUDE_MODEL;
 }
 
 /**

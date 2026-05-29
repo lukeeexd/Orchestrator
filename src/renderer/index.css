@@ -38,6 +38,94 @@
   /* UI font (Flightdeck): clean geometric sans for chrome; mono is for
      logs / ids / numbers only. */
   --ui: 'Outfit', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* Tokens that were referenced with literal fallbacks but never defined —
+     defining them kills stale green/amber fallbacks and lets them theme. */
+  --bg-2: #e4e8f0;
+  --bg-3: #dbe1ea;
+  --text-1: var(--text);
+  --ok: #15803d;
+  --warn: #b45309;
+  --scrollbar: #c3cbd7;
+  --scrollbar-hover: #aeb7c5;
+
+  /* Canvas tokens — promoted from the literals in CanvasView + the .cv-*
+     classes so the node graph themes alongside the chrome. */
+  --cv-canvas-bg: #eceef3;
+  --cv-card-bg: #fdfdff;
+  --cv-card-border: #cdd2dd;
+  --cv-card-ink: #11182a;
+  --cv-card-ink-2: #3a445c;
+  --cv-hair: #dde1e9;
+  --cv-foot-bg: #f7f8fb;
+  --cv-foot-label: #8b93a9;
+  --cv-chip-bg: #e9ebf1;
+  --cv-chip-border: #cdd2dd;
+  --cv-chip-ink: #5e6884;
+  --cv-grid-line: rgba(29, 49, 90, 0.045);
+  --cv-grid-dot: rgba(29, 49, 90, 0.10);
+  --cv-edge-acc: #1d4ed8;
+  --cv-edge-acc-soft: rgba(29, 78, 216, 0.55);
+  --cv-edge-acc-arrow: rgba(29, 78, 216, 0.7);
+  --cv-edge-dim: rgba(58, 68, 92, 0.34);
+  --cv-edge-dim-arrow: rgba(58, 68, 92, 0.5);
+  --cv-edge-fork: #94a3b8;
+  --cv-empty-ink: #5b6473;
+}
+
+/* ── Dark mode ─────────────────────────────────────────────────
+   Re-inversion of the light blueprint to a navy/slate palette keeping the
+   SAME electric-blue accent (deliberately NOT the old pre-5c terminal
+   green). Applied via data-theme="dark" on <html> — see preTheme.ts +
+   useTheme. Every chrome surface that reads a token flips for free. */
+:root[data-theme='dark'] {
+  --ink: #0a0e16;
+  --bg: #0e131d;
+  --panel: #151b27;
+  --sub: #1b2230;
+  --sub-2: #232c3c;
+  --border: #28303f;
+  --border-2: #3a4455;
+  --text: #eef2f8;
+  --text-2: #b6c0d0;
+  --muted: #828d9f;
+  --muted-2: #5b657a;
+  --accent: #6f9bff;
+  --accent-dim: rgba(111, 155, 255, 0.16);
+  --accent-line: rgba(111, 155, 255, 0.50);
+  --running: #6f9bff;
+  --waiting: #f0a542;
+  --paused: #8794a6;
+  --approved: #6f9bff;
+  --error: #f26d6d;
+  --done: #8794a6;
+  --bg-2: #161d29;
+  --bg-3: #1f2836;
+  --text-1: var(--text);
+  --ok: #34d399;
+  --warn: #f0a542;
+  --scrollbar: #262932;
+  --scrollbar-hover: #383b44;
+  --cv-canvas-bg: #0d1119;
+  --cv-card-bg: #161d29;
+  --cv-card-border: #2a3442;
+  --cv-card-ink: #eef2f8;
+  --cv-card-ink-2: #c4cdda;
+  --cv-hair: #2a3442;
+  --cv-foot-bg: #121826;
+  --cv-foot-label: #8b96a8;
+  --cv-chip-bg: #1d2735;
+  --cv-chip-border: #2a3442;
+  --cv-chip-ink: #8b96a8;
+  --cv-grid-line: rgba(150, 170, 210, 0.06);
+  --cv-grid-dot: rgba(150, 170, 210, 0.14);
+  --cv-edge-acc: #6f9bff;
+  --cv-edge-acc-soft: rgba(111, 155, 255, 0.60);
+  --cv-edge-acc-arrow: rgba(111, 155, 255, 0.7);
+  --cv-edge-dim: rgba(150, 165, 195, 0.30);
+  --cv-edge-dim-arrow: rgba(150, 165, 195, 0.5);
+  --cv-edge-fork: #5b657a;
+  --cv-empty-ink: #828d9f;
 }
 
 /* ── Director anchor (canvas node) ─────────────────────────────
@@ -63,6 +151,24 @@
   --accent-line: rgba(111, 155, 255, 0.55);
   color: var(--text);
 }
+/* Dark mode inverts the figure/ground: on the light canvas the Director is
+   the one DARK slab; on the dark canvas it becomes the one LIGHTER, accent-
+   lifted slab so it stays the single highest-contrast object either way. */
+:root[data-theme='dark'] .director-anchor {
+  --bg: #1c2435;
+  --panel: #232d40;
+  --sub: #2c3850;
+  --sub-2: #364257;
+  --border: #3d4a63;
+  --border-2: #4d5c79;
+  --text: #f4f7fc;
+  --text-2: #c8d2e2;
+  --muted: #94a0b4;
+  --muted-2: #6f7b92;
+  --accent: #93b4ff;
+  --accent-dim: rgba(147, 180, 255, 0.18);
+  --accent-line: rgba(147, 180, 255, 0.55);
+}
 
 /* ── Flightdeck canvas — agent nodes ───────────────────────────
    Faithful to docs/redesign/mockups/bold-flightdeck.html: a lifted
@@ -76,24 +182,45 @@
   display: flex;
   flex-direction: column;
   height: 134px;
-  background: #fdfdff;
-  border: 1px solid #cdd2dd;
+  background: var(--cv-card-bg);
+  border: 1px solid var(--cv-card-border);
   border-radius: 10px;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.9) inset,
     0 10px 26px -14px rgba(17, 24, 42, 0.40),
     0 2px 6px -2px rgba(17, 24, 42, 0.16);
   font-family: var(--ui);
-  color: #11182a;
+  color: var(--cv-card-ink);
   transition: box-shadow 0.18s, border-color 0.18s;
 }
 .cv-node.sel {
-  border-color: #1d4ed8;
+  border-color: var(--accent);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.9) inset,
     0 16px 40px -16px rgba(29, 78, 216, 0.45),
     0 3px 10px -3px rgba(29, 78, 216, 0.30);
 }
+/* Dark mode: the lifted-card shadow is tuned for white cards; deepen it on
+   the dark canvas + give the selected node an accent ring instead of a
+   white-glow halo. */
+:root[data-theme='dark'] .cv-node {
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 12px 30px -16px rgba(0, 0, 0, 0.55),
+    0 2px 6px -2px rgba(0, 0, 0, 0.4);
+}
+:root[data-theme='dark'] .cv-node.sel {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 16px 40px -16px rgba(111, 155, 255, 0.40);
+}
+/* Dark status families: lift the hues + raise the soft/line alpha so the
+   strip, dot, and pill stay legible on dark cards. */
+:root[data-theme='dark'] .cv-node.s-run  { --cv-st: #6f9bff; --cv-st-soft: rgba(111, 155, 255, 0.18); --cv-st-line: rgba(111, 155, 255, 0.45); }
+:root[data-theme='dark'] .cv-node.s-wait { --cv-st: #f0a542; --cv-st-soft: rgba(240, 165, 66, 0.18); --cv-st-line: rgba(240, 165, 66, 0.45); }
+:root[data-theme='dark'] .cv-node.s-done { --cv-st: #8794a6; --cv-st-soft: rgba(135, 148, 166, 0.18); --cv-st-line: rgba(135, 148, 166, 0.40); }
+:root[data-theme='dark'] .cv-node.s-appr { --cv-st: #f0a542; --cv-st-soft: rgba(240, 165, 66, 0.18); --cv-st-line: rgba(240, 165, 66, 0.45); }
+:root[data-theme='dark'] .cv-node.s-err  { --cv-st: #f26d6d; --cv-st-soft: rgba(242, 109, 109, 0.18); --cv-st-line: rgba(242, 109, 109, 0.45); }
 /* status families → the strip / dot / pill colour set */
 .cv-node.s-run  { --cv-st: #1d4ed8; --cv-st-soft: rgba(29, 78, 216, 0.10); --cv-st-line: rgba(29, 78, 216, 0.34); }
 .cv-node.s-wait { --cv-st: #6b76b0; --cv-st-soft: rgba(107, 118, 176, 0.12); --cv-st-line: rgba(107, 118, 176, 0.34); }
@@ -142,9 +269,28 @@
   .cv-dot.run::after { animation: none; opacity: 0; }
   .react-flow__edge.cv-flow .react-flow__edge-path { animation: none; }
 }
+
+/* React Flow zoom/pan controls — themed via tokens (the bundled style.css
+   ships a fixed white treatment that looks wrong in dark). Two-class selectors
+   so we win over React Flow's single-class defaults regardless of CSS import
+   order. */
+.react-flow__controls .react-flow__controls-button {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.react-flow__controls .react-flow__controls-button:hover {
+  background: var(--sub);
+}
+.react-flow__controls .react-flow__controls-button svg {
+  fill: var(--text);
+}
+.react-flow__controls .react-flow__controls-button:disabled svg {
+  fill: var(--muted-2);
+}
 .cv-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .cv-nm {
-  font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: #11182a;
+  font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--cv-card-ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .cv-rolechip {
@@ -152,7 +298,7 @@
   font-family: var(--mono); font-size: 9px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.07em;
   padding: 1px 6px; border-radius: 5px;
-  background: #e9ebf1; border: 1px solid #cdd2dd; color: #5e6884;
+  background: var(--cv-chip-bg); border: 1px solid var(--cv-chip-border); color: var(--cv-chip-ink);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .cv-stag {
@@ -167,7 +313,7 @@
 .cv-task {
   flex: 1 1 auto; min-height: 0;
   padding: 0 14px 8px 15px;
-  font-size: 12px; color: #3a445c; line-height: 1.42;
+  font-size: 12px; color: var(--cv-card-ink-2); line-height: 1.42;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -175,16 +321,16 @@
   flex: none;
   display: flex; align-items: center;
   padding: 7px 14px 8px 15px;
-  border-top: 1px solid #dde1e9;
-  background: #f7f8fb;
+  border-top: 1px solid var(--cv-hair);
+  background: var(--cv-foot-bg);
   border-radius: 0 0 10px 10px;
 }
 .cv-cell { display: flex; flex-direction: column; gap: 1px; padding-right: 18px; }
 .cv-cell .cl {
-  font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: #8b93a9;
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--cv-foot-label);
 }
 .cv-cell .cvv {
-  font-family: var(--mono); font-size: 12px; font-weight: 600; color: #11182a;
+  font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--cv-card-ink);
 }
 
 * { box-sizing: border-box; }
@@ -284,7 +430,7 @@ html, body {
   border-color: var(--accent-line);
   color: var(--accent);
 }
-.tb-btn.primary:hover { background: rgba(74,222,128,0.28); }
+.tb-btn.primary:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
 .tb-btn .kbd {
   display: inline-block;
   padding: 0 4px; margin-left: 2px;
@@ -501,7 +647,7 @@ html, body {
   box-shadow: 0 0 8px var(--accent-line);
 }
 .resize-handle.dragging {
-  background: rgba(74,222,128,0.05);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
 }
 body.resizing {
   cursor: col-resize !important;
@@ -691,7 +837,7 @@ body.resizing * { cursor: col-resize !important; }
 
 .dir-redirect {
   margin-top: 8px;
-  background: rgba(74,222,128,0.04);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
   border: 1px solid var(--accent-line);
   border-radius: 6px;
   padding: 8px 10px;
@@ -736,8 +882,8 @@ body.resizing * { cursor: col-resize !important; }
 .agent {
   border-bottom: 1px solid var(--border);
 }
-.agent.selected { background: rgba(74,222,128,0.03); }
-.agent.selected .agent-head { background: rgba(74,222,128,0.06); }
+.agent.selected { background: color-mix(in srgb, var(--accent) 3%, transparent); }
+.agent.selected .agent-head { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 
 .agent-head {
   height: 44px;
@@ -750,8 +896,8 @@ body.resizing * { cursor: col-resize !important; }
   cursor: default;
   border-bottom: 1px solid var(--border);
 }
-.agent-head:hover { background: #15181d; }
-.agent.selected .agent-head:hover { background: rgba(74,222,128,0.09); }
+.agent-head:hover { background: var(--sub); }
+.agent.selected .agent-head:hover { background: color-mix(in srgb, var(--accent) 9%, transparent); }
 
 .chev { color: var(--muted-2); font-size: 10px; }
 
@@ -1040,7 +1186,7 @@ body.resizing * { cursor: col-resize !important; }
   margin: 2px 0 4px;
 }
 .msg-attachments .att-chip {
-  background: rgba(74,222,128,0.04);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
   border-color: var(--accent-line);
   color: var(--accent);
 }
@@ -1510,13 +1656,13 @@ body.resizing * { cursor: col-resize !important; }
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #262932;
+  background: var(--scrollbar);
   border-radius: 4px;
   border: 2px solid var(--bg);
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #383b44;
+  background: var(--scrollbar-hover);
   background-clip: content-box;
   border: 2px solid var(--bg);
 }
@@ -1537,7 +1683,7 @@ body.resizing * { cursor: col-resize !important; }
   background: var(--sub);
   border: 1px solid var(--border);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 0 24px rgba(74,222,128,0.05) inset;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 5%, transparent) inset;
 }
 .empty-title {
   font-size: 13px;
@@ -1636,7 +1782,7 @@ body.resizing * { cursor: col-resize !important; }
   cursor: pointer;
 }
 .tools-cell input { cursor: pointer; }
-.tools-cell.on { background: rgba(74, 222, 128, 0.05); }
+.tools-cell.on { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .tools-reset-cell {
   display: flex;
   align-items: center;
@@ -1910,15 +2056,15 @@ body.resizing * { cursor: col-resize !important; }
   height: 22px;
   padding: 0 10px;
   margin-right: 12px;
-  background: rgba(74, 222, 128, 0.12);
-  border: 1px solid rgba(74, 222, 128, 0.35);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   color: var(--accent);
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
 }
-.statusbar-update:hover { background: rgba(74, 222, 128, 0.2); }
+.statusbar-update:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
 
 /* ───────────────────────── Marketplace update toast ───────────────── */
 .marketplace-toast {
