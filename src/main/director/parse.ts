@@ -3,6 +3,8 @@ import type {
   AgentRole,
   Provider,
   ProjectPrd,
+  PlanCritique,
+  CritiqueSeverity,
   RedirectInstruction,
 } from '../../shared/types';
 
@@ -31,6 +33,9 @@ interface ParseResult {
 const PLAN_RE = /```orchestrator-plan\s*\n([\s\S]*?)\n```/i;
 const REDIRECT_RE = /```orchestrator-redirect\s*\n([\s\S]*?)\n```/i;
 const PRD_RE = /```orchestrator-prd\s*\n([\s\S]*?)\n```/i;
+const CRITIQUE_RE = /```orchestrator-critique\s*\n([\s\S]*?)\n```/i;
+
+const VALID_SEVERITIES: CritiqueSeverity[] = ['info', 'warn', 'error'];
 
 function parsePlan(raw: string): PlanRow[] | null {
   let parsed: unknown;
@@ -117,6 +122,63 @@ function parsePrd(raw: string): ProjectPrd | null {
     constraints,
     open_questions,
   };
+}
+
+/**
+ * Parse the JSON body of an `orchestrator-critique` block (N7 Plan Critic).
+ * Per-item guards mirror parsePlan; an all-empty critique returns null
+ * (mirrors parsePrd) so the renderer shows nothing for a clean plan. Advisory
+ * only — a malformed/missing block just yields null, never an error.
+ */
+function parseCritique(raw: string): PlanCritique | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed == null || typeof parsed !== 'object') return null;
+  const r = parsed as Record<string, unknown>;
+  const sev = (v: unknown): CritiqueSeverity | null =>
+    typeof v === 'string' && VALID_SEVERITIES.includes(v as CritiqueSeverity)
+      ? (v as CritiqueSeverity)
+      : null;
+
+  const rowFindings: PlanCritique['row_findings'] = [];
+  if (Array.isArray(r.row_findings)) {
+    for (const item of r.row_findings) {
+      if (item == null || typeof item !== 'object') continue;
+      const f = item as Record<string, unknown>;
+      const severity = sev(f.severity);
+      if (typeof f.i !== 'number' || !severity) continue;
+      if (typeof f.issue !== 'string' || !f.issue.trim()) continue;
+      rowFindings.push({ i: f.i, severity, issue: f.issue.trim() });
+    }
+  }
+  const planFindings: PlanCritique['plan_findings'] = [];
+  if (Array.isArray(r.plan_findings)) {
+    for (const item of r.plan_findings) {
+      if (item == null || typeof item !== 'object') continue;
+      const f = item as Record<string, unknown>;
+      const severity = sev(f.severity);
+      if (!severity || typeof f.issue !== 'string' || !f.issue.trim()) continue;
+      planFindings.push({ severity, issue: f.issue.trim() });
+    }
+  }
+  if (rowFindings.length === 0 && planFindings.length === 0) return null;
+  return { row_findings: rowFindings, plan_findings: planFindings };
+}
+
+/**
+ * Extract a critique from a STANDALONE string (the critic child's stdout) —
+ * deliberately NOT folded into `extractDirectives`, which is the Director's
+ * own-turn parser that strips + acts on plan/redirect/prd blocks. The critic
+ * is a separate process; its output must never be treated as Director
+ * directives.
+ */
+export function extractCritique(body: string): PlanCritique | null {
+  const m = CRITIQUE_RE.exec(body);
+  return m ? parseCritique(m[1].trim()) : null;
 }
 
 function parseRedirect(raw: string): RedirectInstruction | null {

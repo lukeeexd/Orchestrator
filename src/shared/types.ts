@@ -250,6 +250,19 @@ export interface ProjectPrd {
   open_questions: string[];
 }
 
+/**
+ * N7 Plan Critic: an advisory, second-model review of a plan emitted before
+ * any agent spawns. `row_findings` target a specific plan row by its stable
+ * `PlanRow.i`; `plan_findings` are whole-plan issues (e.g. a risky change with
+ * no qa/security row). Severity drives the PlanCard badge colour. Advisory
+ * only — never blocks spawning or edits the plan.
+ */
+export type CritiqueSeverity = 'info' | 'warn' | 'error';
+export interface PlanCritique {
+  row_findings: Array<{ i: number; severity: CritiqueSeverity; issue: string }>;
+  plan_findings: Array<{ severity: CritiqueSeverity; issue: string }>;
+}
+
 export type DirectorWho = 'user' | 'director' | 'system';
 
 /**
@@ -297,6 +310,8 @@ export interface DirectorMessage {
   redirectFired?: boolean;
   /** P15: PRD emitted by the Director in `[mode: prd]`. Renderer shows it as a PRDCard. */
   prd?: ProjectPrd;
+  /** N7: advisory Plan Critic findings, attached to a plan message before spawn. */
+  critique?: PlanCritique;
   live?: boolean;
   attachments?: AttachmentRef[];
 }

@@ -51,8 +51,8 @@ export function saveDirectorMessage(m: DirectorMessage): void {
   messageOrdering += 1;
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO director_messages
-      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd, critique)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     m.id,
@@ -71,6 +71,7 @@ export function saveDirectorMessage(m: DirectorMessage): void {
     m.redirectFired ? 1 : 0,
     m.projectId,
     m.prd ? JSON.stringify(m.prd) : null,
+    m.critique ? JSON.stringify(m.critique) : null,
   ]);
   stmt.free();
   // A1: audit append. We log the creation moment; subsequent
@@ -89,6 +90,7 @@ export function saveDirectorMessage(m: DirectorMessage): void {
       plan: m.plan,
       redirect: m.redirect,
       prd: m.prd,
+      critique: m.critique,
       attachments: m.attachments,
     },
     { projectId: m.projectId },
@@ -131,6 +133,10 @@ export function patchDirectorMessage(
     sets.push('prd = ?');
     values.push(patch.prd ? JSON.stringify(patch.prd) : null);
   }
+  if ('critique' in patch) {
+    sets.push('critique = ?');
+    values.push(patch.critique ? JSON.stringify(patch.critique) : null);
+  }
   if (sets.length === 0) return;
   values.push(id);
   const stmt = db.prepare(
@@ -144,7 +150,7 @@ export function patchDirectorMessage(
 export function loadDirectorMessages(projectId: string): DirectorMessage[] {
   const db = getDb();
   const stmt = db.prepare(`
-    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd
+    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd, critique
     FROM director_messages
     WHERE project_id = ?
     ORDER BY ordering ASC
@@ -192,6 +198,15 @@ export function loadDirectorMessages(projectId: string): DirectorMessage[] {
         prd = undefined;
       }
     }
+    const critRaw = row[14];
+    let critique: DirectorMessage['critique'];
+    if (typeof critRaw === 'string' && critRaw.length > 0) {
+      try {
+        critique = JSON.parse(critRaw);
+      } catch {
+        critique = undefined;
+      }
+    }
     out.push({
       id: asStr(row[0]),
       projectId: asStr(row[12], projectId),
@@ -206,6 +221,7 @@ export function loadDirectorMessages(projectId: string): DirectorMessage[] {
       redirect,
       redirectFired: asInt(row[11]) === 1,
       prd,
+      critique,
     });
     messageOrdering = Math.max(messageOrdering, asInt(row[1]));
   }

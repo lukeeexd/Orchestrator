@@ -6,6 +6,7 @@ import type {
   DirectorMode,
   EffortLevel,
   PlanRow,
+  PlanCritique,
 } from '../../shared/types';
 import { DEFAULT_EFFORT } from '../../shared/efforts';
 import {
@@ -19,6 +20,7 @@ import { readSettings } from '../settings';
 import { effectiveSkill } from '../skills';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractDirectives } from './parse';
+import { runPlanCritic } from './critic';
 import { nowTs } from '../agents/classifier';
 import * as persistence from '../persistence';
 import { prepareAttachments } from '../attachments';
@@ -576,11 +578,29 @@ class DirectorSession {
       const fallbackBody = runtimeError
         ? `Error: ${runtimeError}`
         : '(empty response)';
+      // N7 Plan Critic: one extra cheap-model call between plan-emit and the
+      // final patch. Advisory only — returns null on skip/failure and never
+      // blocks the turn. Folds into the SAME patch so the annotations land
+      // with the plan (one render, no un-critiqued flash). The critic self-
+      // gates (claude-only, >=3 rows) and reuses this turn's controller so a
+      // Director abort cancels it too.
+      let critique: PlanCritique | undefined;
+      if (effectivePlan && this.controller && !this.controller.signal.aborted) {
+        critique =
+          (await runPlanCritic({
+            projectId: this.projectId,
+            rows: effectivePlan,
+            env,
+            provider,
+            controller: this.controller,
+          })) ?? undefined;
+      }
       this.patchMessage(directorMessage.id, {
         body: text || (effectivePlan || redirect || prd ? '' : fallbackBody),
         plan: effectivePlan ?? undefined,
         redirect: redirect ?? undefined,
         prd: prd ?? undefined,
+        critique,
         live: false,
       });
     } catch (e) {

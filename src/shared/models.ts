@@ -83,6 +83,16 @@ export function defaultModelForProvider(provider: Provider): string {
 }
 
 /**
+ * Cheapest model for throwaway second-opinion calls (e.g. the N7 Plan Critic),
+ * the opposite of `defaultModelForProvider`'s flagship. Haiku, no 1M beta.
+ * Codex can't pick a model on the ChatGPT plan, so callers skip codex.
+ */
+export function cheapestModelForProvider(provider: Provider): string {
+  if (provider === 'codex') return DEFAULT_CODEX_MODEL;
+  return 'claude-haiku-4-5-20251001';
+}
+
+/**
  * True iff a model id is compatible with a given provider's CLI. Used
  * as a guard so a stale persisted claude id on a codex project doesn't
  * get passed straight through. Codex accepts only the canonical default

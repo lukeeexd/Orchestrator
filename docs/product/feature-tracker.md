@@ -39,7 +39,7 @@ The highest value-per-effort, no-blocker starting points. Detail in research §2
 ### Clean recommends + strategic spine
 | ID | Feature | Effort | Status |
 |----|---------|--------|--------|
-| N7 ✅ | Plan Critic (adversarial pre-spawn plan review) | M | `[ ]` |
+| N7 ✅ | Plan Critic (adversarial pre-spawn plan review) | M | `[x]` v0.36.0 |
 | N21 ✅ | Per-row file-path edit allow-list (PreToolUse deny) | M | `[ ]` |
 | N19 ✅ | Per-row plan-approval gate (read-only → unlock writes) | L | `[ ]` |
 | N3 | Deterministic row-transition gates (shell + stderr) | M | `[ ]` |
@@ -74,7 +74,7 @@ Sorted by ID. See research §3 scorecard + §4/§5 for full detail and the verif
 | N4 | Living PLAN (re-scope remaining rows from evidence) | Planning | strategic | L | `[ ]` | `planDiff.ts` was built for this; gate point after `awaitCompletion`. Opt-in, material-change-only, user-gated, bounded; never re-add completed rows. Distinct from F2 (manual 2-plan diff). |
 | N5 | Task + Progress Ledger + auto-replan on stall | Planning | strategic | L | `[ ]` | Split: ledger/UI safe; **auto-replan loop is the risky half** (oscillation). Needs explicit max-replans **and** PRE-2 (per-agent cap doesn't bound a Director minting new agents). |
 | N6 | Run-scoped blackboard (shared mutable artifact store) | Planning | strategic | L | `[ ]` | **Merge with N5** as its storage layer (don't double-count). Full payoff gated on F4; sequentially the Director already sees handoffs in order. Size-bounded injection (pair N18). |
-| N7 | **Plan Critic** (adversarial pre-spawn plan review) | Pre-spawn | strategic | M | `[ ]` ✅ | **Clean recommend.** Cheap 2nd model critiques the *plan* before any spend (Jules −9.5% failures). Reuse `roles.ts` allow-lists, `extractDirectives` (+`orchestrator-critique`), PlanCard badges. Gate by plan size; inline annotations first, auto-revise opt-in. |
+| N7 | **Plan Critic** (adversarial pre-spawn plan review) | Pre-spawn | strategic | M | `[x]` v0.36.0 ✅ | **SHIPPED v0.36.0.** One-shot haiku critic (`director/critic.ts` via `runClaudeQuery`) on plans ≥3 rows, claude-only, advisory; `orchestrator-critique` block parsed in `parse.ts`, persisted (migration v29), rendered as per-row `!`/`!!` badges + a ⚑ PLAN CRITIC footer on PlanCard. Tune levers if noisy: critic prompt + effort low→medium. |
 | N8 | Pre-acceptance clarifying-questions round-trip | Pre-spawn | quick-win | S | `[ ]` | Clone `parsePrd` + a card from `PRDCard.tsx`; no spawn-loop change. **Reconcile with PRD mode's `open_questions`.** Give the Director a clear ask-vs-plan gate. Leans S. |
 | N9 | Plan confidence score + driving ambiguities | Pre-spawn | quick-win | S | `[ ]` | Confirm-before-spawn **already exists** (`App.tsx`) — reframe as a confidence pill + ambiguities on the existing confirm, + clarify-gate below a bar. Plan is bare `PlanRow[]` → needs wrapper/sibling block. Present as a hint (uncalibrated). |
 | N10 | Plan-aware Verifier vs per-row acceptance criteria | Verification | strategic | L | `[ ]` | Optional `criteria` per PlanRow; read-only verify pass → `orchestrator-verdict`. Verifier: a fail does **not** halt the chain today (new conditional logic). Ship advisory first; pair w/ N1/N2/N3 floor. |
@@ -138,6 +138,7 @@ Smaller quality-of-life items (not from the sweep). Add freely.
 ### Recently shipped (for reference)
 | Item | Version | Status |
 |------|---------|--------|
+| N7 — Plan Critic (advisory pre-spawn plan review) | v0.36.0 | `[x]` |
 | Dark mode (light / dark / system) | v0.35.0 | `[x]` |
 | Top bar re-theme + editable model picker | v0.34.1 | `[x]` |
 | Elapsed-time fix across redirect | v0.34.2 | `[x]` |

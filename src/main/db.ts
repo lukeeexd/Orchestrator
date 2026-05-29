@@ -559,6 +559,15 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 29,
+    up: (db) => {
+      // N7 Plan Critic: advisory pre-spawn critique, stored as JSON on the
+      // plan's director message. NULL on older rows (no critique) — the
+      // renderer simply shows no annotations.
+      db.exec(`ALTER TABLE director_messages ADD COLUMN critique TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

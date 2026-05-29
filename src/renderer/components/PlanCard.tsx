@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type {
   DirectorMode,
   PlanRow,
+  PlanCritique,
+  CritiqueSeverity,
 } from '../../shared/types';
 import { ROLE_TINT } from '../../shared/roles';
 import { diffPlans, type PlanRowDiffStatus } from '../lib/planDiff';
@@ -50,7 +52,17 @@ interface Props {
    * in a conversation or when no prior plan exists.
    */
   prevRows?: PlanRow[];
+  /** N7: advisory Plan Critic findings for this plan (rendered inline). */
+  critique?: PlanCritique;
 }
+
+/** Severity ranking + the badge colour / tooltip prefix for each. */
+const SEVERITY_RANK: Record<CritiqueSeverity, number> = { info: 0, warn: 1, error: 2 };
+const SEVERITY_COLOR: Record<CritiqueSeverity, string> = {
+  info: 'var(--text-2)',
+  warn: 'var(--waiting)',
+  error: 'var(--error)',
+};
 
 export function PlanCard({
   rows,
@@ -59,6 +71,7 @@ export function PlanCard({
   onSpawn,
   onSaveAsTemplate,
   prevRows,
+  critique,
 }: Props) {
   // Local editable copy of the plan. The Director's original proposal
   // stays on the message; this state is what the user can prune/tweak
@@ -149,6 +162,25 @@ export function PlanCard({
     (planDiff.summary.added > 0 ||
       planDiff.summary.modified > 0 ||
       planDiff.summary.removed > 0);
+
+  // N7: per-row critic findings, keyed by the stable PlanRow.i (collision-free
+  // within one plan, unlike the diff's (role,name) key). Attached to the
+  // Director's original `rows` via `i`, so they survive inline edits/reorders
+  // and a dropped row simply loses its badge.
+  const findingsByRow = useMemo(() => {
+    const m = new Map<number, PlanCritique['row_findings']>();
+    if (critique) {
+      for (const f of critique.row_findings) {
+        const arr = m.get(f.i) ?? [];
+        arr.push(f);
+        m.set(f.i, arr);
+      }
+    }
+    return m;
+  }, [critique]);
+  const hasCritique =
+    !!critique &&
+    (critique.row_findings.length > 0 || critique.plan_findings.length > 0);
 
   return (
     <div className="dir-plan">
@@ -280,6 +312,7 @@ export function PlanCard({
               onDrop={() => dropRow(i)}
               diffStatus={diff?.status}
               prevTask={diff?.prevTask}
+              findings={findingsByRow.get(p.i)}
             />
           );
         })
@@ -305,6 +338,33 @@ export function PlanCard({
           ))}
         </div>
       )}
+      {hasCritique && critique && critique.plan_findings.length > 0 && (
+        <div
+          style={{
+            padding: '6px 12px 8px',
+            fontSize: 11,
+            color: 'var(--text-2)',
+            borderTop: '1px dashed var(--sub-2)',
+            marginTop: 4,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 3,
+          }}
+          title="Plan Critic — an advisory second-model review of this plan before spawn. Not a gate."
+        >
+          <span style={{ color: 'var(--muted)', fontSize: 10, letterSpacing: '0.04em' }}>
+            ⚑ PLAN CRITIC
+          </span>
+          {critique.plan_findings.map((f, i) => (
+            <span key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+              <span style={{ color: SEVERITY_COLOR[f.severity], fontWeight: 700 }}>
+                {f.severity === 'error' ? '!!' : f.severity === 'warn' ? '!' : '·'}
+              </span>
+              <span>{f.issue}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -317,6 +377,7 @@ function PlanRowView({
   onDrop,
   diffStatus,
   prevTask,
+  findings,
 }: {
   row: PlanRow;
   isLast: boolean;
@@ -325,7 +386,20 @@ function PlanRowView({
   onDrop: () => void;
   diffStatus?: PlanRowDiffStatus;
   prevTask?: string;
+  findings?: PlanCritique['row_findings'];
 }) {
+  // N7: a single critic glyph for the row, coloured by its worst finding,
+  // tooltip listing every finding. Advisory — purely informational.
+  const topSeverity = (findings ?? []).reduce<CritiqueSeverity | null>(
+    (worst, f) =>
+      worst && SEVERITY_RANK[worst] >= SEVERITY_RANK[f.severity] ? worst : f.severity,
+    null,
+  );
+  const critiqueTip =
+    findings && findings.length > 0
+      ? 'Plan Critic:\n' +
+        findings.map((f) => `  [${f.severity}] ${f.issue}`).join('\n')
+      : '';
   // F2: per-row diff marker. A coloured leading glyph + a tooltip on
   // the role label that surfaces the previous task text when modified.
   const diffGlyph =
@@ -355,6 +429,19 @@ function PlanRowView({
           title={diffGlyph.tip}
         >
           {diffGlyph.sym}
+        </span>
+      )}
+      {topSeverity && (
+        <span
+          style={{
+            color: SEVERITY_COLOR[topSeverity],
+            fontFamily: 'var(--font-mono, monospace)',
+            fontWeight: 700,
+            marginRight: 2,
+          }}
+          title={critiqueTip}
+        >
+          {topSeverity === 'error' ? '!!' : topSeverity === 'warn' ? '!' : '·'}
         </span>
       )}
       <span className="who" style={{ color: ROLE_TINT[row.role] }}>

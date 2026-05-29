@@ -160,6 +160,7 @@ function StreamEntry({
             onSpawn={onSpawnPlan}
             onSaveAsTemplate={onSaveAsTemplate}
             prevRows={prevPlanRows}
+            critique={message.critique}
           />
         </div>
       )}

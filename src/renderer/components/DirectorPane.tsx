@@ -473,6 +473,7 @@ function Message({
           onSpawn={(rows) => onSpawn(message, rows)}
           onSaveAsTemplate={onSaveAsTemplate}
           prevRows={prevPlanRows}
+          critique={message.critique}
         />
       )}
       {message.prd && <PRDCard prd={message.prd} />}
