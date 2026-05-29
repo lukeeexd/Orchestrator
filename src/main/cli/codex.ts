@@ -22,7 +22,6 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
  * so the classifier picks them up the same way.
  */
 
-import { estimateCost } from '../../shared/rates';
 
 export interface CodexQueryOptions {
   cwd: string;
@@ -489,18 +488,10 @@ function translate(
     };
     ctx.addUsage(usage);
     const cum = ctx.getCumulativeUsage();
-    // Codex doesn't tell us cost; estimate from token rates. estimateCost
-    // returns 0 for unknown models — better than reporting a fake number.
-    const cost = estimateCost(
-      ctx.model,
-      cum.input_tokens + cum.cache_read_input_tokens,
-      cum.output_tokens,
-    );
     return [
       {
         type: 'result',
         subtype: 'success',
-        total_cost_usd: cost,
         usage: cum,
         session_id: ctx.sessionId() ?? undefined,
       },

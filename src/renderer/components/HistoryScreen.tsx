@@ -52,8 +52,7 @@ function buildRecapPrompt(row: HistoryRow): string {
     `- Agent: ${row.name}\n` +
     `- Role: ${row.roleLabel} (${row.role})\n` +
     `- Status: ${row.statusLabel}\n` +
-    `- Tokens: ${row.tokens.toLocaleString()} · Cost: $${row.cost.toFixed(2)} · ` +
-    `Duration: ${row.elapsed}\n\n` +
+    `- Duration: ${row.elapsed}\n\n` +
     `Original task (verbatim):\n` +
     `> ${truncate(row.task, 1200).replace(/\n/g, '\n> ')}\n\n` +
     `Write a three-paragraph recap as your final result:\n` +
@@ -79,18 +78,8 @@ const STATUSES_ALL: AgentStatus[] = [
   'error',
 ];
 
-type SortField = 'startedAt' | 'cost' | 'tokens' | 'elapsed';
+type SortField = 'startedAt' | 'elapsed';
 
-function fmt$(n: number): string {
-  if (n === 0) return '$0.00';
-  if (n < 0.01) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(2)}`;
-}
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return n.toString();
-}
 function fmtRelTime(ts: number): string {
   const diff = Date.now() - ts;
   const day = 24 * 3600 * 1000;
@@ -429,8 +418,6 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
                 <span className="history-cell-num">Project</span>
                 <span className="history-cell-num">Model</span>
                 <span className="history-cell-num">Status</span>
-                {headerCell('Tokens', 'tokens')}
-                {headerCell('Cost', 'cost')}
                 {headerCell('Duration', 'elapsed')}
                 {headerCell('Started', 'startedAt')}
               </div>
@@ -555,8 +542,6 @@ export function HistoryScreen({ projects, onOpenAgent }: Props) {
                   >
                     {r.statusLabel}
                   </span>
-                  <span className="history-cell-num">{fmtTokens(r.tokens)}</span>
-                  <span className="history-cell-num">{fmt$(r.cost)}</span>
                   <span className="history-cell-num">{r.elapsed}</span>
                   <span
                     className="history-cell-num"

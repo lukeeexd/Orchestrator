@@ -103,7 +103,7 @@ async function runRedirect(
   if (!entry || !entry.agent.sessionId) return;
   const settings = readSettings();
   const env = buildEnv(settings, entry.agent.projectId);
-  const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
+  const elapsedTimer = startElapsedTimer(agentId, sinks);
 
   // If the redirect comes with a new model/effort, persist it on the
   // agent so future redirects + the Drawer's Config tab show the latest.
@@ -171,7 +171,7 @@ ${body}`;
       agentId,
     });
 
-    await consumeQuery(agentId, q, controller, effectiveModel, sinks);
+    await consumeQuery(agentId, q, controller, sinks);
   } finally {
     clearInterval(elapsedTimer);
   }

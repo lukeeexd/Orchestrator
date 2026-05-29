@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Orchestrator - Aurora</title>
+
+<!--
+  DIRECTION C "AURORA" - static high-fidelity mockup of the Orchestrator desktop app.
+  Glassmorphism is a web approximation (backdrop-filter + layered borders + inset highlight),
+  NOT an official Apple material. Solid fallbacks under prefers-reduced-transparency.
+  Dials: variance 7, motion 6, density 4. Dark-first. Single accent mint/cyan #2dd4bf.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+  /* ============================ TOKENS ============================ */
+  :root {
+    /* base graphite */
+    --bg:            #0c0e12;
+    --bg-deep:       #090a0d;
+
+    /* aurora layers - COOL teal/blue only, no purple/magenta */
+    --aurora-teal:   #134e4a;
+    --aurora-blue:   #0c4a6e;
+    --aurora-cyan:   #155e75;
+
+    /* glass surfaces */
+    --glass:         rgba(255, 255, 255, 0.05);
+    --glass-strong:  rgba(255, 255, 255, 0.07);
+    --glass-solid:   #161a21;        /* opaque fallback under glass for contrast */
+    --glass-solid-2: #11151b;
+    --glass-border:  rgba(255, 255, 255, 0.10);
+    --glass-border-2:rgba(255, 255, 255, 0.06);
+    --hi-top:        rgba(255, 255, 255, 0.16); /* inset top highlight */
+
+    /* text */
+    --text:          #e7eaee;
+    --text-dim:      #9aa3ad;
+    --text-faint:    #6b7480;
+
+    /* accent - single mint/cyan */
+    --accent:        #2dd4bf;
+    --accent-soft:   rgba(45, 212, 191, 0.14);
+    --accent-line:   rgba(45, 212, 191, 0.42);
+    --accent-ink:    #04201d;        /* dark text on accent fills (AA) */
+
+    /* status hues (cool family, distinct but not noisy) */
+    --st-running:    #2dd4bf;        /* mint */
+    --st-waiting:    #7cc7e8;        /* soft blue */
+    --st-done:       #86b8a4;        /* muted sage-teal (NOT terminal green) */
+    --st-approval:   #e0b66a;        /* amber, the only warm note, for "needs you" */
+
+    /* role chips */
+    --role-bg:       rgba(255, 255, 255, 0.06);
+    --role-bd:       rgba(255, 255, 255, 0.12);
+
+    --radius:        15px;
+    --radius-sm:     10px;
+    --radius-xs:     8px;
+
+    --shadow-float:  0 24px 60px -20px rgba(0, 0, 0, 0.65), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --ui:   "Outfit", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--ui);
+    color: var(--text);
+    background: var(--bg-deep);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-size: 14px;
+  }
+  .tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+  ::selection { background: var(--accent-soft); color: var(--text); }
+
+  button { font-family: inherit; color: inherit; cursor: pointer; }
+
+  /* ============================ AURORA BACKDROP ============================ */
+  .aurora {
+    position: fixed;
+    inset: -20%;
+    z-index: 0;
+    background:
+      radial-gradient(46% 40% at 18% 14%, rgba(19, 78, 74, 0.62), transparent 70%),
+      radial-gradient(50% 42% at 82% 8%,  rgba(12, 74, 110, 0.55), transparent 72%),
+      radial-gradient(55% 48% at 70% 88%, rgba(21, 94, 117, 0.50), transparent 72%),
+      radial-gradient(40% 38% at 30% 80%, rgba(19, 78, 74, 0.42), transparent 70%);
+    filter: saturate(108%);
+    animation: drift 34s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  .aurora::after {
+    /* second slower layer for depth */
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(38% 34% at 60% 30%, rgba(21, 94, 117, 0.34), transparent 70%),
+      radial-gradient(34% 30% at 12% 56%, rgba(12, 74, 110, 0.30), transparent 72%);
+    animation: drift2 46s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+  /* graphite vignette + faint grain to ground the glass */
+  .grain {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+      radial-gradient(120% 100% at 50% -10%, transparent 40%, rgba(9, 10, 13, 0.55) 100%),
+      linear-gradient(180deg, rgba(12,14,18,0.20), rgba(12,14,18,0.55));
+  }
+
+  @keyframes drift {
+    0%   { transform: translate3d(0,0,0) scale(1); }
+    50%  { transform: translate3d(2.2%, -1.6%, 0) scale(1.05); }
+    100% { transform: translate3d(-1.8%, 1.8%, 0) scale(1.08); }
+  }
+  @keyframes drift2 {
+    0%   { transform: translate3d(0,0,0) scale(1.04); }
+    100% { transform: translate3d(2.4%, 2.0%, 0) scale(1.10); }
+  }
+
+  /* ============================ GLASS MIXIN (via class) ============================ */
+  .glass {
+    position: relative;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02)),
+      var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius);
+    backdrop-filter: blur(22px) saturate(140%);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+    box-shadow: inset 0 1px 0 var(--hi-top), var(--shadow-float);
+  }
+
+  /* ============================ APP SHELL ============================ */
+  .app {
+    position: relative;
+    z-index: 2;
+    height: 100vh;
+    width: 100vw;
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    grid-template-rows: 56px 1fr 32px;
+    grid-template-areas:
+      "dock topbar"
+      "dock main"
+      "dock status";
+    gap: 14px;
+    padding: 14px;
+  }
+
+  /* ---------------------------- LEFT DOCK ---------------------------- */
+  .dock {
+    grid-area: dock;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 0;
+    gap: 6px;
+  }
+  .dock-logo {
+    width: 38px; height: 38px;
+    border-radius: 11px;
+    display: grid; place-items: center;
+    background: linear-gradient(150deg, rgba(45,212,191,0.22), rgba(45,212,191,0.05));
+    border: 1px solid var(--accent-line);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+    margin-bottom: 10px;
+    color: var(--accent);
+  }
+  .dock-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .dock-btn {
+    width: 44px; height: 44px;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: 12px;
+    display: grid; place-items: center;
+    color: var(--text-dim);
+    transition: background .22s cubic-bezier(.16,1,.3,1), color .22s, border-color .22s, transform .12s;
+    position: relative;
+  }
+  .dock-btn svg { width: 21px; height: 21px; }
+  .dock-btn:hover { background: var(--glass-strong); color: var(--text); }
+  .dock-btn:active { transform: scale(0.94); }
+  .dock-btn.active {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
+  }
+  .dock-btn.active::before {
+    content: "";
+    position: absolute;
+    left: -12px; top: 50%; transform: translateY(-50%);
+    width: 3px; height: 20px; border-radius: 3px;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent-line);
+  }
+  /* tooltip */
+  .dock-btn[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 52px; top: 50%; transform: translateY(-50%);
+    background: var(--glass-solid);
+    border: 1px solid var(--glass-border);
+    color: var(--text);
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 8px;
+    white-space: nowrap;
+    text-transform: capitalize;
+    z-index: 50;
+    box-shadow: var(--shadow-float);
+    pointer-events: none;
+  }
+
+  /* ---------------------------- TOP BAR ---------------------------- */
+  .topbar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+  }
+  .crumb { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+  .crumb .muted { color: var(--text-faint); }
+  .crumb .here { color: var(--text); }
+  .crumb svg { width: 15px; height: 15px; color: var(--text-faint); }
+
+  .topbar-spacer { flex: 1; }
+
+  /* view-mode toggle */
+  .viewtoggle {
+    display: flex;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--glass-border-2);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .viewtoggle button {
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 5px 13px;
+    border-radius: 7px;
+    display: flex; align-items: center; gap: 6px;
+    transition: background .2s, color .2s;
+  }
+  .viewtoggle button svg { width: 14px; height: 14px; }
+  .viewtoggle button.on {
+    background: var(--glass-strong);
+    color: var(--text);
+    box-shadow: inset 0 1px 0 var(--hi-top);
+  }
+
+  .model-pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px 6px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--glass-border-2);
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .model-pill .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent-line);
+  }
+  .model-pill .label { color: var(--text); }
+
+  .icon-btn {
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    border-radius: 9px;
+    border: 1px solid var(--glass-border-2);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-dim);
+    transition: color .2s, background .2s, transform .12s;
+  }
+  .icon-btn svg { width: 17px; height: 17px; }
+  .icon-btn:hover { color: var(--text); background: var(--glass-strong); }
+  .icon-btn:active { transform: scale(0.94); }
+
+  /* ---------------------------- MAIN CANVAS ---------------------------- */
+  .main {
+    grid-area: main;
+    display: grid;
+    grid-template-columns: 340px 1fr 380px;
+    gap: 14px;
+    min-height: 0;
+  }
+
+  .panel-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--glass-border-2);
+  }
+  .panel-head h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text);
+    display: flex; align-items: center; gap: 9px;
+  }
+  .panel-head h2 svg { width: 16px; height: 16px; color: var(--accent); }
+  .panel-head .sub { color: var(--text-faint); font-size: 12px; font-weight: 400; }
+  .head-spacer { flex: 1; }
+
+  /* ====== DIRECTOR PANE ====== */
+  .director { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .director-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .dir-msg { display: flex; flex-direction: column; gap: 7px; }
+  .dir-from {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11.5px; color: var(--text-faint);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .dir-from .av {
+    width: 22px; height: 22px; border-radius: 7px;
+    display: grid; place-items: center;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    color: var(--accent);
+  }
+  .dir-from .av svg { width: 13px; height: 13px; }
+  .dir-bubble {
+    background: rgba(255,255,255,0.045);
+    border: 1px solid var(--glass-border-2);
+    border-radius: 12px;
+    padding: 11px 13px;
+    color: var(--text);
+    line-height: 1.5;
+    font-size: 13.5px;
+  }
+  .dir-bubble.you {
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
+  }
+
+  .plan-label {
+    font-size: 11.5px; color: var(--text-faint);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin: 2px 0 -4px;
+  }
+  .plan-step {
+    display: flex; gap: 11px;
+    padding: 10px 12px;
+    border-radius: 11px;
+    background: rgba(255,255,255,0.035);
+    border: 1px solid var(--glass-border-2);
+  }
+  .plan-step .num {
+    flex: none;
+    width: 22px; height: 22px; border-radius: 7px;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    background: rgba(255,255,255,0.06);
+    color: var(--text-dim);
+    border: 1px solid var(--glass-border-2);
+  }
+  .plan-step .body { display: flex; flex-direction: column; gap: 3px; }
+  .plan-step .who { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+  .plan-step .who b { font-weight: 600; color: var(--text); }
+  .plan-step .task { color: var(--text-dim); font-size: 12.5px; line-height: 1.45; }
+
+  .role-chip {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: var(--role-bg);
+    border: 1px solid var(--role-bd);
+    color: var(--text-dim);
+  }
+
+  .director-input {
+    padding: 12px;
+    border-top: 1px solid var(--glass-border-2);
+  }
+  .input-wrap {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,0.22);
+    border: 1px solid var(--glass-border-2);
+    border-radius: 12px;
+    padding: 9px 9px 9px 13px;
+  }
+  .input-wrap:focus-within { border-color: var(--accent-line); }
+  .input-wrap input {
+    flex: 1; background: transparent; border: 0; outline: 0;
+    color: var(--text); font-family: var(--ui); font-size: 13.5px;
+  }
+  .input-wrap input::placeholder { color: var(--text-faint); }
+  .send-btn {
+    flex: none;
+    width: 32px; height: 32px;
+    border: 0; border-radius: 9px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    display: grid; place-items: center;
+    transition: transform .12s, filter .2s;
+  }
+  .send-btn svg { width: 16px; height: 16px; }
+  .send-btn:hover { filter: brightness(1.08); }
+  .send-btn:active { transform: scale(0.92); }
+
+  /* ====== AGENTS WORKSPACE ====== */
+  .agents { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .agents-body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+  .agent-card {
+    border-radius: 13px;
+    background: rgba(255,255,255,0.035);
+    border: 1px solid var(--glass-border-2);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    transition: border-color .25s, background .25s;
+  }
+  .agent-card:hover { border-color: var(--glass-border); background: rgba(255,255,255,0.05); }
+  .agent-card.selected {
+    border-color: var(--accent-line);
+    background: linear-gradient(180deg, rgba(45,212,191,0.07), rgba(45,212,191,0.015));
+  }
+  .agent-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: 14px;
+    padding: 13px 15px;
+  }
+  .agent-id { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .status-dot {
+    flex: none;
+    width: 10px; height: 10px; border-radius: 50%;
+    position: relative;
+  }
+  .status-dot.running { background: var(--st-running); }
+  .status-dot.waiting { background: var(--st-waiting); }
+  .status-dot.done    { background: var(--st-done); }
+  .status-dot.approval{ background: var(--st-approval); }
+
+  /* pulse only on running (motion-6 intent) */
+  .status-dot.running::after {
+    content: "";
+    position: absolute; inset: -5px;
+    border-radius: 50%;
+    border: 2px solid var(--st-running);
+    animation: pulse 2s cubic-bezier(.16,1,.3,1) infinite;
+  }
+  @keyframes pulse {
+    0%   { transform: scale(0.6); opacity: 0.85; }
+    70%  { transform: scale(1.7); opacity: 0; }
+    100% { transform: scale(1.7); opacity: 0; }
+  }
+
+  .agent-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .agent-name .nm { font-family: var(--mono); font-size: 13px; font-weight: 500; color: var(--text); }
+  .agent-name .task {
+    font-size: 12px; color: var(--text-dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .agent-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .agent-meta .step { font-family: var(--mono); font-size: 12px; color: var(--text); }
+  .agent-meta .elapsed { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+
+  .status-tag {
+    font-size: 10.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 3px 9px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .status-tag.running { color: var(--st-running); background: rgba(45,212,191,0.12);  border: 1px solid rgba(45,212,191,0.3); }
+  .status-tag.waiting { color: var(--st-waiting); background: rgba(124,199,232,0.12); border: 1px solid rgba(124,199,232,0.3); }
+  .status-tag.done    { color: var(--st-done);    background: rgba(134,184,164,0.12); border: 1px solid rgba(134,184,164,0.3); }
+  .status-tag.approval{ color: var(--st-approval); background: rgba(224,182,106,0.13); border: 1px solid rgba(224,182,106,0.35); }
+
+  .expand-btn {
+    flex: none;
+    width: 28px; height: 28px;
+    border: 1px solid var(--glass-border-2);
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+    display: grid; place-items: center;
+    color: var(--text-dim);
+    transition: transform .12s, color .2s, background .2s;
+  }
+  .expand-btn svg { width: 15px; height: 15px; transition: transform .25s cubic-bezier(.16,1,.3,1); }
+  .expand-btn:hover { color: var(--text); background: var(--glass-strong); }
+  .agent-card.open .expand-btn svg { transform: rotate(180deg); }
+
+  /* expanded structured log */
+  .agent-log {
+    display: none;
+    border-top: 1px solid var(--glass-border-2);
+    padding: 12px 15px 14px;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .agent-card.open .agent-log { display: flex; }
+
+  .log-line { display: grid; grid-template-columns: 78px 64px 1fr; gap: 11px; align-items: baseline; }
+  .log-ts { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+  .log-kind {
+    font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 2px 0; text-align: left;
+  }
+  .log-kind.thought { color: var(--text-dim); }
+  .log-kind.tool    { color: var(--st-waiting); }
+  .log-kind.result  { color: var(--st-done); }
+  .log-kind.note    { color: var(--accent); }
+  .log-kind.warn    { color: var(--st-approval); }
+  .log-kind.handoff { color: var(--accent); }
+  .log-text { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+  .log-text.mono { font-family: var(--mono); font-size: 12px; color: var(--text); }
+  .log-text.note-text {
+    color: var(--text);
+    border-left: 2px solid var(--accent-line);
+    padding-left: 10px; margin-left: -2px;
+  }
+  .log-text.handoff-text {
+    color: var(--text);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    border-radius: 8px;
+    padding: 7px 10px;
+  }
+
+  /* ---------------------------- DRAWER ---------------------------- */
+  .drawer { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .drawer-head {
+    padding: 14px 16px 12px;
+    border-bottom: 1px solid var(--glass-border-2);
+  }
+  .drawer-title { display: flex; align-items: center; gap: 11px; }
+  .drawer-title .dot-wrap { position: relative; width: 11px; height: 11px; }
+  .drawer-title .nm { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--text); }
+  .drawer-close { margin-left: auto; }
+  .drawer-task {
+    margin-top: 9px;
+    font-size: 12.5px; color: var(--text-dim); line-height: 1.5;
+  }
+
+  /* KPI tiles - 2 columns post v0.24.0 */
+  .kpis {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--glass-border-2);
+  }
+  .kpi {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--glass-border-2);
+    border-radius: 11px;
+    padding: 11px 13px;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .kpi .k-label {
+    font-size: 10.5px; color: var(--text-faint);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .kpi .k-value { font-family: var(--mono); font-size: 21px; font-weight: 500; color: var(--text); line-height: 1; }
+  .kpi .k-value .sm { font-size: 13px; color: var(--text-faint); }
+
+  /* drawer tabs */
+  .drawer-tabs {
+    display: flex; gap: 2px;
+    padding: 10px 12px 0;
+    border-bottom: 1px solid var(--glass-border-2);
+  }
+  .drawer-tabs button {
+    border: 0; background: transparent;
+    color: var(--text-dim);
+    font-size: 12.5px; font-weight: 500;
+    padding: 8px 13px 11px;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color .2s, border-color .2s;
+    text-transform: capitalize;
+  }
+  .drawer-tabs button:hover { color: var(--text); }
+  .drawer-tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .drawer-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+  .drawer-feed { display: flex; flex-direction: column; gap: 11px; }
+
+  .feed-line { display: flex; flex-direction: column; gap: 4px; }
+  .feed-meta { display: flex; align-items: center; gap: 9px; }
+  .feed-meta .ts { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+  .feed-meta .kind {
+    font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 1px 7px; border-radius: 5px;
+  }
+  .feed-meta .kind.thought { color: var(--text-dim);  background: rgba(255,255,255,0.06); }
+  .feed-meta .kind.tool    { color: var(--st-waiting); background: rgba(124,199,232,0.12); }
+  .feed-meta .kind.result  { color: var(--st-done);    background: rgba(134,184,164,0.12); }
+  .feed-meta .kind.note    { color: var(--accent);     background: var(--accent-soft); }
+  .feed-meta .kind.warn    { color: var(--st-approval); background: rgba(224,182,106,0.13); }
+  .feed-meta .kind.handoff { color: var(--accent);     background: var(--accent-soft); }
+  .feed-text { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; padding-left: 1px; }
+  .feed-text.mono { font-family: var(--mono); font-size: 11.5px; color: var(--text); }
+  .feed-text.accent {
+    color: var(--text);
+    border-left: 2px solid var(--accent-line);
+    padding-left: 10px;
+  }
+
+  /* ---------------------------- STATUS BAR ---------------------------- */
+  .statusbar {
+    grid-area: status;
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 16px;
+    font-size: 12px;
+  }
+  .status-group { display: flex; align-items: center; gap: 8px; color: var(--text-dim); }
+  .status-group svg { width: 14px; height: 14px; color: var(--text-faint); }
+  .status-group b { color: var(--text); font-weight: 600; }
+  .status-sep { width: 1px; height: 16px; background: var(--glass-border-2); }
+  .statusbar-spacer { flex: 1; }
+
+  .mini-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .mini-dot.running { background: var(--st-running); box-shadow: 0 0 6px var(--accent-line); }
+  .mini-dot.waiting { background: var(--st-waiting); }
+  .mini-dot.approval{ background: var(--st-approval); }
+  .mini-dot.done    { background: var(--st-done); }
+
+  .update-pill {
+    display: flex; align-items: center; gap: 7px;
+    padding: 4px 11px 4px 9px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    color: var(--accent);
+    font-size: 11.5px; font-weight: 500;
+    transition: filter .2s, transform .12s;
+  }
+  .update-pill svg { width: 13px; height: 13px; }
+  .update-pill:hover { filter: brightness(1.12); }
+  .update-pill:active { transform: scale(0.97); }
+
+  /* scrollbars */
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); background-clip: padding-box; }
+
+  /* ============================ FALLBACKS ============================ */
+  @media (prefers-reduced-transparency: reduce) {
+    .glass {
+      background: var(--glass-solid);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+  }
+  /* extra safety: a contrast-safe solid is always painted behind glass via bg-deep + grain */
+
+  @media (prefers-reduced-motion: reduce) {
+    .aurora, .aurora::after { animation: none; }
+    .status-dot.running::after { animation: none; opacity: 0; }
+  }
+</style>
+</head>
+
+<body>
+  <!-- atmospheric aurora backdrop (drifts slowly) -->
+  <div class="aurora" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="app">
+
+    <!-- ============ LEFT DOCK ============ -->
+    <nav class="dock glass" aria-label="Primary">
+      <div class="dock-logo" title="Orchestrator">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="2.4"/>
+          <path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l2.5 2.5M16.5 16.5L19 19M19 5l-2.5 2.5M7.5 16.5L5 19"/>
+        </svg>
+      </div>
+      <div class="dock-nav">
+        <button class="dock-btn active" data-tip="agents" aria-label="agents" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3 3 0 0 1 0 6M21 20c0-2.4-1.4-4.5-3.4-5.5"/></svg>
+        </button>
+        <button class="dock-btn" data-tip="templates" aria-label="templates">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        </button>
+        <button class="dock-btn" data-tip="tools" aria-label="tools">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5a3.5 3.5 0 0 1-4.6 4.6L4 16l4 4 5.9-5.9a3.5 3.5 0 0 1 4.6-4.6l-2.6-2.6 2.1-2.1-1.4-1.4-2.1 2.1z"/></svg>
+        </button>
+        <button class="dock-btn" data-tip="marketplace" aria-label="marketplace">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9M3 9v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V9M3 9h18M8 9v3a4 4 0 0 0 8 0V9"/></svg>
+        </button>
+        <button class="dock-btn" data-tip="history" aria-label="history">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7M3 5v3.5h3.5"/><path d="M12 7v5l3.5 2"/></svg>
+        </button>
+        <button class="dock-btn" data-tip="docs" aria-label="docs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h9l5 5v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5M8 13h8M8 17h6"/></svg>
+        </button>
+      </div>
+      <button class="dock-btn" data-tip="settings" aria-label="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5l1.3 2.3 2.6-.3.9 2.5 2.3 1.2-.6 2.6 1.5 2.2-1.8 1.9.3 2.6-2.5.8-1.2 2.3H9.8l-1.2-2.3-2.5-.8.3-2.6L4.6 15l1.5-2.2-.6-2.6L7.8 9l.9-2.5 2.6.3z"/></svg>
+      </button>
+    </nav>
+
+    <!-- ============ TOP BAR ============ -->
+    <header class="topbar glass">
+      <div class="crumb">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+        <span class="muted">orchestrator</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+        <span class="here">workspace</span>
+      </div>
+
+      <div class="topbar-spacer"></div>
+
+      <div class="viewtoggle" role="group" aria-label="View mode">
+        <button class="on" aria-pressed="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+          Compact
+        </button>
+        <button aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v6H4zM4 15h10v4H4z"/></svg>
+          Stream
+        </button>
+      </div>
+
+      <div class="model-pill" title="Active model">
+        <span class="dot"></span>
+        <span class="label">claude-opus-4-7-1m</span>
+      </div>
+
+      <button class="icon-btn" aria-label="New run">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </header>
+
+    <!-- ============ MAIN CANVAS ============ -->
+    <main class="main">
+
+      <!-- ===== DIRECTOR PANE ===== -->
+      <section class="director glass" aria-label="Director">
+        <div class="panel-head">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4L3 21l1.1-4.8A8.4 8.4 0 1 1 21 11.5z"/></svg>
+            Director
+          </h2>
+          <span class="sub">orchestration plan</span>
+        </div>
+
+        <div class="director-body">
+          <div class="dir-msg">
+            <div class="dir-from">you</div>
+            <div class="dir-bubble you">Ship a Redis-backed feature flag system. Scope it, profile what we have, build it, and cover it with tests.</div>
+          </div>
+
+          <div class="dir-msg">
+            <div class="dir-from">
+              <span class="av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 5.4L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.6-1.6z"/></svg></span>
+              director
+            </div>
+            <div class="dir-bubble">Broke this into 4 lanes. PM scopes the modules first, researcher profiles production while coder builds the store, then qa locks the edge cases.</div>
+          </div>
+
+          <div class="plan-label">Dispatched plan</div>
+
+          <div class="plan-step">
+            <div class="num tnum">1</div>
+            <div class="body">
+              <div class="who"><span class="role-chip">pm</span><b>pm-01</b></div>
+              <div class="task">Break down feature-flag requirements into auth + payments + analytics modules</div>
+            </div>
+          </div>
+
+          <div class="plan-step">
+            <div class="num tnum">2</div>
+            <div class="body">
+              <div class="who"><span class="role-chip">researcher</span><b>researcher-01</b></div>
+              <div class="task">Profile database query performance in production logs and identify slowest endpoints</div>
+            </div>
+          </div>
+
+          <div class="plan-step">
+            <div class="num tnum">3</div>
+            <div class="body">
+              <div class="who"><span class="role-chip">coder</span><b>coder-01</b></div>
+              <div class="task">Implement Redis-backed feature flag store with real-time config hot-reload</div>
+            </div>
+          </div>
+
+          <div class="plan-step">
+            <div class="num tnum">4</div>
+            <div class="body">
+              <div class="who"><span class="role-chip">qa</span><b>qa-01</b></div>
+              <div class="task">Write E2E tests covering flag state transitions and edge cases (network failures, stale cache)</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="director-input">
+          <div class="input-wrap">
+            <input type="text" placeholder="Direct the orchestrator..." aria-label="Message the director" />
+            <button class="send-btn" aria-label="Send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== AGENTS WORKSPACE ===== -->
+      <section class="agents glass" aria-label="Agents">
+        <div class="panel-head">
+          <h2>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5a3 3 0 0 1 0 6M21 20c0-2.4-1.4-4.5-3.4-5.5"/></svg>
+            Agents
+          </h2>
+          <span class="sub">5 active</span>
+          <div class="head-spacer"></div>
+          <span class="sub tnum">2 running</span>
+        </div>
+
+        <div class="agents-body">
+
+          <!-- coder-01 : running, SELECTED + EXPANDED with full structured log -->
+          <article class="agent-card selected open">
+            <div class="agent-row">
+              <div class="agent-id">
+                <span class="status-dot running" aria-hidden="true"></span>
+                <div class="agent-name">
+                  <span class="nm">coder-01 <span class="role-chip">coder</span></span>
+                  <span class="task">Implement feature flag system in main.ts</span>
+                </div>
+              </div>
+              <span class="status-tag running">running</span>
+              <span class="agent-meta">
+                <span class="step tnum">3/5</span>
+                <span class="elapsed tnum">04:32</span>
+              </span>
+              <button class="expand-btn" aria-label="Collapse log" aria-expanded="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+
+            <div class="agent-log">
+              <div class="log-line">
+                <span class="log-ts tnum">12:04:18.221</span>
+                <span class="log-kind thought">thought</span>
+                <span class="log-text">User wants feature flags for gradual rollout. I need to examine the current auth system and flag store architecture.</span>
+              </div>
+              <div class="log-line">
+                <span class="log-ts tnum">12:04:18.451</span>
+                <span class="log-kind tool">tool</span>
+                <span class="log-text mono">read_file(path="src/auth/main.ts")</span>
+              </div>
+              <div class="log-line">
+                <span class="log-ts tnum">12:04:21.118</span>
+                <span class="log-kind result">result</span>
+                <span class="log-text">1847 lines returned · located AuthManager class, flag injection point in middleware</span>
+              </div>
+              <div class="log-line">
+                <span class="log-ts tnum">12:04:24.880</span>
+                <span class="log-kind note">note</span>
+                <span class="log-text note-text">Pinned: middleware already supports context injection - can attach flags there without breaking API</span>
+              </div>
+              <div class="log-line">
+                <span class="log-ts tnum">12:04:28.110</span>
+                <span class="log-kind warn">warn</span>
+                <span class="log-text">3 existing tests use hardcoded flag state - will need to mock feature-flag service in test suite</span>
+              </div>
+              <div class="log-line">
+                <span class="log-ts tnum">12:04:36.220</span>
+                <span class="log-kind handoff">handoff</span>
+                <span class="log-text handoff-text">Wrote feature-flag.ts skeleton + integration test. Passing to qa-01 for E2E coverage.</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- qa-01 : waiting -->
+          <article class="agent-card">
+            <div class="agent-row">
+              <div class="agent-id">
+                <span class="status-dot waiting" aria-hidden="true"></span>
+                <div class="agent-name">
+                  <span class="nm">qa-01 <span class="role-chip">qa</span></span>
+                  <span class="task">Write E2E test suite for auth flow</span>
+                </div>
+              </div>
+              <span class="status-tag waiting">waiting</span>
+              <span class="agent-meta">
+                <span class="step tnum">1/3</span>
+                <span class="elapsed tnum">00:18</span>
+              </span>
+              <button class="expand-btn" aria-label="Expand log" aria-expanded="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+            <div class="agent-log">
+              <div class="log-line">
+                <span class="log-ts tnum">12:04:36.402</span>
+                <span class="log-kind note">note</span>
+                <span class="log-text note-text">Received handoff from coder-01. Blocked until feature-flag.ts skeleton lands on the shared branch.</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- pm-01 : done -->
+          <article class="agent-card">
+            <div class="agent-row">
+              <div class="agent-id">
+                <span class="status-dot done" aria-hidden="true"></span>
+                <div class="agent-name">
+                  <span class="nm">pm-01 <span class="role-chip">pm</span></span>
+                  <span class="task">Scope and prioritize roadmap items</span>
+                </div>
+              </div>
+              <span class="status-tag done">done</span>
+              <span class="agent-meta">
+                <span class="step tnum">2/2</span>
+                <span class="elapsed tnum">02:14</span>
+              </span>
+              <button class="expand-btn" aria-label="Expand log" aria-expanded="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+            <div class="agent-log">
+              <div class="log-line">
+                <span class="log-ts tnum">12:01:52.910</span>
+                <span class="log-kind handoff">handoff</span>
+                <span class="log-text handoff-text">Scoped 3 modules (auth, payments, analytics). Prioritized auth first. Plan handed to coder-01.</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- researcher-01 : running -->
+          <article class="agent-card">
+            <div class="agent-row">
+              <div class="agent-id">
+                <span class="status-dot running" aria-hidden="true"></span>
+                <div class="agent-name">
+                  <span class="nm">researcher-01 <span class="role-chip">researcher</span></span>
+                  <span class="task">Audit codebase for performance bottlenecks</span>
+                </div>
+              </div>
+              <span class="status-tag running">running</span>
+              <span class="agent-meta">
+                <span class="step tnum">2/4</span>
+                <span class="elapsed tnum">03:46</span>
+              </span>
+              <button class="expand-btn" aria-label="Expand log" aria-expanded="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+            <div class="agent-log">
+              <div class="log-line">
+                <span class="log-ts tnum">12:03:11.004</span>
+                <span class="log-kind tool">tool</span>
+                <span class="log-text mono">query_logs(window="24h", group="endpoint")</span>
+              </div>
+              <div class="log-line">
+                <span class="log-ts tnum">12:03:14.770</span>
+                <span class="log-kind result">result</span>
+                <span class="log-text">Top offender: GET /api/flags resolves uncached on every request, p95 at 412ms</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- devops-01 : approval (needs you) -->
+          <article class="agent-card">
+            <div class="agent-row">
+              <div class="agent-id">
+                <span class="status-dot approval" aria-hidden="true"></span>
+                <div class="agent-name">
+                  <span class="nm">devops-01 <span class="role-chip">devops</span></span>
+                  <span class="task">Set up CD pipeline for staging deployment</span>
+                </div>
+              </div>
+              <span class="status-tag approval">approval</span>
+              <span class="agent-meta">
+                <span class="step tnum">1/2</span>
+                <span class="elapsed tnum">01:12</span>
+              </span>
+              <button class="expand-btn" aria-label="Expand log" aria-expanded="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            </div>
+            <div class="agent-log">
+              <div class="log-line">
+                <span class="log-ts tnum">12:04:02.330</span>
+                <span class="log-kind warn">warn</span>
+                <span class="log-text">Ready to provision staging secrets. Waiting on your approval before writing to the deploy environment.</span>
+              </div>
+            </div>
+          </article>
+
+        </div>
+      </section>
+
+      <!-- ===== DRAWER (open, showing selected running coder agent) ===== -->
+      <aside class="drawer glass" aria-label="Agent detail">
+        <div class="drawer-head">
+          <div class="drawer-title">
+            <span class="dot-wrap"><span class="status-dot running" aria-hidden="true"></span></span>
+            <span class="nm">coder-01</span>
+            <span class="role-chip">coder</span>
+            <button class="icon-btn drawer-close" aria-label="Close drawer">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+          <div class="drawer-task">Implement feature flag system in main.ts</div>
+        </div>
+
+        <!-- 2-column KPI tiles (Step + Elapsed only, post v0.24.0) -->
+        <div class="kpis">
+          <div class="kpi">
+            <span class="k-label">Step</span>
+            <span class="k-value tnum">3<span class="sm"> / 5</span></span>
+          </div>
+          <div class="kpi">
+            <span class="k-label">Elapsed</span>
+            <span class="k-value tnum">04:32</span>
+          </div>
+        </div>
+
+        <!-- 4 tabs, no Context -->
+        <div class="drawer-tabs" role="tablist">
+          <button class="on" role="tab" aria-selected="true">logs</button>
+          <button role="tab" aria-selected="false">tools</button>
+          <button role="tab" aria-selected="false">memory</button>
+          <button role="tab" aria-selected="false">config</button>
+        </div>
+
+        <div class="drawer-body">
+          <div class="drawer-feed">
+            <div class="feed-line">
+              <div class="feed-meta"><span class="ts tnum">12:04:18.221</span><span class="kind thought">thought</span></div>
+              <div class="feed-text">User wants feature flags for gradual rollout. I need to examine the current auth system and flag store architecture.</div>
+            </div>
+            <div class="feed-line">
+              <div class="feed-meta"><span class="ts tnum">12:04:18.451</span><span class="kind tool">tool</span></div>
+              <div class="feed-text mono">read_file(path="src/auth/main.ts")</div>
+            </div>
+            <div class="feed-line">
+              <div class="feed-meta"><span class="ts tnum">12:04:21.118</span><span class="kind result">result</span></div>
+              <div class="feed-text">1847 lines returned · located AuthManager class, flag injection point in middleware</div>
+            </div>
+            <div class="feed-line">
+              <div class="feed-meta"><span class="ts tnum">12:04:24.880</span><span class="kind note">note</span></div>
+              <div class="feed-text accent">Pinned: middleware already supports context injection - can attach flags there without breaking API</div>
+            </div>
+            <div class="feed-line">
+              <div class="feed-meta"><span class="ts tnum">12:04:28.110</span><span class="kind warn">warn</span></div>
+              <div class="feed-text">3 existing tests use hardcoded flag state - will need to mock feature-flag service in test suite</div>
+            </div>
+            <div class="feed-line">
+              <div class="feed-meta"><span class="ts tnum">12:04:36.220</span><span class="kind handoff">handoff</span></div>
+              <div class="feed-text accent">Wrote feature-flag.ts skeleton + integration test. Passing to qa-01 for E2E coverage.</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+    </main>
+
+    <!-- ============ STATUS BAR ============ -->
+    <footer class="statusbar glass">
+      <div class="status-group">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>
+        <b class="tnum">5</b> agents
+      </div>
+      <div class="status-sep"></div>
+      <div class="status-group"><span class="mini-dot running"></span><b class="tnum">2</b> running</div>
+      <div class="status-group"><span class="mini-dot waiting"></span><b class="tnum">1</b> waiting</div>
+      <div class="status-group"><span class="mini-dot approval"></span><b class="tnum">1</b> approval</div>
+      <div class="status-group"><span class="mini-dot done"></span><b class="tnum">1</b> done</div>
+
+      <div class="statusbar-spacer"></div>
+
+      <button class="update-pill" aria-label="Update ready, restart to install">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 11l5 5 5-5M5 20h14"/></svg>
+        Update ready - v0.24.1
+      </button>
+    </footer>
+
+  </div>
+
+  <script>
+    /* Tiny, optional: expand/collapse an agent's structured log + toggle drawer tabs.
+       Pure presentation; the mockup is fully readable with JS disabled (coder-01 is open by default). */
+    document.querySelectorAll('.agent-card .expand-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var card = btn.closest('.agent-card');
+        var open = card.classList.toggle('open');
+        btn.setAttribute('aria-expanded', String(open));
+        btn.setAttribute('aria-label', open ? 'Collapse log' : 'Expand log');
+      });
+    });
+
+    document.querySelectorAll('.viewtoggle button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.viewtoggle button').forEach(function (x) {
+          x.classList.remove('on'); x.setAttribute('aria-pressed', 'false');
+        });
+        b.classList.add('on'); b.setAttribute('aria-pressed', 'true');
+      });
+    });
+
+    document.querySelectorAll('.drawer-tabs button').forEach(function (t) {
+      t.addEventListener('click', function () {
+        document.querySelectorAll('.drawer-tabs button').forEach(function (x) {
+          x.classList.remove('on'); x.setAttribute('aria-selected', 'false');
+        });
+        t.classList.add('on'); t.setAttribute('aria-selected', 'true');
+      });
+    });
+  </script>
+</body>
+</html>

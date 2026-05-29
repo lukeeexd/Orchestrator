@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Orchestrator - Daylight</title>
+
+<!--
+  DIRECTION "DAYLIGHT" - static high-fidelity mockup of the Orchestrator desktop app.
+  The anti-terminal: bright, confident, consumer-grade craft for a serious tool.
+
+  STRUCTURE (deliberately NOT three equal panes):
+    - A FOCUSED STREAM. The Director conversation is the single-column centerpiece (a clean thread).
+    - The fleet of agents lives in an ambient horizontal LANE across the top (status chips, each expandable inline).
+    - The inspector is a SLIDE-OVER SHEET from the right, opened when an agent is selected.
+
+  PALETTE: light but bold. Lightly tinted canvas (#f6f7f9), strong near-black ink,
+  ONE saturated accent: deep coral #ff5436. No green/teal. No purple glow. No newsprint.
+
+  Dials: variance 8, motion 3, density 4.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+  /* ============================ TOKENS ============================ */
+  :root {
+    /* canvas - light, lightly tinted, never pure white */
+    --canvas:        #f6f7f9;
+    --canvas-2:      #eef0f3;   /* the lane / inset wells */
+    --surface:       #fdfdfe;   /* cards / sheet (near-white, not #fff) */
+    --surface-sunk:  #f1f2f5;
+
+    /* ink - strong near-black, never #000 */
+    --ink:           #16181d;
+    --ink-2:         #41454e;   /* secondary text, AA on canvas */
+    --ink-3:         #6a6f7a;   /* tertiary / labels, AA on canvas */
+    --hair:          #e2e4e9;   /* hairline borders */
+    --hair-2:        #d4d7dd;   /* stronger hairline */
+
+    /* accent - one decisive deep coral */
+    --coral:         #ff5436;
+    --coral-deep:    #db3a1f;   /* darker coral for AA text on light, and pressed */
+    --coral-ink:     #fffaf8;   /* near-white text/glyphs on coral fills (used on large/bold elements only) */
+    --coral-wash:    #ffeae5;   /* soft coral tint fill */
+    --coral-wash-2:  #ffdcd4;
+    --coral-line:    #ffbcae;
+
+    /* status hues - intentionally NON-green family; warm + slate, anchored by coral */
+    --st-running:    #ff5436;   /* coral = the live work, the heartbeat */
+    --st-waiting:    #4f74ff;   /* confident blue, clearly non-green */
+    --st-done:       #5b6473;   /* settled slate - finished, quiet (NOT a green check) */
+    --st-approval:   #b5641a;   /* burnt amber - needs you */
+
+    --st-running-wash: #ffe6e0;
+    --st-waiting-wash: #e6ecff;
+    --st-done-wash:    #e7e9ee;
+    --st-approval-wash:#f8ecd9;
+
+    --radius:        16px;
+    --radius-md:     12px;
+    --radius-sm:     9px;
+    --radius-xs:     7px;
+
+    --shadow-card:   0 1px 2px rgba(22,24,29,0.04), 0 2px 8px rgba(22,24,29,0.05);
+    --shadow-lane:   0 1px 0 var(--hair);
+    --shadow-sheet:  -24px 0 60px -28px rgba(22,24,29,0.30), -2px 0 0 var(--hair);
+    --shadow-pop:    0 10px 30px -10px rgba(22,24,29,0.22), 0 2px 6px rgba(22,24,29,0.08);
+
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --ui:   "Outfit", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--ui);
+    color: var(--ink);
+    background: var(--canvas);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-size: 14px;
+  }
+  .tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+  ::selection { background: var(--coral-wash-2); color: var(--ink); }
+  button { font-family: inherit; color: inherit; cursor: pointer; }
+
+  /* ============================ APP SHELL ============================ */
+  /* Rows: brand bar / ambient agent lane / focused stream */
+  .app {
+    height: 100vh;
+    width: 100vw;
+    display: grid;
+    grid-template-rows: 60px auto 1fr;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ---------------------------- BRAND BAR ---------------------------- */
+  .brandbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 26px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--hair);
+    z-index: 5;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 11px;
+  }
+  .brand-mark {
+    width: 32px; height: 32px;
+    border-radius: 10px;
+    background: var(--coral);
+    color: var(--coral-ink);
+    display: grid; place-items: center;
+    box-shadow: 0 2px 8px -2px rgba(255,84,54,0.55);
+  }
+  .brand-mark svg { width: 19px; height: 19px; }
+  .brand-name {
+    font-size: 16px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink);
+  }
+  .brand-name .by { color: var(--ink-3); font-weight: 500; }
+
+  .brand-divider { width: 1px; height: 22px; background: var(--hair-2); }
+
+  .run-title {
+    display: flex; flex-direction: column; gap: 1px; min-width: 0;
+  }
+  .run-title .t { font-size: 13.5px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+  .run-title .s { font-size: 11.5px; color: var(--ink-3); }
+
+  .brandbar-spacer { flex: 1; }
+
+  .model-pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 13px 6px 10px;
+    border-radius: 999px;
+    background: var(--surface-sunk);
+    border: 1px solid var(--hair-2);
+    color: var(--ink-2);
+    font-family: var(--mono);
+    font-size: 11.5px;
+  }
+  .model-pill .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--coral);
+    box-shadow: 0 0 0 3px var(--coral-wash);
+  }
+  .model-pill .label { color: var(--ink); }
+
+  .icon-btn {
+    width: 36px; height: 36px;
+    display: grid; place-items: center;
+    border-radius: 10px;
+    border: 1px solid var(--hair-2);
+    background: var(--surface);
+    color: var(--ink-2);
+    transition: color .18s, background .18s, border-color .18s, transform .1s;
+  }
+  .icon-btn svg { width: 18px; height: 18px; }
+  .icon-btn:hover { color: var(--ink); background: var(--surface-sunk); border-color: var(--hair-2); }
+  .icon-btn:active { transform: scale(0.95); }
+
+  .primary-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 36px; padding: 0 16px;
+    border: 0; border-radius: 10px;
+    background: var(--coral);
+    color: var(--coral-ink);
+    font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
+    box-shadow: 0 2px 10px -3px rgba(255,84,54,0.6);
+    transition: filter .18s, transform .1s;
+  }
+  .primary-btn svg { width: 16px; height: 16px; }
+  .primary-btn:hover { filter: brightness(1.04); }
+  .primary-btn:active { transform: scale(0.97); }
+
+  /* ---------------------------- AMBIENT AGENT LANE ---------------------------- */
+  .lane {
+    background: var(--canvas-2);
+    border-bottom: 1px solid var(--hair);
+    padding: 14px 26px 16px;
+    z-index: 4;
+  }
+  .lane-head {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 11px;
+  }
+  .lane-head .label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .lane-head .count {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-2);
+    background: var(--surface); border: 1px solid var(--hair-2);
+    padding: 2px 8px; border-radius: 999px;
+  }
+  .lane-head-spacer { flex: 1; }
+  .lane-legend { display: flex; align-items: center; gap: 14px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-2); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .legend-dot.running { background: var(--st-running); }
+  .legend-dot.waiting { background: var(--st-waiting); }
+  .legend-dot.approval{ background: var(--st-approval); }
+  .legend-dot.done    { background: var(--st-done); }
+
+  .lane-strip {
+    display: flex; gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  /* one ambient agent chip */
+  .chip {
+    flex: none;
+    width: 234px;
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--hair);
+    border-radius: var(--radius-md);
+    padding: 12px 13px;
+    box-shadow: var(--shadow-card);
+    transition: border-color .18s, box-shadow .18s, transform .1s;
+    position: relative;
+    overflow: hidden;
+  }
+  /* left status rail */
+  .chip::before {
+    content: "";
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--hair-2);
+  }
+  .chip.running::before  { background: var(--st-running); }
+  .chip.waiting::before  { background: var(--st-waiting); }
+  .chip.approval::before { background: var(--st-approval); }
+  .chip.done::before     { background: var(--st-done); }
+
+  .chip:hover { border-color: var(--hair-2); transform: translateY(-1px); box-shadow: var(--shadow-pop); }
+  .chip:active { transform: translateY(0); }
+  .chip.selected {
+    border-color: var(--coral-line);
+    box-shadow: 0 0 0 1px var(--coral-line), var(--shadow-pop);
+  }
+
+  .chip-top { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+  .chip-dot {
+    width: 9px; height: 9px; border-radius: 50%; flex: none; position: relative;
+  }
+  .chip-dot.running  { background: var(--st-running); }
+  .chip-dot.waiting  { background: var(--st-waiting); }
+  .chip-dot.approval { background: var(--st-approval); }
+  .chip-dot.done     { background: var(--st-done); }
+  /* heartbeat only on running */
+  .chip-dot.running::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 50%;
+    border: 1.5px solid var(--st-running);
+    animation: pulse 2.2s cubic-bezier(.16,1,.3,1) infinite;
+  }
+  @keyframes pulse {
+    0%   { transform: scale(0.55); opacity: 0.8; }
+    70%  { transform: scale(1.8); opacity: 0; }
+    100% { transform: scale(1.8); opacity: 0; }
+  }
+  .chip-name { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--ink); }
+  .chip-top-spacer { flex: 1; }
+  .role-chip {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: var(--surface-sunk);
+    border: 1px solid var(--hair-2);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+
+  .chip-task {
+    font-size: 12px; color: var(--ink-2); line-height: 1.4;
+    height: 2.8em; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    margin-bottom: 11px;
+  }
+
+  .chip-foot { display: flex; align-items: center; gap: 8px; }
+  .status-tag {
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 3px 9px; border-radius: 999px;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .status-tag.running { color: var(--coral-deep);   background: var(--st-running-wash); }
+  .status-tag.waiting { color: var(--st-waiting);    background: var(--st-waiting-wash); }
+  .status-tag.done    { color: var(--st-done);       background: var(--st-done-wash); }
+  .status-tag.approval{ color: var(--st-approval);   background: var(--st-approval-wash); }
+  .chip-foot-spacer { flex: 1; }
+  .chip-metrics { display: flex; align-items: center; gap: 10px; }
+  .chip-metric { display: flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; color: var(--ink-2); }
+  .chip-metric svg { width: 12px; height: 12px; color: var(--ink-3); }
+
+  /* ---------------------------- FOCUSED STREAM (Director thread) ---------------------------- */
+  .stream {
+    position: relative;
+    min-height: 0;
+    overflow-y: auto;
+    background:
+      radial-gradient(120% 60% at 50% -10%, var(--surface), transparent 60%),
+      var(--canvas);
+  }
+  .thread {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 30px 28px 140px;
+    display: flex; flex-direction: column; gap: 22px;
+  }
+
+  .thread-intro { text-align: center; padding: 6px 0 8px; }
+  .thread-intro .eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--coral-deep);
+  }
+  .thread-intro h1 {
+    margin: 8px 0 0;
+    font-size: 27px; font-weight: 700; letter-spacing: -0.025em; color: var(--ink);
+    line-height: 1.12;
+  }
+  .thread-intro p {
+    margin: 9px auto 0; max-width: 520px;
+    font-size: 13.5px; color: var(--ink-3); line-height: 1.5;
+  }
+
+  /* a message in the thread */
+  .msg { display: flex; gap: 13px; }
+  .msg-av {
+    flex: none;
+    width: 34px; height: 34px; border-radius: 11px;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: 12px; font-weight: 600;
+  }
+  .msg.you .msg-av { background: var(--ink); color: var(--canvas); }
+  .msg.director .msg-av { background: var(--coral); color: var(--coral-ink); box-shadow: 0 2px 10px -3px rgba(255,84,54,0.6); }
+  .msg-body { flex: 1; min-width: 0; padding-top: 1px; }
+  .msg-from {
+    display: flex; align-items: center; gap: 9px; margin-bottom: 6px;
+  }
+  .msg-from .who { font-size: 12.5px; font-weight: 700; color: var(--ink); letter-spacing: -0.01em; }
+  .msg-from .role-chip { font-size: 9px; padding: 1px 6px; }
+  .msg-from .ts { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-left: auto; }
+  .msg-text {
+    font-size: 14.5px; color: var(--ink); line-height: 1.55; letter-spacing: -0.005em;
+  }
+  .msg.you .bubble {
+    background: var(--coral-wash);
+    border: 1px solid var(--coral-line);
+    border-radius: 14px;
+    padding: 12px 15px;
+  }
+  .msg.director .bubble {
+    background: var(--surface);
+    border: 1px solid var(--hair);
+    border-radius: 14px;
+    padding: 13px 16px;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* the dispatched plan, rendered as a clean inline card inside the director message */
+  .plan-card {
+    margin-top: 13px;
+    background: var(--surface);
+    border: 1px solid var(--hair);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+  }
+  .plan-card-head {
+    display: flex; align-items: center; gap: 9px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--hair);
+    background: linear-gradient(180deg, var(--coral-wash), transparent);
+  }
+  .plan-card-head svg { width: 15px; height: 15px; color: var(--coral-deep); }
+  .plan-card-head .t { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); }
+  .plan-card-head .n {
+    margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--ink-3);
+  }
+  .plan-list { padding: 6px; display: flex; flex-direction: column; }
+  .plan-step {
+    display: flex; gap: 13px; align-items: flex-start;
+    padding: 11px 12px;
+    border-radius: var(--radius-md);
+    transition: background .15s;
+  }
+  .plan-step + .plan-step { border-top: 1px solid var(--hair); }
+  .plan-step:hover { background: var(--surface-sunk); }
+  .plan-step .num {
+    flex: none;
+    width: 25px; height: 25px; border-radius: 8px;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: 11.5px; font-weight: 600;
+    background: var(--surface-sunk);
+    color: var(--ink-2);
+    border: 1px solid var(--hair-2);
+  }
+  .plan-step.is-active .num {
+    background: var(--coral); color: var(--coral-ink); border-color: var(--coral);
+    box-shadow: 0 2px 8px -3px rgba(255,84,54,0.6);
+  }
+  .plan-step .body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .plan-step .who { display: flex; align-items: center; gap: 8px; }
+  .plan-step .who b { font-size: 13px; font-weight: 600; color: var(--ink); font-family: var(--mono); }
+  .plan-step .who .now {
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--coral-deep); background: var(--st-running-wash);
+    padding: 2px 7px; border-radius: 999px;
+  }
+  .plan-step .task { color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+
+  /* a live "what's happening now" inline log peek, woven into the thread */
+  .live-card {
+    margin-top: 2px;
+    background: var(--surface);
+    border: 1px solid var(--hair);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+  }
+  .live-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .live-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--st-running); position: relative; }
+  .live-head .dot::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 50%;
+    border: 1.5px solid var(--st-running);
+    animation: pulse 2.2s cubic-bezier(.16,1,.3,1) infinite;
+  }
+  .live-head .nm { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); }
+  .live-head .lbl { font-size: 12px; color: var(--ink-3); }
+  .live-head .open-link {
+    margin-left: auto;
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--hair-2); background: var(--surface);
+    border-radius: 8px; padding: 6px 11px;
+    font-size: 12px; font-weight: 600; color: var(--coral-deep);
+    transition: background .15s, border-color .15s;
+  }
+  .live-head .open-link svg { width: 14px; height: 14px; }
+  .live-head .open-link:hover { background: var(--coral-wash); border-color: var(--coral-line); }
+
+  .log { padding: 8px 16px 14px; display: flex; flex-direction: column; }
+  .log-line { display: grid; grid-template-columns: 96px 70px 1fr; gap: 12px; align-items: baseline; padding: 6px 0; }
+  .log-line + .log-line { border-top: 1px dashed var(--hair); }
+  .log-ts { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+  .log-kind {
+    font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 2px 7px; border-radius: 5px; text-align: center;
+    justify-self: start;
+  }
+  .log-kind.thought { color: var(--ink-2);     background: var(--surface-sunk); }
+  .log-kind.tool    { color: var(--st-waiting); background: var(--st-waiting-wash); }
+  .log-kind.result  { color: var(--st-done);    background: var(--st-done-wash); }
+  .log-kind.note    { color: var(--coral-deep); background: var(--coral-wash); }
+  .log-kind.warn    { color: var(--st-approval); background: var(--st-approval-wash); }
+  .log-kind.handoff { color: var(--coral-deep); background: var(--coral-wash); }
+  .log-text { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+  .log-text.mono { font-family: var(--mono); font-size: 11.5px; color: var(--ink); }
+  .log-text.note-text {
+    color: var(--ink);
+    border-left: 2px solid var(--coral);
+    padding-left: 10px;
+  }
+  .log-text.handoff-text {
+    color: var(--ink);
+    background: var(--coral-wash);
+    border: 1px solid var(--coral-line);
+    border-radius: 8px;
+    padding: 8px 11px;
+  }
+
+  /* ---------------------------- FLOATING COMPOSER ---------------------------- */
+  .composer-wrap {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    display: flex; justify-content: center;
+    padding: 0 28px 22px;
+    pointer-events: none;
+    background: linear-gradient(180deg, transparent, var(--canvas) 55%);
+  }
+  .composer {
+    pointer-events: auto;
+    width: 100%; max-width: 760px;
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--hair-2);
+    border-radius: 16px;
+    padding: 10px 10px 10px 18px;
+    box-shadow: var(--shadow-pop);
+  }
+  .composer:focus-within { border-color: var(--coral-line); box-shadow: 0 0 0 3px var(--coral-wash), var(--shadow-pop); }
+  .composer .lead { color: var(--coral-deep); font-weight: 700; font-family: var(--mono); font-size: 13px; }
+  .composer input {
+    flex: 1; background: transparent; border: 0; outline: 0;
+    color: var(--ink); font-family: var(--ui); font-size: 14.5px;
+  }
+  .composer input::placeholder { color: var(--ink-3); }
+  .send-btn {
+    flex: none;
+    width: 40px; height: 40px;
+    border: 0; border-radius: 12px;
+    background: var(--coral);
+    color: var(--coral-ink);
+    display: grid; place-items: center;
+    box-shadow: 0 2px 10px -3px rgba(255,84,54,0.6);
+    transition: filter .18s, transform .1s;
+  }
+  .send-btn svg { width: 18px; height: 18px; }
+  .send-btn:hover { filter: brightness(1.05); }
+  .send-btn:active { transform: scale(0.93); }
+
+  /* ============================ SLIDE-OVER INSPECTOR SHEET ============================ */
+  .scrim {
+    position: fixed; inset: 0; z-index: 30;
+    background: rgba(22,24,29,0.18);
+    opacity: 0; pointer-events: none;
+    transition: opacity .28s ease;
+  }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+
+  .sheet {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 40;
+    width: 440px; max-width: 92vw;
+    background: var(--surface);
+    box-shadow: var(--shadow-sheet);
+    display: flex; flex-direction: column;
+    transform: translateX(100%);
+    transition: transform .32s cubic-bezier(.16,1,.3,1);
+  }
+  .sheet.open { transform: translateX(0); }
+
+  .sheet-head {
+    padding: 18px 20px 16px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .sheet-title { display: flex; align-items: center; gap: 11px; }
+  .sheet-title .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--st-running); flex: none; position: relative; }
+  .sheet-title .dot::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 50%;
+    border: 1.5px solid var(--st-running);
+    animation: pulse 2.2s cubic-bezier(.16,1,.3,1) infinite;
+  }
+  .sheet-title .nm { font-family: var(--mono); font-size: 17px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+  .sheet-close { margin-left: auto; }
+  .sheet-task { margin-top: 11px; font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+
+  /* Step + Elapsed only (NO cost/token KPIs) */
+  .stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--hair);
+  }
+  .stat {
+    background: var(--surface-sunk);
+    border: 1px solid var(--hair);
+    border-radius: var(--radius-md);
+    padding: 13px 14px;
+    display: flex; flex-direction: column; gap: 7px;
+  }
+  .stat .s-label {
+    font-size: 10.5px; color: var(--ink-3);
+    text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700;
+  }
+  .stat .s-value { font-family: var(--mono); font-size: 24px; font-weight: 600; color: var(--ink); line-height: 1; letter-spacing: -0.01em; }
+  .stat .s-value .sm { font-size: 14px; color: var(--ink-3); font-weight: 500; }
+
+  .sheet-tabs {
+    display: flex; gap: 4px;
+    padding: 12px 16px 0;
+    border-bottom: 1px solid var(--hair);
+  }
+  .sheet-tabs button {
+    border: 0; background: transparent;
+    color: var(--ink-3);
+    font-size: 12.5px; font-weight: 600;
+    padding: 8px 13px 12px;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color .15s, border-color .15s;
+    text-transform: capitalize;
+  }
+  .sheet-tabs button:hover { color: var(--ink); }
+  .sheet-tabs button.on { color: var(--coral-deep); border-bottom-color: var(--coral); }
+
+  .sheet-body { flex: 1; overflow-y: auto; padding: 16px 20px 24px; }
+  .feed { display: flex; flex-direction: column; gap: 14px; }
+  .feed-line { display: flex; flex-direction: column; gap: 5px; }
+  .feed-meta { display: flex; align-items: center; gap: 9px; }
+  .feed-meta .ts { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+  .feed-meta .kind {
+    font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 2px 7px; border-radius: 5px;
+  }
+  .feed-meta .kind.thought { color: var(--ink-2);     background: var(--surface-sunk); }
+  .feed-meta .kind.tool    { color: var(--st-waiting); background: var(--st-waiting-wash); }
+  .feed-meta .kind.result  { color: var(--st-done);    background: var(--st-done-wash); }
+  .feed-meta .kind.note    { color: var(--coral-deep); background: var(--coral-wash); }
+  .feed-meta .kind.warn    { color: var(--st-approval); background: var(--st-approval-wash); }
+  .feed-meta .kind.handoff { color: var(--coral-deep); background: var(--coral-wash); }
+  .feed-text { font-size: 13px; color: var(--ink-2); line-height: 1.55; }
+  .feed-text.mono { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+  .feed-text.accent {
+    color: var(--ink);
+    border-left: 2px solid var(--coral);
+    padding-left: 11px;
+  }
+  .feed-text.handoff-box {
+    color: var(--ink);
+    background: var(--coral-wash);
+    border: 1px solid var(--coral-line);
+    border-radius: 9px;
+    padding: 9px 12px;
+  }
+
+  /* ---------------------------- STATUS FOOTER (slim, anchored bottom of brand region) ---------------------------- */
+  /* lives as a thin bar inside the lane area? No - keep a slim footer pinned bottom-left, floating */
+  .floor {
+    position: fixed; left: 26px; bottom: 22px; z-index: 20;
+    display: flex; align-items: center; gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--hair-2);
+    border-radius: 999px;
+    padding: 7px 16px 7px 14px;
+    box-shadow: var(--shadow-pop);
+    font-size: 12px;
+  }
+  .floor .grp { display: flex; align-items: center; gap: 7px; color: var(--ink-2); }
+  .floor .grp b { color: var(--ink); font-weight: 700; }
+  .floor .mini-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .floor .mini-dot.running { background: var(--st-running); }
+  .floor .mini-dot.waiting { background: var(--st-waiting); }
+  .floor .mini-dot.approval{ background: var(--st-approval); }
+  .floor .mini-dot.done    { background: var(--st-done); }
+  .floor .sep { width: 1px; height: 15px; background: var(--hair-2); }
+
+  .update-pill {
+    position: fixed; right: 26px; bottom: 22px; z-index: 20;
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 15px 8px 13px;
+    border-radius: 999px;
+    background: var(--coral);
+    border: 0;
+    color: var(--coral-ink);
+    font-size: 12.5px; font-weight: 600;
+    box-shadow: 0 6px 20px -6px rgba(255,84,54,0.65);
+    transition: filter .18s, transform .1s;
+  }
+  .update-pill svg { width: 15px; height: 15px; }
+  .update-pill:hover { filter: brightness(1.05); }
+  .update-pill:active { transform: scale(0.97); }
+
+  /* scrollbars */
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--hair-2);
+    border-radius: 8px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #c2c6cd; background-clip: padding-box; }
+
+  /* ============================ MOTION REDUCTION ============================ */
+  @media (prefers-reduced-motion: reduce) {
+    .chip-dot.running::after, .live-head .dot::after, .sheet-title .dot::after { animation: none; opacity: 0; }
+    .sheet { transition: none; }
+    .scrim { transition: none; }
+  }
+</style>
+</head>
+
+<body>
+  <div class="app">
+
+    <!-- ============ BRAND BAR ============ -->
+    <header class="brandbar">
+      <div class="brand">
+        <span class="brand-mark" title="Orchestrator">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="2.4"/>
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l2.5 2.5M16.5 16.5L19 19M19 5l-2.5 2.5M7.5 16.5L5 19"/>
+          </svg>
+        </span>
+        <span class="brand-name">Orchestrator</span>
+      </div>
+
+      <div class="brand-divider"></div>
+
+      <div class="run-title">
+        <span class="t">Redis-backed feature flags</span>
+        <span class="s">4 lanes dispatched - run started 12:01</span>
+      </div>
+
+      <div class="brandbar-spacer"></div>
+
+      <div class="model-pill" title="Active model">
+        <span class="dot"></span>
+        <span class="label">claude-opus-4-7-1m</span>
+      </div>
+
+      <button class="icon-btn" aria-label="History">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7M3 5v3.5h3.5"/><path d="M12 7v5l3.5 2"/></svg>
+      </button>
+      <button class="icon-btn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.5l1.3 2.3 2.6-.3.9 2.5 2.3 1.2-.6 2.6 1.5 2.2-1.8 1.9.3 2.6-2.5.8-1.2 2.3H9.8l-1.2-2.3-2.5-.8.3-2.6L4.6 15l1.5-2.2-.6-2.6L7.8 9l.9-2.5 2.6.3z"/></svg>
+      </button>
+
+      <button class="primary-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        New run
+      </button>
+    </header>
+
+    <!-- ============ AMBIENT AGENT LANE ============ -->
+    <section class="lane" aria-label="Agent fleet">
+      <div class="lane-head">
+        <span class="label">Fleet</span>
+        <span class="count tnum">5 agents</span>
+        <div class="lane-head-spacer"></div>
+        <div class="lane-legend">
+          <span class="legend-item"><span class="legend-dot running"></span>running</span>
+          <span class="legend-item"><span class="legend-dot waiting"></span>waiting</span>
+          <span class="legend-item"><span class="legend-dot approval"></span>approval</span>
+          <span class="legend-item"><span class="legend-dot done"></span>done</span>
+        </div>
+      </div>
+
+      <div class="lane-strip" role="list">
+
+        <!-- coder-01 : running, SELECTED (its detail is in the open sheet) -->
+        <button class="chip running selected" role="listitem" data-agent="coder-01" aria-pressed="true">
+          <div class="chip-top">
+            <span class="chip-dot running" aria-hidden="true"></span>
+            <span class="chip-name">coder-01</span>
+            <span class="chip-top-spacer"></span>
+            <span class="role-chip">coder</span>
+          </div>
+          <div class="chip-task">Implement feature flag system in main.ts</div>
+          <div class="chip-foot">
+            <span class="status-tag running">running</span>
+            <span class="chip-foot-spacer"></span>
+            <span class="chip-metrics">
+              <span class="chip-metric tnum" title="Step"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>3/5</span>
+              <span class="chip-metric tnum" title="Elapsed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>04:32</span>
+            </span>
+          </div>
+        </button>
+
+        <!-- researcher-01 : running -->
+        <button class="chip running" role="listitem" data-agent="researcher-01" aria-pressed="false">
+          <div class="chip-top">
+            <span class="chip-dot running" aria-hidden="true"></span>
+            <span class="chip-name">researcher-01</span>
+            <span class="chip-top-spacer"></span>
+            <span class="role-chip">researcher</span>
+          </div>
+          <div class="chip-task">Audit codebase for performance bottlenecks</div>
+          <div class="chip-foot">
+            <span class="status-tag running">running</span>
+            <span class="chip-foot-spacer"></span>
+            <span class="chip-metrics">
+              <span class="chip-metric tnum" title="Step"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>2/4</span>
+              <span class="chip-metric tnum" title="Elapsed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>03:46</span>
+            </span>
+          </div>
+        </button>
+
+        <!-- devops-01 : approval -->
+        <button class="chip approval" role="listitem" data-agent="devops-01" aria-pressed="false">
+          <div class="chip-top">
+            <span class="chip-dot approval" aria-hidden="true"></span>
+            <span class="chip-name">devops-01</span>
+            <span class="chip-top-spacer"></span>
+            <span class="role-chip">devops</span>
+          </div>
+          <div class="chip-task">Set up CD pipeline for staging deployment</div>
+          <div class="chip-foot">
+            <span class="status-tag approval">approval</span>
+            <span class="chip-foot-spacer"></span>
+            <span class="chip-metrics">
+              <span class="chip-metric tnum" title="Step"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>1/2</span>
+              <span class="chip-metric tnum" title="Elapsed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>01:12</span>
+            </span>
+          </div>
+        </button>
+
+        <!-- qa-01 : waiting -->
+        <button class="chip waiting" role="listitem" data-agent="qa-01" aria-pressed="false">
+          <div class="chip-top">
+            <span class="chip-dot waiting" aria-hidden="true"></span>
+            <span class="chip-name">qa-01</span>
+            <span class="chip-top-spacer"></span>
+            <span class="role-chip">qa</span>
+          </div>
+          <div class="chip-task">Write E2E test suite for auth flow</div>
+          <div class="chip-foot">
+            <span class="status-tag waiting">waiting</span>
+            <span class="chip-foot-spacer"></span>
+            <span class="chip-metrics">
+              <span class="chip-metric tnum" title="Step"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>1/3</span>
+              <span class="chip-metric tnum" title="Elapsed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>00:18</span>
+            </span>
+          </div>
+        </button>
+
+        <!-- pm-01 : done -->
+        <button class="chip done" role="listitem" data-agent="pm-01" aria-pressed="false">
+          <div class="chip-top">
+            <span class="chip-dot done" aria-hidden="true"></span>
+            <span class="chip-name">pm-01</span>
+            <span class="chip-top-spacer"></span>
+            <span class="role-chip">pm</span>
+          </div>
+          <div class="chip-task">Scope and prioritize roadmap items</div>
+          <div class="chip-foot">
+            <span class="status-tag done">done</span>
+            <span class="chip-foot-spacer"></span>
+            <span class="chip-metrics">
+              <span class="chip-metric tnum" title="Step"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>2/2</span>
+              <span class="chip-metric tnum" title="Elapsed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></svg>02:14</span>
+            </span>
+          </div>
+        </button>
+
+      </div>
+    </section>
+
+    <!-- ============ FOCUSED STREAM (Director thread) ============ -->
+    <main class="stream" aria-label="Director">
+      <div class="thread">
+
+        <div class="thread-intro">
+          <div class="eyebrow">Director</div>
+          <h1>Orchestrating four lanes toward one ship</h1>
+          <p>One thread directs the fleet. The lane above stays ambient; open any agent for the full picture.</p>
+        </div>
+
+        <!-- you -->
+        <div class="msg you">
+          <div class="msg-av">YOU</div>
+          <div class="msg-body">
+            <div class="msg-from">
+              <span class="who">You</span>
+              <span class="ts tnum">12:01</span>
+            </div>
+            <div class="bubble">
+              <div class="msg-text">Ship a Redis-backed feature flag system. Scope it, profile what we have, build it, and cover it with tests.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- director -->
+        <div class="msg director">
+          <div class="msg-av">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 5.4L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.6-1.6z"/></svg>
+          </div>
+          <div class="msg-body">
+            <div class="msg-from">
+              <span class="who">Director</span>
+              <span class="ts tnum">12:01</span>
+            </div>
+            <div class="bubble">
+              <div class="msg-text">Broke this into 4 lanes. PM scopes the modules first, researcher profiles production while coder builds the store, then qa locks the edge cases.</div>
+
+              <!-- the dispatched plan, woven into the director's message -->
+              <div class="plan-card">
+                <div class="plan-card-head">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8M4 12v6a1 1 0 0 0 1 1h14"/></svg>
+                  <span class="t">Dispatched plan</span>
+                  <span class="n tnum">4 lanes</span>
+                </div>
+                <div class="plan-list">
+                  <div class="plan-step">
+                    <div class="num tnum">1</div>
+                    <div class="body">
+                      <div class="who"><b>pm-01</b><span class="role-chip">pm</span></div>
+                      <div class="task">Break down feature-flag requirements into auth + payments + analytics modules</div>
+                    </div>
+                  </div>
+                  <div class="plan-step">
+                    <div class="num tnum">2</div>
+                    <div class="body">
+                      <div class="who"><b>researcher-01</b><span class="role-chip">researcher</span></div>
+                      <div class="task">Profile database query performance in production logs and identify slowest endpoints</div>
+                    </div>
+                  </div>
+                  <div class="plan-step is-active">
+                    <div class="num tnum">3</div>
+                    <div class="body">
+                      <div class="who"><b>coder-01</b><span class="role-chip">coder</span><span class="now">now</span></div>
+                      <div class="task">Implement Redis-backed feature flag store with real-time config hot-reload</div>
+                    </div>
+                  </div>
+                  <div class="plan-step">
+                    <div class="num tnum">4</div>
+                    <div class="body">
+                      <div class="who"><b>qa-01</b><span class="role-chip">qa</span></div>
+                      <div class="task">Write E2E tests covering flag state transitions and edge cases (network failures, stale cache)</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- live peek: coder-01's structured log woven into the thread -->
+        <div class="msg director">
+          <div class="msg-av">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 5.4L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.6-1.6z"/></svg>
+          </div>
+          <div class="msg-body">
+            <div class="msg-from">
+              <span class="who">Director</span>
+              <span class="ts tnum">12:04</span>
+            </div>
+
+            <div class="live-card">
+              <div class="live-head">
+                <span class="dot" aria-hidden="true"></span>
+                <span class="nm">coder-01</span>
+                <span class="lbl">is live on step 3</span>
+                <button class="open-link" data-agent="coder-01">
+                  Open inspector
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                </button>
+              </div>
+
+              <div class="log">
+                <div class="log-line">
+                  <span class="log-ts tnum">12:04:18.221</span>
+                  <span class="log-kind thought">thought</span>
+                  <span class="log-text">User wants feature flags for gradual rollout. I need to examine the current auth system and flag store architecture.</span>
+                </div>
+                <div class="log-line">
+                  <span class="log-ts tnum">12:04:18.451</span>
+                  <span class="log-kind tool">tool</span>
+                  <span class="log-text mono">read_file(path="src/auth/main.ts")</span>
+                </div>
+                <div class="log-line">
+                  <span class="log-ts tnum">12:04:21.118</span>
+                  <span class="log-kind result">result</span>
+                  <span class="log-text">1847 lines returned - located AuthManager class, flag injection point in middleware</span>
+                </div>
+                <div class="log-line">
+                  <span class="log-ts tnum">12:04:24.880</span>
+                  <span class="log-kind note">note</span>
+                  <span class="log-text note-text">Pinned: middleware already supports context injection - can attach flags there without breaking API</span>
+                </div>
+                <div class="log-line">
+                  <span class="log-ts tnum">12:04:28.110</span>
+                  <span class="log-kind warn">warn</span>
+                  <span class="log-text">3 existing tests use hardcoded flag state - will need to mock feature-flag service in test suite</span>
+                </div>
+                <div class="log-line">
+                  <span class="log-ts tnum">12:04:36.220</span>
+                  <span class="log-kind handoff">handoff</span>
+                  <span class="log-text handoff-text">Wrote feature-flag.ts skeleton + integration test. Passing to qa-01 for E2E coverage.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- floating composer pinned to the bottom of the stream -->
+      <div class="composer-wrap">
+        <form class="composer" onsubmit="return false">
+          <span class="lead">&gt;</span>
+          <input type="text" placeholder="Direct the orchestrator..." aria-label="Message the director" />
+          <button class="send-btn" type="submit" aria-label="Send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </form>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- ============ SLIDE-OVER INSPECTOR SHEET (open, showing coder-01) ============ -->
+  <div class="scrim open" id="scrim" aria-hidden="true"></div>
+
+  <aside class="sheet open" id="sheet" aria-label="Agent detail" role="dialog" aria-modal="false">
+    <div class="sheet-head">
+      <div class="sheet-title">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="nm">coder-01</span>
+        <span class="role-chip">coder</span>
+        <button class="icon-btn sheet-close" id="sheetClose" aria-label="Close inspector">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="sheet-task">Implement feature flag system in main.ts</div>
+    </div>
+
+    <!-- Step + Elapsed only -->
+    <div class="stats">
+      <div class="stat">
+        <span class="s-label">Step</span>
+        <span class="s-value tnum">3<span class="sm"> / 5</span></span>
+      </div>
+      <div class="stat">
+        <span class="s-label">Elapsed</span>
+        <span class="s-value tnum">04:32</span>
+      </div>
+    </div>
+
+    <div class="sheet-tabs" role="tablist">
+      <button class="on" role="tab" aria-selected="true">logs</button>
+      <button role="tab" aria-selected="false">tools</button>
+      <button role="tab" aria-selected="false">memory</button>
+      <button role="tab" aria-selected="false">config</button>
+    </div>
+
+    <div class="sheet-body">
+      <div class="feed">
+        <div class="feed-line">
+          <div class="feed-meta"><span class="ts tnum">12:04:18.221</span><span class="kind thought">thought</span></div>
+          <div class="feed-text">User wants feature flags for gradual rollout. I need to examine the current auth system and flag store architecture.</div>
+        </div>
+        <div class="feed-line">
+          <div class="feed-meta"><span class="ts tnum">12:04:18.451</span><span class="kind tool">tool</span></div>
+          <div class="feed-text mono">read_file(path="src/auth/main.ts")</div>
+        </div>
+        <div class="feed-line">
+          <div class="feed-meta"><span class="ts tnum">12:04:21.118</span><span class="kind result">result</span></div>
+          <div class="feed-text">1847 lines returned - located AuthManager class, flag injection point in middleware</div>
+        </div>
+        <div class="feed-line">
+          <div class="feed-meta"><span class="ts tnum">12:04:24.880</span><span class="kind note">note</span></div>
+          <div class="feed-text accent">Pinned: middleware already supports context injection - can attach flags there without breaking API</div>
+        </div>
+        <div class="feed-line">
+          <div class="feed-meta"><span class="ts tnum">12:04:28.110</span><span class="kind warn">warn</span></div>
+          <div class="feed-text">3 existing tests use hardcoded flag state - will need to mock feature-flag service in test suite</div>
+        </div>
+        <div class="feed-line">
+          <div class="feed-meta"><span class="ts tnum">12:04:36.220</span><span class="kind handoff">handoff</span></div>
+          <div class="feed-text handoff-box">Wrote feature-flag.ts skeleton + integration test. Passing to qa-01 for E2E coverage.</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ FLOATING STATUS FLOOR ============ -->
+  <div class="floor">
+    <div class="grp"><b class="tnum">5</b>&nbsp;agents</div>
+    <div class="sep"></div>
+    <div class="grp"><span class="mini-dot running"></span><b class="tnum">2</b>&nbsp;running</div>
+    <div class="grp"><span class="mini-dot waiting"></span><b class="tnum">1</b>&nbsp;waiting</div>
+    <div class="grp"><span class="mini-dot approval"></span><b class="tnum">1</b>&nbsp;approval</div>
+    <div class="grp"><span class="mini-dot done"></span><b class="tnum">1</b>&nbsp;done</div>
+  </div>
+
+  <button class="update-pill" aria-label="Update ready, restart to install">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 11l5 5 5-5M5 20h14"/></svg>
+    Update ready - v0.24.1
+  </button>
+
+  <script>
+    /* Presentation-only wiring. The mockup is fully readable with JS off:
+       the inspector sheet for coder-01 is open by default. */
+
+    var sheet  = document.getElementById('sheet');
+    var scrim  = document.getElementById('scrim');
+
+    function openSheet() {
+      sheet.classList.add('open');
+      scrim.classList.add('open');
+    }
+    function closeSheet() {
+      sheet.classList.remove('open');
+      scrim.classList.remove('open');
+      document.querySelectorAll('.chip').forEach(function (c) {
+        c.classList.remove('selected');
+        c.setAttribute('aria-pressed', 'false');
+      });
+    }
+
+    // selecting an agent chip opens the slide-over sheet
+    document.querySelectorAll('.chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        document.querySelectorAll('.chip').forEach(function (c) {
+          c.classList.remove('selected');
+          c.setAttribute('aria-pressed', 'false');
+        });
+        chip.classList.add('selected');
+        chip.setAttribute('aria-pressed', 'true');
+        openSheet();
+      });
+    });
+
+    // "Open inspector" link inside the thread's live card
+    document.querySelectorAll('.open-link').forEach(function (link) {
+      link.addEventListener('click', function () {
+        var target = link.getAttribute('data-agent');
+        document.querySelectorAll('.chip').forEach(function (c) {
+          var on = c.getAttribute('data-agent') === target;
+          c.classList.toggle('selected', on);
+          c.setAttribute('aria-pressed', String(on));
+        });
+        openSheet();
+      });
+    });
+
+    document.getElementById('sheetClose').addEventListener('click', closeSheet);
+    scrim.addEventListener('click', closeSheet);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeSheet();
+    });
+
+    // sheet tab switching
+    document.querySelectorAll('.sheet-tabs button').forEach(function (t) {
+      t.addEventListener('click', function () {
+        document.querySelectorAll('.sheet-tabs button').forEach(function (x) {
+          x.classList.remove('on'); x.setAttribute('aria-selected', 'false');
+        });
+        t.classList.add('on'); t.setAttribute('aria-selected', 'true');
+      });
+    });
+  </script>
+</body>
+</html>

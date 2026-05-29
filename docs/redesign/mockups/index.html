@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Orchestrator — redesign directions</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: #16181c;
+    color: #e6e6ea;
+    font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 16px;
+    background: #111317;
+    border-bottom: 1px solid #262932;
+  }
+  .title { font-weight: 600; letter-spacing: 0.02em; margin-right: 6px; }
+  .title small { color: #6b7080; font-weight: 400; margin-left: 8px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+  button.tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #262932;
+    background: #1a1d22;
+    color: #c5c7cd;
+    border-radius: 7px;
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+    transition: border-color .15s, background .15s, color .15s;
+  }
+  button.tab:hover { border-color: #3a3f4a; color: #e6e6ea; }
+  button.tab[aria-selected="true"] {
+    background: #20242b;
+    border-color: #4a78ff;
+    color: #fff;
+  }
+  .score {
+    font: 600 11px/1 ui-monospace, "SFMono-Regular", monospace;
+    color: #8a8f99;
+    background: #0e1014;
+    border: 1px solid #262932;
+    border-radius: 5px;
+    padding: 3px 6px;
+  }
+  button.tab[aria-selected="true"] .score { color: #b9d0ff; border-color: #2f4a8f; }
+  .spacer { flex: 1; }
+  .open {
+    color: #8aa9ff;
+    text-decoration: none;
+    border: 1px solid #262932;
+    border-radius: 7px;
+    padding: 6px 12px;
+  }
+  .open:hover { border-color: #4a78ff; color: #b9d0ff; }
+  .frame-wrap { flex: 1 1 auto; position: relative; }
+  iframe { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
+  .note {
+    flex: 0 0 auto;
+    padding: 8px 16px;
+    background: #111317;
+    border-top: 1px solid #262932;
+    color: #8a8f99;
+    font-size: 12px;
+  }
+  .note b { color: #c5c7cd; font-weight: 600; }
+</style>
+</head>
+<body>
+  <header>
+    <span class="title">Orchestrator redesign <small>3 directions, same session, pick one</small></span>
+    <div class="tabs" id="tabs">
+      <button class="tab" data-src="atelier.html" aria-selected="false">A. Atelier <span class="score">83</span></button>
+      <button class="tab" data-src="broadsheet.html" aria-selected="false">B. Broadsheet <span class="score">86</span></button>
+      <button class="tab" data-src="aurora.html" aria-selected="false">C. Aurora <span class="score">71</span></button>
+      <button class="tab" data-src="hybrid.html" aria-selected="false">D. Hybrid <span class="score">v1</span></button>
+      <button class="tab" data-src="bold-control.html" aria-selected="false">E. Mission Control <span class="score">70</span></button>
+      <button class="tab" data-src="bold-daylight.html" aria-selected="true">F. Daylight <span class="score">78</span></button>
+      <button class="tab" data-src="bold-flightdeck.html" aria-selected="false">G. Flightdeck <span class="score">88</span></button>
+    </div>
+    <span class="spacer"></span>
+    <a class="open" id="openTab" href="bold-daylight.html" target="_blank" rel="noopener">Open in new tab</a>
+  </header>
+  <div class="frame-wrap">
+    <iframe id="frame" src="bold-daylight.html" title="design mockup"></iframe>
+  </div>
+  <div class="note">
+    Bold round (E-G) deliberately breaks the current-app DNA. Judge's pick: <b>F. Daylight</b> (bright coral, focused thread, cleanest escape and most buildable). <b>G. Flightdeck</b> is the boldest (a spatial node-graph canvas) but the riskiest to build for real. <b>E. Mission Control</b> is a dense navy + amber command board. A-D are the earlier, tamer rounds. The score chip is a boldness/escape rating. If a tab shows blank, use "Open in new tab".
+  </div>
+  <script>
+    const tabs = document.getElementById('tabs');
+    const frame = document.getElementById('frame');
+    const openTab = document.getElementById('openTab');
+    tabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('button.tab');
+      if (!btn) return;
+      for (const b of tabs.querySelectorAll('button.tab')) {
+        b.setAttribute('aria-selected', String(b === btn));
+      }
+      const src = btn.dataset.src;
+      frame.src = src;
+      openTab.href = src;
+    });
+  </script>
+</body>
+</html>

@@ -152,7 +152,7 @@ async function runFork(
   if (!entry) return;
   const settings = readSettings();
   const env = buildEnv(settings, entry.agent.projectId);
-  const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
+  const elapsedTimer = startElapsedTimer(agentId, sinks);
 
   try {
     // Forks already inherit their parent's stored provider in
@@ -193,7 +193,7 @@ ${task}`;
       agentId,
     });
 
-    await consumeQuery(agentId, q, controller, effectiveModel, sinks);
+    await consumeQuery(agentId, q, controller, sinks);
   } finally {
     clearInterval(elapsedTimer);
   }

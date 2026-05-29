@@ -5,7 +5,6 @@ export type RailScreen =
   | 'templates'
   | 'tools'
   | 'marketplace'
-  | 'cost'
   | 'history'
   | 'docs'
   | 'settings';
@@ -46,7 +45,6 @@ export function LeftRail({
       badge:
         marketplaceUpdateCount > 0 ? String(marketplaceUpdateCount) : undefined,
     },
-    { id: 'cost', icon: 'cost', label: 'Spend' },
     { id: 'history', icon: 'history', label: 'Runs' },
     { id: 'docs', icon: 'file', label: 'Docs' },
   ];

@@ -139,7 +139,7 @@ async function run(
 ): Promise<void> {
   const role = ROLES[req.role];
   const env = buildEnv(settings, req.projectId);
-  const elapsedTimer = startElapsedTimer(agentId, controller, sinks);
+  const elapsedTimer = startElapsedTimer(agentId, sinks);
 
   try {
     // The agent's model + effort were resolved in spawnAgent and saved
@@ -196,7 +196,7 @@ ${req.task}`;
       emitPluginDirsNote: true,
     });
 
-    await consumeQuery(agentId, q, controller, effectiveModel, sinks);
+    await consumeQuery(agentId, q, controller, sinks);
   } finally {
     clearInterval(elapsedTimer);
   }

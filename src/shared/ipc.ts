@@ -100,10 +100,6 @@ export const IpcChannels = {
   DocsReadFile: 'docs:readFile',
   /** Open a folder picker to choose the Docs rail screen's root. */
   DocsPickFolder: 'docs:pickFolder',
-  SpendGet: 'spend:get',
-  SpendRecommendations: 'spend:recommendations',
-  /** F7: pre-spawn cost forecast for a plan. Returns ±50% band over per-role medians. */
-  SpendForecastPlan: 'spend:forecastPlan',
   /** F12: list every note pinned to lines in an agent's log. */
   LogNotesList: 'logNotes:list',
   /** F12: insert / update / delete a single note (empty body deletes). */
@@ -1081,15 +1077,6 @@ export interface OrchestratorApi {
   } | { ok: false; error: string }>;
   /** Open a folder picker for the Docs rail screen's root. */
   docsPickFolder: () => Promise<{ path: string | null }>;
-  getSpendSummary: () => Promise<import('./types').SpendSummary>;
-  /** Rule-based cost / loadout recommendations recomputed each call. */
-  getSpendRecommendations: () => Promise<
-    import('./types').SpendRecommendation[]
-  >;
-  /** F7: forecast spawn cost from per-role medians for a given plan. */
-  forecastPlanCost: (
-    rows: import('./types').PlanRow[],
-  ) => Promise<import('./types').PlanCostForecast>;
   /** F12: list every note pinned to lines in an agent's log. */
   listLogNotes: (
     agentId: string,

@@ -15,18 +15,17 @@ import { useDirector } from './hooks/useDirector';
 import { useSettings } from './hooks/useSettings';
 import { useProjects } from './hooks/useProjects';
 import { useMarketplace } from './hooks/useMarketplace';
-import { TopBar, type ViewMode } from './components/TopBar';
+import { TopBar } from './components/TopBar';
 import { LeftRail, type RailScreen } from './components/LeftRail';
 import { StatusBar } from './components/StatusBar';
 import { DirectorPane } from './components/DirectorPane';
-import { AgentsPane } from './components/AgentsPane';
+import { CanvasView, DIRECTOR_NODE_W } from './components/CanvasView';
 import { Drawer } from './components/Drawer';
 import { ResizeHandle } from './components/ResizeHandle';
 import { PlaceholderScreen } from './components/PlaceholderScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { ToolsScreen } from './components/ToolsScreen';
 import { MarketplaceScreen } from './components/MarketplaceScreen';
-import { SpendScreen } from './components/SpendScreen';
 import { HistoryScreen } from './components/HistoryScreen';
 import { TemplatesScreen } from './components/TemplatesScreen';
 import { DocsScreen } from './components/DocsScreen';
@@ -53,7 +52,7 @@ const AUTO_REDIRECT_DELAY_MS = 3000;
 const PLACEHOLDERS: Record<
   Exclude<
     RailScreen,
-    'agents' | 'settings' | 'tools' | 'cost' | 'history' | 'marketplace' | 'docs'
+    'agents' | 'settings' | 'tools' | 'history' | 'marketplace' | 'docs'
   >,
   { title: string; icon: Parameters<typeof PlaceholderScreen>[0]['icon']; body: string }
 > = {
@@ -66,7 +65,6 @@ const PLACEHOLDERS: Record<
 
 export function App() {
   const [active, setActive] = useState<RailScreen>('agents');
-  const [dirW, setDirW] = useLocalStorageState<number>('orchestrator.dirW', 400);
   const [drawerW, setDrawerW] = useLocalStorageState<number>(
     'orchestrator.drawerW',
     460,
@@ -74,10 +72,6 @@ export function App() {
   const [mode, setMode] = useLocalStorageState<DirectorMode>(
     'orchestrator.directorMode',
     'auto',
-  );
-  const [viewMode, setViewMode] = useLocalStorageState<ViewMode>(
-    'orchestrator.viewMode',
-    'compact',
   );
   const [drawerCollapsed, setDrawerCollapsed] = useLocalStorageState<boolean>(
     'orchestrator.drawerCollapsed',
@@ -226,16 +220,13 @@ export function App() {
   const spawnDefaultEffort: EffortLevel =
     activeProject?.directorEffort || fallbackEffort;
 
-  const { agents, selectedId, setSelectedId, expanded, toggle } = useAgents(
+  const { agents, selectedId, setSelectedId } = useAgents(
     activeProjectId,
   );
   const { messages, send, busy, refresh: refreshDirector } =
     useDirector(activeProjectId);
   const selectedAgent = agents.find((a) => a.id === selectedId) ?? null;
   const [spawning, setSpawning] = useState(false);
-
-  const totalTokens = agents.reduce((s, a) => s + a.tokens, 0);
-  const totalCost = agents.reduce((s, a) => s + a.cost, 0);
 
   // Track agent counts per project for the tab badges. Hydrate from registry
   // on mount, then update from broadcast events for all projects (not just
@@ -674,9 +665,6 @@ export function App() {
         case 'go-agents':
           setActive('agents');
           break;
-        case 'go-spend':
-          setActive('cost');
-          break;
         case 'go-history':
           setActive('history');
           break;
@@ -742,15 +730,11 @@ export function App() {
       <TopBar
         workspace={workspace}
         model={settings?.defaultModel ?? 'claude-sonnet-4-6'}
-        totalTokens={totalTokens}
-        totalCost={totalCost}
-        viewMode={viewMode}
         onChangeWorkspace={async () => {
           if (!activeProjectId) return;
           const { path } = await window.api.pickWorkspace();
           if (path) await setProjectWorkspace(activeProjectId, path);
         }}
-        onViewModeChange={setViewMode}
       />
       <ProjectTabs
         projects={projects}
@@ -770,88 +754,85 @@ export function App() {
 
         {isHome && activeProjectId ? (
           <>
-            <DirectorPane
-              width={dirW}
-              messages={messages}
-              agents={agents}
-              busy={busy}
-              mode={mode}
-              model={directorModel}
-              effort={directorEffort}
-              directorProvider={directorProvider}
-              projectProvider={activeProvider}
-              onModeChange={setMode}
-              onModelChange={(m) => {
-                if (activeProjectId) void setProjectDirectorModel(activeProjectId, m);
-              }}
-              onEffortChange={(e) => {
-                if (activeProjectId) void setProjectDirectorEffort(activeProjectId, e);
-              }}
-              onDirectorProviderChange={(p) => {
-                if (!activeProjectId) return;
-                // null = clear override → fall back to project default.
-                void setProjectDirectorProvider(
-                  activeProjectId,
-                  p === activeProvider ? null : p,
-                );
-              }}
-              autoBranch={activeProject?.autoBranch === true}
-              onAutoBranchChange={(next) => {
-                if (!activeProjectId) return;
-                void setProjectAutoBranch(activeProjectId, next);
-              }}
-              onSend={send}
-              onSpawnPlan={spawnPlan}
-              onSaveAsTemplate={(rows) => setSaveTemplateRows(rows)}
-              onWipe={async () => {
-                if (activeProjectId)
-                  await window.api.wipeDirector(activeProjectId);
-              }}
-              onRewindTo={async (messageId) => {
-                if (!activeProjectId) return;
-                // F5: confirm before nuking. Truncated count is in
-                // the IPC response — surface it post-confirm so the
-                // user knows roughly what they wiped.
-                if (
-                  !window.confirm(
-                    'Rewind the Director chat to this message?\n\n' +
-                      'Every message after this point will be deleted from ' +
-                      'the conversation and the next turn will start a fresh ' +
-                      'session (no past memory). This cannot be undone.',
-                  )
-                ) {
-                  return;
-                }
-                const r = await window.api.rewindDirector(
-                  activeProjectId,
-                  messageId,
-                );
-                if (r.ok) {
-                  await refreshDirector();
-                }
-              }}
-              viewMode={viewMode}
-              projectId={activeProjectId}
-              onSlashAction={runBuiltinAction}
-            />
-            <ResizeHandle
-              value={dirW}
-              onChange={setDirW}
-              min={300}
-              max={640}
-              edge="left"
-            />
-            <AgentsPane
+            <CanvasView
               agents={agents}
               selectedId={selectedId}
-              expanded={expanded}
-              workspace={workspace}
+              onSelectAgent={setSelectedId}
+              director={
+                <DirectorPane
+                  width={DIRECTOR_NODE_W}
+                  messages={messages}
+                  agents={agents}
+                  busy={busy}
+                  mode={mode}
+                  model={directorModel}
+                  effort={directorEffort}
+                  directorProvider={directorProvider}
+                  projectProvider={activeProvider}
+                  onModeChange={setMode}
+                  onModelChange={(m) => {
+                    if (activeProjectId)
+                      void setProjectDirectorModel(activeProjectId, m);
+                  }}
+                  onEffortChange={(e) => {
+                    if (activeProjectId)
+                      void setProjectDirectorEffort(activeProjectId, e);
+                  }}
+                  onDirectorProviderChange={(p) => {
+                    if (!activeProjectId) return;
+                    // null = clear override → fall back to project default.
+                    void setProjectDirectorProvider(
+                      activeProjectId,
+                      p === activeProvider ? null : p,
+                    );
+                  }}
+                  autoBranch={activeProject?.autoBranch === true}
+                  onAutoBranchChange={(next) => {
+                    if (!activeProjectId) return;
+                    void setProjectAutoBranch(activeProjectId, next);
+                  }}
+                  onSend={send}
+                  onSpawnPlan={spawnPlan}
+                  onSaveAsTemplate={(rows) => setSaveTemplateRows(rows)}
+                  onWipe={async () => {
+                    if (activeProjectId)
+                      await window.api.wipeDirector(activeProjectId);
+                  }}
+                  onRewindTo={async (messageId) => {
+                    if (!activeProjectId) return;
+                    // F5: confirm before nuking. Truncated count is in
+                    // the IPC response — surface it post-confirm so the
+                    // user knows roughly what they wiped.
+                    if (
+                      !window.confirm(
+                        'Rewind the Director chat to this message?\n\n' +
+                          'Every message after this point will be deleted from ' +
+                          'the conversation and the next turn will start a fresh ' +
+                          'session (no past memory). This cannot be undone.',
+                      )
+                    ) {
+                      return;
+                    }
+                    const r = await window.api.rewindDirector(
+                      activeProjectId,
+                      messageId,
+                    );
+                    if (r.ok) {
+                      await refreshDirector();
+                    }
+                  }}
+                  viewMode="canvas"
+                  projectId={activeProjectId}
+                  onSlashAction={runBuiltinAction}
+                />
+              }
               projectId={activeProjectId}
+              workspace={workspace}
               defaultModel={spawnDefaultModel}
               defaultEffort={spawnDefaultEffort}
-              spawning={spawning}
-              viewMode={viewMode}
               provider={activeProject?.provider ?? 'claude'}
+              spawning={spawning}
+              setSpawning={setSpawning}
               onboardingBanner={
                 onboardingNeeded
                   ? {
@@ -861,9 +842,6 @@ export function App() {
                     }
                   : undefined
               }
-              setSpawning={setSpawning}
-              onSelect={setSelectedId}
-              onToggle={toggle}
             />
             {!drawerCollapsed && (
               <ResizeHandle
@@ -905,8 +883,6 @@ export function App() {
             projectProvider={activeProject?.provider ?? null}
             directorProvider={activeProject ? directorProvider : null}
           />
-        ) : active === 'cost' ? (
-          <SpendScreen onDeepLink={(rail) => setActive(rail)} />
         ) : active === 'history' ? (
           <HistoryScreen
             projects={projects}

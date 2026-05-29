@@ -10,7 +10,6 @@ export type BuiltinAction =
   | 'wipe-director'
   | 'open-usage'
   | 'go-agents'
-  | 'go-spend'
   | 'go-history'
   | 'go-settings'
   | 'go-tools'
@@ -45,20 +44,6 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
     body: '',
     scope: 'builtin',
     action: 'go-agents',
-  },
-  {
-    name: 'spend',
-    description: 'Switch to the Spend rail.',
-    body: '',
-    scope: 'builtin',
-    action: 'go-spend',
-  },
-  {
-    name: 'cost',
-    description: 'Alias for /spend.',
-    body: '',
-    scope: 'builtin',
-    action: 'go-spend',
   },
   {
     name: 'history',
