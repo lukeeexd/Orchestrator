@@ -217,6 +217,9 @@ export interface UpdaterStateSnapshot {
   secondaryDownloadUrl?: string;
 }
 
+/** UI theme preference. 'system' tracks the OS prefers-color-scheme live. */
+export type ThemeMode = 'light' | 'dark' | 'system';
+
 export interface Settings {
   /** Anthropic Console API key (sk-ant-...). For Pro/Team plans, leave empty and use oauthToken or auto-discovery. */
   apiKey: string;
@@ -246,6 +249,8 @@ export interface Settings {
    * everywhere" model for users who don't want the duplication.
    */
   copyGlobalSubsToNewProjects: boolean;
+  /** UI theme: 'light' | 'dark' | 'system' (follows the OS). */
+  theme: ThemeMode;
 }
 
 export interface SpawnAgentResponse {

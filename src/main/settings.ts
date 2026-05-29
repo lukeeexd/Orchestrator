@@ -72,6 +72,9 @@ const DEFAULTS: Settings = {
   // global-applies-everywhere model is the default; users who want
   // per-project customization opt in via the Settings checkbox.
   copyGlobalSubsToNewProjects: false,
+  // UI theme. 'system' follows the OS prefers-color-scheme (live); backfills
+  // onto older settings.json via the {...DEFAULTS, ...parsed} merge on read.
+  theme: 'system',
 };
 
 let cached: Settings | null = null;

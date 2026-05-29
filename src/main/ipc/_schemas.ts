@@ -123,6 +123,9 @@ export const partialSettingsSchema = z
     defaultBudgetTokens: z.number().nonnegative(),
     defaultBudgetSeconds: z.number().nonnegative(),
     copyGlobalSubsToNewProjects: z.boolean(),
+    // Without this, the .partial() z.object STRIPS the unknown `theme` key
+    // and the setting never persists through setSettings.
+    theme: z.enum(['light', 'dark', 'system']),
   })
   .partial();
 

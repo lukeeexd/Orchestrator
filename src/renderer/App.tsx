@@ -13,6 +13,7 @@ import { useLocalStorageState } from './hooks/useLocalStorageState';
 import { useAgents } from './hooks/useAgents';
 import { useDirector } from './hooks/useDirector';
 import { useSettings } from './hooks/useSettings';
+import { useTheme } from './hooks/useTheme';
 import { useProjects } from './hooks/useProjects';
 import { useMarketplace } from './hooks/useMarketplace';
 import { TopBar } from './components/TopBar';
@@ -125,7 +126,10 @@ export function App() {
     })();
   }, []);
 
-  const { settings } = useSettings();
+  const { settings, save: saveSettings } = useSettings();
+  // Resolve + apply the theme (data-theme on <html>); returns 'light'|'dark'
+  // for the canvas, which colours its edges/grid in JS.
+  const resolvedTheme = useTheme();
   const {
     projects,
     activeId: activeProjectId,
@@ -729,7 +733,10 @@ export function App() {
     <div className="app">
       <TopBar
         workspace={workspace}
-        model={settings?.defaultModel ?? 'claude-sonnet-4-6'}
+        model={settings?.defaultModel ?? defaultModelForProvider('claude')}
+        onChangeModel={(m) => void saveSettings({ defaultModel: m })}
+        resolvedTheme={resolvedTheme}
+        onToggleTheme={(m) => void saveSettings({ theme: m })}
         onChangeWorkspace={async () => {
           if (!activeProjectId) return;
           const { path } = await window.api.pickWorkspace();
@@ -758,6 +765,7 @@ export function App() {
               agents={agents}
               selectedId={selectedId}
               onSelectAgent={setSelectedId}
+              theme={resolvedTheme}
               director={
                 <DirectorPane
                   width={DIRECTOR_NODE_W}

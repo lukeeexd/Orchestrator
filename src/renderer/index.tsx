@@ -1,3 +1,6 @@
+// FIRST — sets data-theme on <html> before any paint, so launching in dark
+// mode doesn't flash a light frame.
+import './preTheme';
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/jetbrains-mono/600.css';
