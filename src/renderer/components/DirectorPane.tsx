@@ -24,6 +24,7 @@ import { Icon } from './Icon';
 import { AttachmentThumb } from './AttachmentThumb';
 import { PlanCard } from './PlanCard';
 import { PRDCard } from './PRDCard';
+import { QuestionsCard } from './QuestionsCard';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
 import { DirectorStream } from './DirectorStream';
@@ -68,6 +69,8 @@ interface Props {
     mode: DirectorMode,
     attachments?: string[],
   ) => Promise<void>;
+  /** N8: submit clarifying-question answers back to the Director (folds into the next turn). */
+  onSubmitAnswers: (composed: string) => Promise<void>;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   /** Open the Save-as-template dialog with the currently-edited rows. */
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
@@ -109,6 +112,7 @@ export function DirectorPane({
   autoBranch,
   onAutoBranchChange,
   onSend,
+  onSubmitAnswers,
   onSpawnPlan,
   onSaveAsTemplate,
   onWipe,
@@ -199,6 +203,7 @@ export function DirectorPane({
           onSpawnPlan={onSpawnPlan}
           onSaveAsTemplate={onSaveAsTemplate}
           onRewindTo={onRewindTo}
+          onSubmitAnswers={onSubmitAnswers}
         />
       ) : messages.length === 0 ? (
         <EmptyChat mode={mode} />
@@ -209,6 +214,7 @@ export function DirectorPane({
           onSpawnPlan={onSpawnPlan}
           onSaveAsTemplate={onSaveAsTemplate}
           onRewindTo={onRewindTo}
+          onSubmitAnswers={onSubmitAnswers}
         />
       )}
 
@@ -368,12 +374,14 @@ function Chat({
   onSpawnPlan,
   onSaveAsTemplate,
   onRewindTo,
+  onSubmitAnswers,
 }: {
   messages: DirectorMessage[];
   mode: DirectorMode;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
   onRewindTo: (messageId: string) => Promise<void>;
+  onSubmitAnswers: (composed: string) => Promise<void>;
 }) {
   const tailRef = useRef<HTMLDivElement | null>(null);
   // M11: also pin to bottom when an existing message's body
@@ -403,6 +411,7 @@ function Chat({
           }
           onRewindTo={onRewindTo}
           isLastMessage={idx === messages.length - 1}
+          onSubmitAnswers={onSubmitAnswers}
         />
       ))}
       <div ref={tailRef} />
@@ -418,6 +427,7 @@ function Message({
   prevPlanRows,
   onRewindTo,
   isLastMessage,
+  onSubmitAnswers,
 }: {
   message: DirectorMessage;
   mode: DirectorMode;
@@ -426,6 +436,7 @@ function Message({
   prevPlanRows?: PlanRow[];
   onRewindTo: (messageId: string) => Promise<void>;
   isLastMessage: boolean;
+  onSubmitAnswers: (composed: string) => Promise<void>;
 }) {
   // F5: don't offer rewind on the currently-streaming Director turn
   // (the message is mid-write) or on the very last message (there's
@@ -477,6 +488,12 @@ function Message({
         />
       )}
       {message.prd && <PRDCard prd={message.prd} />}
+      {message.questions && message.questions.length > 0 && (
+        <QuestionsCard
+          questions={message.questions}
+          onSubmitAnswers={onSubmitAnswers}
+        />
+      )}
       {message.redirect && (
         <div className="dir-redirect">
           <div className="dir-redirect-head">

@@ -568,6 +568,14 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE director_messages ADD COLUMN critique TEXT;`);
     },
   },
+  {
+    version: 30,
+    up: (db) => {
+      // N8 clarifying questions: the Director's pre-plan questions stored as
+      // JSON on its message. NULL on older rows (no card).
+      db.exec(`ALTER TABLE director_messages ADD COLUMN questions TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

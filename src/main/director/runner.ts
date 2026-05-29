@@ -477,7 +477,7 @@ class DirectorSession {
       // block to emit (Director acts as an advisor), so no reminder.
       const codexReminder =
         mode === 'auto'
-          ? '\n\n---\n\nREMINDER (auto mode): Always emit the `orchestrator-plan` fenced JSON block, even for a single-agent task. Do not describe the plan in prose only — our parser needs the block to auto-spawn anything. If the task is trivial, emit a one-row plan.'
+          ? '\n\n---\n\nREMINDER (auto mode): Emit a fenced JSON block — either `orchestrator-plan` to spawn the fleet, OR `orchestrator-questions` (max 3) if the task is too ambiguous to plan well. Never both. Do not answer in prose only — our parser needs the block. If the task is trivial, just emit a one-row plan; don\'t ask.'
           : mode === 'prd'
             ? '\n\n---\n\nREMINDER (prd mode): Always emit the `orchestrator-prd` fenced JSON block. Do not write the PRD in prose only — our parser needs the block to render the PRD card.'
             : '';
@@ -570,11 +570,16 @@ class DirectorSession {
         }
       }
 
-      const { text, plan, redirect, prd } = extractDirectives(bodyBuf);
+      const { text, plan, redirect, prd, questions } = extractDirectives(bodyBuf);
       // PRD mode is "advisor that emits a PRD" — if the Director also
       // emits a plan block in PRD mode, drop the plan so PlanCard's
       // spawn button doesn't appear where spawning isn't the intent.
       const effectivePlan = mode === 'prd' && prd ? null : plan;
+      // N8: clarifying questions are an AUTO-mode alternative to a plan. A plan
+      // always wins (drop questions if both somehow appear), and they never
+      // render outside auto mode (manual = prose advice, prd = the brief).
+      const effectiveQuestions =
+        effectivePlan || mode !== 'auto' ? undefined : questions ?? undefined;
       const fallbackBody = runtimeError
         ? `Error: ${runtimeError}`
         : '(empty response)';
@@ -596,11 +601,16 @@ class DirectorSession {
           })) ?? undefined;
       }
       this.patchMessage(directorMessage.id, {
-        body: text || (effectivePlan || redirect || prd ? '' : fallbackBody),
+        body:
+          text ||
+          (effectivePlan || redirect || prd || effectiveQuestions
+            ? ''
+            : fallbackBody),
         plan: effectivePlan ?? undefined,
         redirect: redirect ?? undefined,
         prd: prd ?? undefined,
         critique,
+        questions: effectiveQuestions,
         live: false,
       });
     } catch (e) {

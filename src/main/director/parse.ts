@@ -5,6 +5,7 @@ import type {
   ProjectPrd,
   PlanCritique,
   CritiqueSeverity,
+  ClarifyingQuestion,
   RedirectInstruction,
 } from '../../shared/types';
 
@@ -28,12 +29,15 @@ interface ParseResult {
   redirect: RedirectInstruction | null;
   /** P15: Parsed PRD, if a valid `orchestrator-prd` block was found. */
   prd: ProjectPrd | null;
+  /** N8: clarifying questions, if a valid `orchestrator-questions` block was found. */
+  questions: ClarifyingQuestion[] | null;
 }
 
 const PLAN_RE = /```orchestrator-plan\s*\n([\s\S]*?)\n```/i;
 const REDIRECT_RE = /```orchestrator-redirect\s*\n([\s\S]*?)\n```/i;
 const PRD_RE = /```orchestrator-prd\s*\n([\s\S]*?)\n```/i;
 const CRITIQUE_RE = /```orchestrator-critique\s*\n([\s\S]*?)\n```/i;
+const QUESTIONS_RE = /```orchestrator-questions\s*\n([\s\S]*?)\n```/i;
 
 const VALID_SEVERITIES: CritiqueSeverity[] = ['info', 'warn', 'error'];
 
@@ -181,6 +185,32 @@ export function extractCritique(body: string): PlanCritique | null {
   return m ? parseCritique(m[1].trim()) : null;
 }
 
+/**
+ * Parse the JSON body of an `orchestrator-questions` block (N8). A JSON array
+ * of { question, why } (same array envelope as plan). Per-item guards mirror
+ * parsePlan; empty / all-dropped returns null so a clean turn renders no card.
+ * No hard count cap here — the cap is prompt-only (matches parsePrd's
+ * open_questions, which the parser also doesn't truncate).
+ */
+function parseQuestions(raw: string): ClarifyingQuestion[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+  const out: ClarifyingQuestion[] = [];
+  for (const item of parsed) {
+    if (item == null || typeof item !== 'object') continue;
+    const q = item as Record<string, unknown>;
+    if (typeof q.question !== 'string' || !q.question.trim()) continue;
+    if (typeof q.why !== 'string' || !q.why.trim()) continue;
+    out.push({ question: q.question.trim(), why: q.why.trim() });
+  }
+  return out.length > 0 ? out : null;
+}
+
 function parseRedirect(raw: string): RedirectInstruction | null {
   let parsed: unknown;
   try {
@@ -207,6 +237,7 @@ export function extractDirectives(body: string): ParseResult {
   let plan: PlanRow[] | null = null;
   let redirect: RedirectInstruction | null = null;
   let prd: ProjectPrd | null = null;
+  let questions: ClarifyingQuestion[] | null = null;
 
   const planMatch = PLAN_RE.exec(body);
   if (planMatch) {
@@ -235,7 +266,16 @@ export function extractDirectives(body: string): ParseResult {
     }
   }
 
-  return { text: text.trim(), plan, redirect, prd };
+  const questionsMatch = QUESTIONS_RE.exec(text);
+  if (questionsMatch) {
+    const parsed = parseQuestions(questionsMatch[1].trim());
+    if (parsed) {
+      questions = parsed;
+      text = text.replace(QUESTIONS_RE, '');
+    }
+  }
+
+  return { text: text.trim(), plan, redirect, prd, questions };
 }
 
 /** @deprecated Use `extractDirectives` — keeps the old single-purpose name working. */

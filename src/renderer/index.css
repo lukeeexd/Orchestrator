@@ -2232,6 +2232,38 @@ body.resizing * { cursor: col-resize !important; }
   font-style: italic;
 }
 
+/* N8 clarifying-questions card — reuses the prd-card chrome; the section
+   label IS the question, with a muted "why" + an answer textarea below. */
+.questions-card .prd-section-label {
+  font-weight: 600;
+  color: var(--text);
+}
+.questions-why {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  margin-bottom: 5px;
+}
+.questions-answer {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--sub);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  resize: vertical;
+  outline: none;
+}
+.questions-answer:focus {
+  border-color: var(--accent-line);
+}
+.questions-answer:disabled {
+  opacity: 0.6;
+}
+
 /* S5: fallback rendered by ErrorBoundary when the renderer throws.
    Intentionally minimal — the React tree below is in an unknown
    state by the time we get here, so the only useful affordance is

@@ -800,6 +800,7 @@ export function App() {
                     void setProjectAutoBranch(activeProjectId, next);
                   }}
                   onSend={send}
+                  onSubmitAnswers={(composed) => send(composed, mode)}
                   onSpawnPlan={spawnPlan}
                   onSaveAsTemplate={(rows) => setSaveTemplateRows(rows)}
                   onWipe={async () => {

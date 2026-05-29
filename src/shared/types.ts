@@ -263,6 +263,18 @@ export interface PlanCritique {
   plan_findings: Array<{ severity: CritiqueSeverity; issue: string }>;
 }
 
+/**
+ * N8: a clarifying question the Director asks in auto mode when a task is too
+ * ambiguous to plan well. The user answers in a Q&A card; the answers fold
+ * back into the next Director turn, which then emits a grounded plan. Distinct
+ * from PRD mode's static `open_questions` (those don't fold back).
+ */
+export interface ClarifyingQuestion {
+  question: string;
+  /** Why the answer matters — what it changes about the plan. */
+  why: string;
+}
+
 export type DirectorWho = 'user' | 'director' | 'system';
 
 /**
@@ -312,6 +324,8 @@ export interface DirectorMessage {
   prd?: ProjectPrd;
   /** N7: advisory Plan Critic findings, attached to a plan message before spawn. */
   critique?: PlanCritique;
+  /** N8: clarifying questions the Director asks (auto mode) instead of a plan. */
+  questions?: ClarifyingQuestion[];
   live?: boolean;
   attachments?: AttachmentRef[];
 }
