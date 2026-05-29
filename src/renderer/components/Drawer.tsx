@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   Agent,
   EffortLevel,
@@ -467,12 +467,30 @@ function TabHead({
 }
 
 function LogsTab({ agent }: { agent: Agent }) {
-  const tail = agent.log.slice(-8);
+  const lines = agent.log;
   // F12: pinned notes for this agent's log lines. The drawer is the
   // place users park to read + annotate, so the hook lives here
   // (rather than at the AgentRow level where notes wouldn't
   // typically be authored from the rail).
   const { notes, setNote } = useLogNotes(agent.id);
+  // QOL-1: the FULL run log, scrollable, newest at the bottom (the inspector
+  // used to show only the last 8 lines after the full-stream pane was deleted
+  // in the Flightdeck redesign). Stick to the bottom while a live agent streams,
+  // but pause auto-scroll if the user scrolls up to read — mirrors the Director
+  // stream. Capped at LOG_TAIL_CAP (2000) in main; LogLineRow is memoized, so a
+  // plain render is fine until/unless that cap actually lags (then: virtualize).
+  const logRef = useRef<HTMLDivElement | null>(null);
+  const [stick, setStick] = useState(true);
+  const onLogScroll = () => {
+    const el = logRef.current;
+    if (!el) return;
+    setStick(el.scrollHeight - el.scrollTop - el.clientHeight < 24);
+  };
+  useEffect(() => {
+    if (!stick) return;
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines.length, stick]);
   return (
     <>
       <div className="field">
@@ -490,18 +508,24 @@ function LogsTab({ agent }: { agent: Agent }) {
         </span>
       </div>
       <div className="field">
-        <span className="lbl">Last {tail.length} log lines</span>
-        {tail.length > 0 ? (
+        <span className="lbl">
+          Log{lines.length > 0 ? ` · ${lines.length} line${lines.length === 1 ? '' : 's'}` : ''}
+        </span>
+        {lines.length > 0 ? (
           <div
+            ref={logRef}
             className="agent-log"
+            onScroll={onLogScroll}
             style={{
               padding: 8,
               background: 'var(--sub)',
               border: '1px solid var(--border)',
               borderRadius: 6,
+              maxHeight: '52vh',
+              overflowY: 'auto',
             }}
           >
-            {tail.map((l, i) => {
+            {lines.map((l, i) => {
               const lineKey = computeLogLineKey(l);
               return (
                 // M11: composite key — see AgentRow for rationale.
