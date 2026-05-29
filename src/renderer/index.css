@@ -126,8 +126,21 @@
   70%  { transform: scale(1.9); opacity: 0; }
   100% { transform: scale(1.9); opacity: 0; }
 }
+/* Live handoff / active plan-lane marching-ants, faithful to the mockup's .flow
+   (dasharray 5/9, 1.1s linear, offset → -14). Driven by a CUSTOM class, NOT
+   React Flow's `animated` flag — `.react-flow__edge.animated path` hard-sets its
+   own dasharray + cadence and would override ours. `className` on an Edge lands
+   on the wrapper <g>, so we reach the stroke via the descendant path selector. */
+.react-flow__edge.cv-flow .react-flow__edge-path {
+  stroke-dasharray: 5 9;
+  animation: cv-dash 1.1s linear infinite;
+}
+@keyframes cv-dash {
+  to { stroke-dashoffset: -14; }
+}
 @media (prefers-reduced-motion: reduce) {
   .cv-dot.run::after { animation: none; opacity: 0; }
+  .react-flow__edge.cv-flow .react-flow__edge-path { animation: none; }
 }
 .cv-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
 .cv-nm {

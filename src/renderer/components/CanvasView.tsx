@@ -9,15 +9,21 @@ import {
 import {
   ReactFlow,
   Background,
+  BackgroundVariant,
   Controls,
   Handle,
   Position,
   useNodesState,
   useEdgesState,
+  useInternalNode,
+  getBezierPath,
+  BaseEdge,
   MarkerType,
   type Node,
   type Edge,
   type NodeProps,
+  type EdgeProps,
+  type InternalNode,
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -102,7 +108,19 @@ function AgentNodeView({ data, selected }: NodeProps) {
       className={`cv-node ${statusClass(status)}${selected ? ' sel' : ''}`}
       style={{ width: NODE_W }}
     >
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+      {/* A source + target handle on every side, all hidden. buildEdges picks
+          the handle on whichever side FACES the connected node, so an edge
+          enters/exits the natural side (left/right/top/bottom) instead of
+          always the same one — and never loops backward across a box. Each is
+          id'd; every edge names the exact handle it uses. */}
+      <Handle id="tl" type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle id="tt" type="target" position={Position.Top} style={{ opacity: 0 }} />
+      <Handle id="tr" type="target" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle id="tb" type="target" position={Position.Bottom} style={{ opacity: 0 }} />
+      <Handle id="sl" type="source" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle id="st" type="source" position={Position.Top} style={{ opacity: 0 }} />
+      <Handle id="sr" type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle id="sb" type="source" position={Position.Bottom} style={{ opacity: 0 }} />
       <span className="cv-strip" />
       <div className="cv-head">
         <span className={'cv-dot' + (running ? ' run' : '')} />
@@ -126,7 +144,6 @@ function AgentNodeView({ data, selected }: NodeProps) {
           <span className="cvv">{String(data.elapsed)}</span>
         </div>
       </div>
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
 }
@@ -153,24 +170,80 @@ function DirectorNodeView() {
       }}
     >
       {slot}
-      {/* Visible fan-origin dot: every plan lane launches from the Director's
-          right edge, like the mockup's edge-dots (one handle = one dot). */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={{
-          width: 9,
-          height: 9,
-          background: '#6f9bff',
-          border: '2px solid #161d29',
-          opacity: 1,
-        }}
-      />
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
 }
 
 const nodeTypes = { agent: AgentNodeView, director: DirectorNodeView };
+
+// A node centre in cluster-local coords (pre-normalization; only relative
+// deltas matter). Used to pick which side an edge should leave/enter.
+type Pt = { x: number; y: number };
+
+/** Which side of `from` faces `to` → a handle suffix (l/r/t/b). */
+function sideToward(from: Pt, to: Pt): 'l' | 'r' | 't' | 'b' {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'r' : 'l';
+  return dy >= 0 ? 'b' : 't';
+}
+
+// ── Floating edge ──────────────────────────────────────────────
+// Renders the bezier from the boundary point of each node that FACES the other
+// node, recomputed from LIVE node positions — so edges follow a node when it's
+// dragged and always leave/enter the natural side. The edge still carries valid
+// sourceHandle/targetHandle (see buildEdges) so React Flow can resolve handle
+// positions and doesn't drop it; this component overrides the geometry.
+function nodeIntersection(node: InternalNode, other: InternalNode): Pt {
+  const w = (node.measured.width ?? NODE_W) / 2;
+  const h = (node.measured.height ?? NODE_H) / 2;
+  const cx = node.internals.positionAbsolute.x + w;
+  const cy = node.internals.positionAbsolute.y + h;
+  const ox =
+    other.internals.positionAbsolute.x + (other.measured.width ?? NODE_W) / 2;
+  const oy =
+    other.internals.positionAbsolute.y + (other.measured.height ?? NODE_H) / 2;
+  const xx = (ox - cx) / (2 * w) - (oy - cy) / (2 * h);
+  const yy = (ox - cx) / (2 * w) + (oy - cy) / (2 * h);
+  const a = 1 / (Math.abs(xx) + Math.abs(yy) || 1);
+  const dx = a * xx;
+  const dy = a * yy;
+  return { x: w * (dx + dy) + cx, y: h * (-dx + dy) + cy };
+}
+
+function boundarySide(node: InternalNode, point: Pt): Position {
+  const nx = Math.round(node.internals.positionAbsolute.x);
+  const ny = Math.round(node.internals.positionAbsolute.y);
+  const nw = node.measured.width ?? NODE_W;
+  const px = Math.round(point.x);
+  const py = Math.round(point.y);
+  if (px <= nx + 1) return Position.Left;
+  if (px >= nx + nw - 1) return Position.Right;
+  if (py <= ny + 1) return Position.Top;
+  return Position.Bottom;
+}
+
+function FloatingEdge({ id, source, target, markerEnd, style }: EdgeProps) {
+  const sourceNode = useInternalNode(source);
+  const targetNode = useInternalNode(target);
+  if (!sourceNode || !targetNode) return null;
+  const sp = nodeIntersection(sourceNode, targetNode);
+  const tp = nodeIntersection(targetNode, sourceNode);
+  const [path] = getBezierPath({
+    sourceX: sp.x,
+    sourceY: sp.y,
+    sourcePosition: boundarySide(sourceNode, sp),
+    targetX: tp.x,
+    targetY: tp.y,
+    targetPosition: boundarySide(targetNode, tp),
+  });
+  // The edge's className (e.g. cv-flow) is applied by React Flow to the wrapper
+  // <g>, so the marching-ants selector still reaches BaseEdge's path.
+  return <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />;
+}
+
+const edgeTypes = { floating: FloatingEdge };
 
 interface ChainModel {
   ordered: Agent[];
@@ -189,8 +262,13 @@ interface ChainModel {
  */
 function buildChainModel(agents: Agent[]): ChainModel {
   const ids = new Set(agents.map((a) => a.id));
+  // Break startedAt ties by the agents-array order (the fleet arrives in spawn
+  // order), NOT by id — so near-simultaneous spawns still stack in plan order
+  // instead of scrambling by uuid.
+  const order = new Map(agents.map((a, i) => [a.id, i] as const));
   const byStart = (a: Agent, b: Agent) =>
-    a.startedAt - b.startedAt || (a.id < b.id ? -1 : 1);
+    a.startedAt - b.startedAt ||
+    (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0);
 
   // The Director's sequential (non-fork) chain defines handoff + plan order.
   const chain = agents
@@ -321,17 +399,28 @@ const REDUCE_MOTION =
   typeof window !== 'undefined' &&
   !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
+// Edge palette, faithful to the mockup's SVG edge styles (.edge / .edge.dim /
+// .flow). Active Director plan-lanes ride the soft accent (--acc-edge); handoff
+// + live arrowheads use the full accent; settled lanes dim to dashed slate.
+const ACC_EDGE = 'rgba(29,78,216,0.55)'; // active director plan-lane stroke
+const ACC = '#1d4ed8'; // handoff stroke + active arrowheads
+const DIM = 'rgba(58,68,92,0.34)'; // settled / dim slate stroke
+const DIM_ARROW = 'rgba(58,68,92,0.5)'; // arrowhead on settled lanes
+const FORK = '#94a3b8'; // fork slate
+
 /**
  * Build the edge set that draws the orchestration flow as smooth cubic beziers
- * (type 'default' — matches the mockup's hand-drawn lanes, not stepped elbows).
- * Three families, exactly one incoming edge per agent, derived from the shared
+ * (the default edge type — matches the mockup's hand-drawn lanes). Three
+ * families, exactly one incoming edge per agent, derived from the shared
  * ChainModel so geometry and edges can never drift:
- *  - fork ancestry: parent -> fork (dashed slate), from `forkedFromId`;
- *  - handoff: previous chain agent -> this (solid accent, animated when live);
- *  - Director plan-lane: Director -> chain head / standalone agent, dimmed +
- *    dashed once the lane has settled (done / aborted / paused).
- * Cheap to rebuild on every update. Handles stay Left-target / Right-source
- * (no Top/Bottom, no ids) so edges never silently vanish.
+ *  - fork ancestry: parent -> fork (dashed slate);
+ *  - handoff: previous chain agent -> this (solid accent; marching-ants when live);
+ *  - Director plan-lane: Director -> chain head / standalone (soft accent;
+ *    quieter solid slate once settled).
+ * Each edge attaches to the handle on whichever SIDE faces its neighbour (see
+ * sideToward) — so it leaves/enters the natural side and never loops backward
+ * across a box. Solid strokes (full lines read better than dashes); only the
+ * fork keeps a dash, to mark it as ancestry rather than flow.
  */
 function buildEdges(agents: Agent[], cm: ChainModel): Edge[] {
   const ids = new Set(agents.map((a) => a.id));
@@ -342,46 +431,77 @@ function buildEdges(agents: Agent[], cm: ChainModel): Edge[] {
     color,
   });
 
+  // Cluster-local node centres (relative deltas only — normalization is a
+  // uniform shift, so it can't change which side faces which).
+  const n = agents.length;
+  const clusterHeight = n > 0 ? (n - 1) * ROW_H + NODE_H : NODE_H;
+  const centerOf = (id: string): Pt => {
+    if (id === DIRECTOR_ID) return { x: DIRECTOR_NODE_W / 2, y: clusterHeight / 2 };
+    const i = cm.rowIndex.get(id) ?? 0;
+    const d = cm.depthOf.get(id) ?? 0;
+    return { x: CLUSTER_LEFT + d * COL_STEP + NODE_W / 2, y: i * ROW_H + NODE_H / 2 };
+  };
+  // Pick the facing-side handle for each end. The Director has a single
+  // (unnamed) source handle; agents have id'd handles on every side.
+  const handles = (sourceId: string, targetId: string) => {
+    const sc = centerOf(sourceId);
+    const tc = centerOf(targetId);
+    return {
+      sourceHandle: sourceId === DIRECTOR_ID ? undefined : 's' + sideToward(sc, tc),
+      targetHandle: 't' + sideToward(tc, sc),
+    };
+  };
+
   return agents.map((a): Edge => {
+    // `live` agents get the marching-ants flow via the `cv-flow` class — NOT
+    // React Flow's `animated` flag, which hard-sets its own cadence. `live` is
+    // reduced-motion gated, so no edge gets `cv-flow` under reduced motion.
     const live = !REDUCE_MOTION && a.status === 'running';
     const settled =
       a.status === 'done' || a.status === 'aborted' || a.status === 'paused';
+    // (1) fork ancestry: parent -> fork, dashed slate, never animated.
     if (a.forkedFromId && ids.has(a.forkedFromId)) {
       return {
         id: `fork-${a.id}`,
         source: a.forkedFromId,
         target: a.id,
-        type: 'default',
+        ...handles(a.forkedFromId, a.id),
+        type: 'floating',
         label: 'fork',
         animated: false,
-        markerEnd: arrow('#94a3b8'),
-        style: { stroke: '#94a3b8', strokeWidth: 1.5, strokeDasharray: '5 4' },
+        markerEnd: arrow(FORK),
+        style: { stroke: FORK, strokeWidth: 1.5, strokeDasharray: '5 4' },
         labelStyle: { fill: '#5b6473', fontSize: 10, fontFamily: 'system-ui, sans-serif' },
         labelBgStyle: { fill: '#eceef3', fillOpacity: 0.9 },
       };
     }
+    // (2) handoff: previous chain agent -> this. Live = accent marching-ants;
+    //     idle = solid accent; settled = quieter solid slate (still a full line).
     const prev = cm.prevOf.get(a.id);
     if (prev) {
       return {
         id: `ho-${a.id}`,
         source: prev,
         target: a.id,
-        type: 'default',
-        animated: live,
-        markerEnd: arrow('#1d4ed8'),
-        style: { stroke: '#1d4ed8', strokeWidth: 1.75 },
+        ...handles(prev, a.id),
+        type: 'floating',
+        ...(live ? { className: 'cv-flow' } : {}),
+        markerEnd: arrow(settled ? DIM_ARROW : ACC),
+        style: { stroke: settled ? DIM : ACC, strokeWidth: settled ? 1.4 : 1.6 },
       };
     }
+    // (3) Director plan-lane: Director -> chain head / standalone. Live = soft
+    //     accent marching-ants; active = soft accent (--acc-edge); settled =
+    //     quieter solid slate.
     return {
       id: `e-${a.id}`,
       source: DIRECTOR_ID,
       target: a.id,
-      type: 'default',
-      animated: live,
-      markerEnd: arrow(settled ? 'rgba(58,68,92,0.5)' : '#9aa3b2'),
-      style: settled
-        ? { stroke: 'rgba(58,68,92,0.34)', strokeWidth: 1.4, strokeDasharray: '4 5' }
-        : { stroke: '#9aa3b2', strokeWidth: 1.5 },
+      ...handles(DIRECTOR_ID, a.id),
+      type: 'floating',
+      ...(live ? { className: 'cv-flow' } : {}),
+      markerEnd: arrow(settled ? DIM_ARROW : live ? ACC : 'rgba(29,78,216,0.7)'),
+      style: { stroke: settled ? DIM : ACC_EDGE, strokeWidth: settled ? 1.4 : 1.6 },
     };
   });
 }
@@ -529,6 +649,7 @@ export function CanvasView({
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onInit={(inst) => {
             rfRef.current = inst;
           }}
@@ -545,7 +666,27 @@ export function CanvasView({
           minZoom={0.3}
           maxZoom={1.75}
         >
-          <Background gap={22} size={1} color="#ced4df" />
+          {/* Blueprint graph-paper grid (bold-flightdeck.html .canvas). Two
+              layered <Background> svgs — each needs a UNIQUE id or their
+              <pattern> ids collide (pattern-${rfId}${id}) and only one draws.
+              Layered (not a static CSS gradient) so the grid pans + zooms with
+              the viewport like real graph paper. Order: faint cell lines under,
+              denser dots over. base #eceef3 comes from the wrapper div behind;
+              we leave bgColor unset so both svgs stay transparent and stack. */}
+          <Background
+            id="grid-lines"
+            variant={BackgroundVariant.Lines}
+            gap={26}
+            lineWidth={1}
+            color="rgba(29,49,90,0.045)"
+          />
+          <Background
+            id="grid-dots"
+            variant={BackgroundVariant.Dots}
+            gap={26}
+            size={1}
+            color="rgba(29,49,90,0.10)"
+          />
           <Controls showInteractive={false} />
         </ReactFlow>
         {agents.length === 0 && (
