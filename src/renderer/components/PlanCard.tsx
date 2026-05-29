@@ -194,6 +194,7 @@ export function PlanCard({
               color: 'var(--text-2)',
               fontSize: 10,
               marginLeft: 6,
+              whiteSpace: 'nowrap',
             }}
             title={
               `Changed since the previous plan:` +

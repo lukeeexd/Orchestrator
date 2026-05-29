@@ -518,31 +518,63 @@ html, body {
   font-size: 11px; color: var(--muted);
 }
 
-.mode-toggle {
-  display: inline-flex;
-  background: var(--sub);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 2px;
-  font-size: 10px;
-  gap: 2px;
+/* Director mode dropdown — same geometry as the model picker, just narrower,
+   with a subtle accent tint on Auto so the auto-spawn cue still reads. */
+.mode-select {
+  min-width: 72px;
+  flex-shrink: 0;
 }
-.mode-toggle button {
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  font: inherit; font-size: 10px;
-  padding: 2px 9px;
-  border-radius: 3px;
-  cursor: default;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-.mode-toggle button:hover { color: var(--text-2); }
-.mode-toggle button.on {
-  background: var(--sub-2);
+.mode-select.mode-auto {
   color: var(--accent);
   box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+/* Keep the wipe + overflow buttons fully in view: the model picker yields
+   space (truncates) before the right-hand controls ever clip. */
+.dir-pane-head .model-picker-compact:not(.mode-select) {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.dir-pane-head .icon-btn,
+.dir-pane-head .dir-config-wrap {
+  flex-shrink: 0;
+}
+
+/* ── Director header overflow menu (provider / effort / auto-branch) ── */
+/* The decluttered Director head must let its ⋯ popover escape the 36px
+   header (default .pane-head clips overflow). The menu drops into the chat
+   area, which is still inside the node, so it stays within the node clip. */
+.dir-pane-head {
+  overflow: visible;
+}
+.dir-config-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.dir-config-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 190px;
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.45);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dir-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.dir-config-row > span {
+  white-space: nowrap;
 }
 
 /* ── Project tabs ───────────────────────────────────────────── */

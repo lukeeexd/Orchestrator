@@ -122,9 +122,23 @@ export function DirectorPane({
   onSlashAction,
 }: Props) {
   const [confirmWipe, setConfirmWipe] = useState(false);
+  // Overflow menu for the rarely-changed Director config (provider / effort /
+  // auto-branch) — keeps the header to the primary controls (mode + model).
+  const [configOpen, setConfigOpen] = useState(false);
+  const configRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!configOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (configRef.current && !configRef.current.contains(e.target as Node)) {
+        setConfigOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [configOpen]);
   return (
     <div className="pane director" style={{ width }}>
-      <div className="pane-head">
+      <div className="pane-head dir-pane-head">
         <span className="title">
           <b>Director</b>
         </span>
@@ -147,45 +161,66 @@ export function DirectorPane({
           </span>
         )}
         <ModeToggle mode={mode} onChange={onModeChange} />
-        <select
-          className="text-input settings-select model-picker-compact"
-          value={directorProvider}
-          onChange={(e) =>
-            onDirectorProviderChange(e.target.value as Provider)
-          }
-          title="Director's CLI provider. Can differ from the project's agent default — useful for e.g. running a claude Director over codex specialists. Switching providers resets the Director's session (chat history stays)."
-        >
-          <option value="claude">claude</option>
-          <option value="codex">codex</option>
-        </select>
         <ModelPicker
           value={model}
           onChange={onModelChange}
           compact
           provider={directorProvider}
         />
-        {directorProvider === 'claude' && (
-          <EffortPicker value={effort} onChange={onEffortChange} compact />
-        )}
-        <button
-          className={
-            'icon-btn' + (autoBranch ? ' icon-btn-on' : '')
-          }
-          title={
-            autoBranch
-              ? 'Auto-branch: ON · accepting a plan checks out orchestrator/<planId>-<slug> if the workspace is a clean git repo. Click to disable.'
-              : 'Auto-branch: OFF · plans run on whatever branch you’re on. Click to enable.'
-          }
-          onClick={() => onAutoBranchChange(!autoBranch)}
-        >
-          <Icon name="branch" size={13} />
-        </button>
         <span className="spacer" />
         {busy && (
           <span className="meta" style={{ color: 'var(--accent)' }}>
             streaming
           </span>
         )}
+        <div className="dir-config-wrap" ref={configRef}>
+          <button
+            className={'icon-btn' + (configOpen ? ' icon-btn-on' : '')}
+            title="Director settings — provider, effort, auto-branch"
+            onClick={() => setConfigOpen((v) => !v)}
+          >
+            <Icon name="more" size={14} />
+          </button>
+          {configOpen && (
+            <div className="dir-config-menu">
+              <div className="dir-config-row">
+                <span>Provider</span>
+                <select
+                  className="text-input settings-select"
+                  value={directorProvider}
+                  onChange={(e) =>
+                    onDirectorProviderChange(e.target.value as Provider)
+                  }
+                  title="Director's CLI provider. Can differ from the project's agent default. Switching resets the Director's session (chat history stays)."
+                >
+                  <option value="claude">claude</option>
+                  <option value="codex">codex</option>
+                </select>
+              </div>
+              {directorProvider === 'claude' && (
+                <div className="dir-config-row">
+                  <span>Effort</span>
+                  <EffortPicker value={effort} onChange={onEffortChange} compact />
+                </div>
+              )}
+              <div className="dir-config-row">
+                <span>Auto-branch</span>
+                <button
+                  className={'tb-btn' + (autoBranch ? ' primary' : '')}
+                  style={{ height: 22 }}
+                  onClick={() => onAutoBranchChange(!autoBranch)}
+                  title={
+                    autoBranch
+                      ? 'On · accepting a plan checks out orchestrator/<planId>-<slug> on a clean git repo'
+                      : 'Off · plans run on the current branch'
+                  }
+                >
+                  <Icon name="branch" size={11} /> {autoBranch ? 'On' : 'Off'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         <button
           className="icon-btn"
           title="Wipe chat — drops messages + session memory. Agents stay."
@@ -304,6 +339,12 @@ function ConfirmWipe({
   );
 }
 
+const MODE_LABEL: Record<DirectorMode, string> = {
+  auto: 'Auto',
+  manual: 'Manual',
+  prd: 'PRD',
+};
+
 function ModeToggle({
   mode,
   onChange,
@@ -312,30 +353,19 @@ function ModeToggle({
   onChange: (next: DirectorMode) => void;
 }) {
   return (
-    <div
-      className="mode-toggle"
+    <select
+      className={
+        'text-input settings-select model-picker-compact mode-select mode-' +
+        mode
+      }
+      value={mode}
+      onChange={(e) => onChange(e.target.value as DirectorMode)}
       title="Auto: Director plans and auto-spawns. Manual: Director advises only. PRD: Director writes a Product Requirements Doc instead of a plan."
     >
-      <button
-        className={mode === 'auto' ? 'on' : ''}
-        onClick={() => onChange('auto')}
-      >
-        auto
-      </button>
-      <button
-        className={mode === 'manual' ? 'on' : ''}
-        onClick={() => onChange('manual')}
-      >
-        manual
-      </button>
-      <button
-        className={mode === 'prd' ? 'on' : ''}
-        onClick={() => onChange('prd')}
-        title="PRD mode — Director emits a Product Requirements Doc instead of a plan. Useful for inherited or under-scoped projects."
-      >
-        prd
-      </button>
-    </div>
+      <option value="auto">{MODE_LABEL.auto}</option>
+      <option value="manual">{MODE_LABEL.manual}</option>
+      <option value="prd">{MODE_LABEL.prd}</option>
+    </select>
   );
 }
 

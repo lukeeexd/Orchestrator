@@ -133,11 +133,13 @@ Smaller quality-of-life items (not from the sweep). Add freely.
 
 | ID | Item | Status | Note |
 |----|------|--------|------|
-| QOL-1 | Scrollable full agent-log view in the inspector | `[ ]` | Post-5b regression: the Drawer Logs tab (`Drawer.tsx` `LogsTab`) renders only `agent.log.slice(-8)` — last 8 lines + a count badge that implies more; the old full-stream viewer (`AgentStreamPanel`) was deleted in the Flightdeck redesign. Add a scrollable full log (up to `LOG_TAIL_CAP`, `query.ts`). **This is the one surface where TanStack Virtual earns its keep** if the full log hits the cap — otherwise plain render is fine. |
+| QOL-1 | Scrollable full agent-log view in the inspector | `[x]` v0.37.1 | Post-5b regression: the Drawer Logs tab (`Drawer.tsx` `LogsTab`) renders only `agent.log.slice(-8)` — last 8 lines + a count badge that implies more; the old full-stream viewer (`AgentStreamPanel`) was deleted in the Flightdeck redesign. Add a scrollable full log (up to `LOG_TAIL_CAP`, `query.ts`). **This is the one surface where TanStack Virtual earns its keep** if the full log hits the cap — otherwise plain render is fine. |
 
 ### Recently shipped (for reference)
 | Item | Version | Status |
 |------|---------|--------|
+| Director node polish (wider node, header declutter, mode dropdown) | v0.37.2 | `[x]` |
+| QOL-1 — Scrollable full agent-log view in the inspector | v0.37.1 | `[x]` |
 | N8 — Pre-acceptance clarifying-questions round-trip | v0.37.0 | `[x]` |
 | N7 — Plan Critic (advisory pre-spawn plan review) | v0.36.0 | `[x]` |
 | Dark mode (light / dark / system) | v0.35.0 | `[x]` |

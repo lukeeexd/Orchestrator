@@ -56,7 +56,7 @@ const DIRECTOR_ID = '__director__';
 // fed in from App via context (see DirectorSlotContext) so message/stream
 // ticks reconcile the real DirectorPane in place — scroll, focus, and
 // streaming survive — without churning React Flow's node data.
-export const DIRECTOR_NODE_W = 384;
+export const DIRECTOR_NODE_W = 480;
 const DIRECTOR_NODE_H = 564;
 
 // Stagger-layout tunables (bespoke coordinate layout — see layoutStagger).
