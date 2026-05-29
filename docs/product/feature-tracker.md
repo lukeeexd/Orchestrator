@@ -131,9 +131,9 @@ From the completeness critic; arguably the most novel. Detail in research §6. A
 
 Smaller quality-of-life items (not from the sweep). Add freely.
 
-| Item | Status | Note |
-|------|--------|------|
-| _(add new QOL items here)_ | | |
+| ID | Item | Status | Note |
+|----|------|--------|------|
+| QOL-1 | Scrollable full agent-log view in the inspector | `[ ]` | Post-5b regression: the Drawer Logs tab (`Drawer.tsx` `LogsTab`) renders only `agent.log.slice(-8)` — last 8 lines + a count badge that implies more; the old full-stream viewer (`AgentStreamPanel`) was deleted in the Flightdeck redesign. Add a scrollable full log (up to `LOG_TAIL_CAP`, `query.ts`). **This is the one surface where TanStack Virtual earns its keep** if the full log hits the cap — otherwise plain render is fine. |
 
 ### Recently shipped (for reference)
 | Item | Version | Status |
