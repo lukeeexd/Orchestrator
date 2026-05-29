@@ -20,29 +20,28 @@ import {
   type NodeProps,
   type ReactFlowInstance,
 } from '@xyflow/react';
-import { graphlib, layout as runDagreLayout } from '@dagrejs/dagre';
 import '@xyflow/react/dist/style.css';
 import type { Agent, EffortLevel, Provider } from '../../shared/types';
-import { ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { SpawnAgentForm } from './SpawnAgentForm';
 import { FocusedFixDialog } from './FocusedFixDialog';
 import { OnboardingBanner } from './OnboardingBanner';
 
 /**
- * Flightdeck canvas — Phase 1 (read-only). Mirrors the live agent fleet as a
- * node-graph: a Director anchor node fanning out to one node per agent, laid
- * out left-to-right with dagre. This is an ADDITIVE third `viewMode`; it owns
- * none of the mutation paths yet (selection only). See
- * docs/redesign/flightdeck-implementation-plan.md.
+ * Flightdeck canvas — the sole home view. Mirrors the live agent fleet as a
+ * node-graph: a dark Director anchor node on the left (hosting the live chat)
+ * fanning curved bezier lanes out to one node per agent. Agents are placed by
+ * a bespoke vertical-stagger layout (see layoutStagger / buildChainModel) — a
+ * column in plan order with a rightward stagger by handoff depth — so the fleet
+ * reads as the mockup's 2D composition, NOT a single left-to-right row.
  *
  * Re-layout runs ONLY when the topology (the set of agent ids) changes — see
- * the signature check in the effect below. Status/step ticks update node data
- * in place without moving anything, which is the plan's anti-thrash rule.
+ * the signature check in the effect below. Status/step/elapsed ticks update
+ * node data in place without moving anything, which is the anti-thrash rule.
  */
 
-const NODE_W = 224;
-const NODE_H = 88;
+const NODE_W = 234;
+const NODE_H = 134;
 const DIRECTOR_ID = '__director__';
 
 // The Director is a first-class anchor node that hosts the live chat/plan/
@@ -54,21 +53,29 @@ const DIRECTOR_ID = '__director__';
 export const DIRECTOR_NODE_W = 384;
 const DIRECTOR_NODE_H = 564;
 
+// Stagger-layout tunables (bespoke coordinate layout — see layoutStagger).
+const GAP_Y = 40; // vertical air between stacked agents
+const ROW_H = NODE_H + GAP_Y; // one vertical slot
+const COL_STEP = 150; // horizontal stagger per depth unit
+const CLUSTER_LEFT = DIRECTOR_NODE_W + 150; // x of the depth-0 column (mockup ~524)
+const DEPTH_CAP = 3; // cap rightward stagger so deep chains stay a column, not a diagonal
+const CHAIN_FLAT = 2; // first N chain steps share a column (pm + researcher in the mockup)
+const PAD = 40; // normalization padding so nothing is ever negative
+
 /** Live Director UI piped from App into the `director` node. */
 const DirectorSlotContext = createContext<ReactNode>(null);
 
-// Explicit, AA-legible status hues for a light canvas (the app's CSS status
-// vars are tuned for the dark terminal theme; on the blueprint canvas we pick
-// our own). Deliberately non-terminal-green per the redesign direction.
-const STATUS_COLOR: Record<string, string> = {
-  running: '#1d4ed8',
-  waiting: '#b45309',
-  approval: '#b45309',
-  paused: '#64748b',
-  done: '#3f7d63',
-  error: '#dc2626',
-  aborted: '#64748b',
-};
+// Map an agent status onto the mockup's four status families (run / wait /
+// done / appr) + error. Drives the strip, dot, and status-pill colours via
+// the .cv-node.s-* CSS classes (see index.css). Deliberately non-green per
+// the redesign: done is a quiet slate, not a celebratory green.
+function statusClass(status: string): string {
+  if (status === 'running') return 's-run';
+  if (status === 'waiting') return 's-wait';
+  if (status === 'approval') return 's-appr';
+  if (status === 'error') return 's-err';
+  return 's-done'; // done / aborted / paused — settled slate
+}
 
 function agentData(a: Agent): Record<string, unknown> {
   return {
@@ -78,79 +85,46 @@ function agentData(a: Agent): Record<string, unknown> {
     status: a.status,
     statusLabel: a.statusLabel,
     step: a.step,
+    task: a.task,
+    elapsed: a.elapsed,
     subtype: a.subtype ?? '',
   };
 }
 
 function AgentNodeView({ data, selected }: NodeProps) {
-  const role = String(data.role);
-  const tint = ROLE_TINT[role as keyof typeof ROLE_TINT] ?? '#94a3b8';
   const status = String(data.status);
-  const sc = STATUS_COLOR[status] ?? '#64748b';
+  const running = status === 'running';
+  const role = String(data.role);
+  const subtype = String(data.subtype ?? '');
+  const task = String(data.task ?? '');
   return (
     <div
-      style={{
-        width: NODE_W,
-        height: NODE_H,
-        boxSizing: 'border-box',
-        background: '#ffffff',
-        borderRadius: 10,
-        borderLeft: `3px solid ${tint}`,
-        border: `1px solid ${selected ? '#1d4ed8' : '#d4d8e0'}`,
-        borderLeftWidth: 3,
-        borderLeftColor: tint,
-        boxShadow: selected
-          ? '0 0 0 2px rgba(29,78,216,0.35), 0 6px 16px -8px rgba(20,30,60,0.35)'
-          : '0 4px 12px -8px rgba(20,30,60,0.30)',
-        padding: '9px 11px',
-        font: '13px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif',
-        color: '#1f2430',
-      }}
+      className={`cv-node ${statusClass(status)}${selected ? ' sel' : ''}`}
+      style={{ width: NODE_W }}
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: sc,
-            flexShrink: 0,
-            boxShadow: status === 'running' ? `0 0 6px ${sc}` : 'none',
-          }}
-        />
-        <span
-          style={{
-            fontWeight: 600,
-            fontFamily: 'ui-monospace, "JetBrains Mono", monospace',
-            fontSize: 12.5,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {String(data.name)}
-        </span>
+      <span className="cv-strip" />
+      <div className="cv-head">
+        <span className={'cv-dot' + (running ? ' run' : '')} />
+        <div className="cv-id">
+          <span className="cv-nm">{String(data.name)}</span>
+          <span className="cv-rolechip">
+            {role}
+            {subtype ? ` · ${subtype}` : ''}
+          </span>
+        </div>
+        <span className="cv-stag">{String(data.statusLabel)}</span>
       </div>
-      <div style={{ fontSize: 11, color: tint, fontWeight: 600, marginTop: 3 }}>
-        {String(data.roleLabel)}
-        {data.subtype ? ` · ${String(data.subtype)}` : ''}
-      </div>
-      <div
-        style={{
-          fontSize: 11,
-          marginTop: 5,
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 8,
-        }}
-      >
-        <span style={{ color: sc, fontWeight: 600 }}>
-          {String(data.statusLabel)}
-        </span>
-        <span style={{ color: '#5b6473', fontVariantNumeric: 'tabular-nums' }}>
-          step {String(data.step)}
-        </span>
+      <div className="cv-task">{task}</div>
+      <div className="cv-meta">
+        <div className="cv-cell">
+          <span className="cl">step</span>
+          <span className="cvv">{String(data.step)}</span>
+        </div>
+        <div className="cv-cell">
+          <span className="cl">elapsed</span>
+          <span className="cvv">{String(data.elapsed)}</span>
+        </div>
       </div>
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
@@ -179,30 +153,168 @@ function DirectorNodeView() {
       }}
     >
       {slot}
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+      {/* Visible fan-origin dot: every plan lane launches from the Director's
+          right edge, like the mockup's edge-dots (one handle = one dot). */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{
+          width: 9,
+          height: 9,
+          background: '#6f9bff',
+          border: '2px solid #161d29',
+          opacity: 1,
+        }}
+      />
     </div>
   );
 }
 
 const nodeTypes = { agent: AgentNodeView, director: DirectorNodeView };
 
-function layoutLR(nodes: Node[], edges: Edge[]): Node[] {
-  const g = new graphlib.Graph();
-  g.setGraph({ rankdir: 'LR', nodesep: 26, ranksep: 110, marginx: 28, marginy: 28 });
-  g.setDefaultEdgeLabel(() => ({}));
-  for (const n of nodes) {
-    const w = n.type === 'director' ? DIRECTOR_NODE_W : NODE_W;
-    const h = n.type === 'director' ? DIRECTOR_NODE_H : NODE_H;
-    g.setNode(n.id, { width: w, height: h });
+interface ChainModel {
+  ordered: Agent[];
+  rowIndex: Map<string, number>;
+  chainPos: Map<string, number>;
+  prevOf: Map<string, string>;
+  parentOf: Map<string, string | null>;
+  depthOf: Map<string, number>;
+}
+
+/**
+ * Single source of truth for the orchestration topology, consumed by BOTH the
+ * layout and the edge builder so they can never drift. The y axis comes from
+ * plan order (every agent by startedAt, id tiebreak); the x axis comes from
+ * handoff/fork DEPTH (the mockup's staircase is depth, not branching).
+ */
+function buildChainModel(agents: Agent[]): ChainModel {
+  const ids = new Set(agents.map((a) => a.id));
+  const byStart = (a: Agent, b: Agent) =>
+    a.startedAt - b.startedAt || (a.id < b.id ? -1 : 1);
+
+  // The Director's sequential (non-fork) chain defines handoff + plan order.
+  const chain = agents
+    .filter((a) => a.spawnedBy === 'director' && !a.forkedFromId)
+    .slice()
+    .sort(byStart);
+  const chainPos = new Map<string, number>();
+  chain.forEach((a, i) => chainPos.set(a.id, i));
+  const prevOf = new Map<string, string>();
+  for (let i = 1; i < chain.length; i++) prevOf.set(chain[i].id, chain[i - 1].id);
+
+  // layout parent: fork parent > chain predecessor > null (a root).
+  const byId = new Map(agents.map((a) => [a.id, a] as const));
+  const parentOf = new Map<string, string | null>();
+  for (const a of agents) {
+    if (a.forkedFromId && ids.has(a.forkedFromId)) parentOf.set(a.id, a.forkedFromId);
+    else if (prevOf.has(a.id)) parentOf.set(a.id, prevOf.get(a.id) ?? null);
+    else parentOf.set(a.id, null);
   }
-  for (const e of edges) g.setEdge(e.source, e.target);
-  runDagreLayout(g);
-  return nodes.map((n) => {
-    const p = g.node(n.id);
-    const w = n.type === 'director' ? DIRECTOR_NODE_W : NODE_W;
-    const h = n.type === 'director' ? DIRECTOR_NODE_H : NODE_H;
-    return { ...n, position: { x: p.x - w / 2, y: p.y - h / 2 } };
+
+  // y axis: PLAN/handoff order, NOT raw timestamp — so a tidy top-to-bottom
+  // staircase survives clock ties (sequential spawns can share a coarse
+  // startedAt). Chain members rank by chain position; forks sit just below
+  // their parent; standalone agents fall after the chain. Ties break by
+  // startedAt then id.
+  const laneMemo = new Map<string, number>();
+  const laneRank = (id: string, guard: Set<string>): number => {
+    const cached = laneMemo.get(id);
+    if (cached !== undefined) return cached;
+    const cp = chainPos.get(id);
+    let r: number;
+    if (cp !== undefined) {
+      r = cp;
+    } else if (guard.has(id)) {
+      r = chain.length; // cycle guard
+    } else {
+      guard.add(id);
+      const parent = parentOf.get(id) ?? null;
+      r = parent != null ? laneRank(parent, guard) + 0.5 : chain.length;
+    }
+    laneMemo.set(id, r);
+    return r;
+  };
+  const ordered = agents.slice().sort((a, b) => {
+    const ra = laneRank(a.id, new Set());
+    const rb = laneRank(b.id, new Set());
+    return ra - rb || byStart(a, b);
   });
+  const rowIndex = new Map<string, number>();
+  ordered.forEach((a, i) => rowIndex.set(a.id, i));
+
+  // x axis: ONE depth definition. Chain hops use the CHAIN_FLAT clamp (the
+  // first couple of steps share a column, as in the mockup); fork hops always
+  // step right off their parent. Memoized + cycle-guarded + capped.
+  const memo = new Map<string, number>();
+  const rawDepth = (id: string, guard: Set<string>): number => {
+    const cached = memo.get(id);
+    if (cached !== undefined) return cached;
+    if (guard.has(id)) return 0; // cycle guard
+    guard.add(id);
+    const a = byId.get(id);
+    const parent = parentOf.get(id) ?? null;
+    let d: number;
+    if (!a || parent == null) {
+      d = 0; // root: chain head or standalone user-spawned agent
+    } else if (a.forkedFromId && ids.has(a.forkedFromId)) {
+      d = rawDepth(parent, guard) + 1; // fork hop: always step right
+    } else {
+      const cp = chainPos.get(id) ?? 0; // chain hop: derive from chain position
+      d = Math.max(0, cp - (CHAIN_FLAT - 1));
+    }
+    memo.set(id, d);
+    return d;
+  };
+  const depthOf = new Map<string, number>();
+  for (const a of agents) {
+    depthOf.set(a.id, Math.min(rawDepth(a.id, new Set()), DEPTH_CAP));
+  }
+
+  return { ordered, rowIndex, chainPos, prevOf, parentOf, depthOf };
+}
+
+/**
+ * Bespoke vertical-stagger layout (replaces dagre — see the layout-design
+ * workflow synthesis). Agents form a vertical column in plan order (row → y)
+ * with a rightward stagger by handoff/fork depth (depth → x); the Director is
+ * pinned to the left and vertically centered on the cluster. This is what stops
+ * the fleet rendering as a single left-to-right row. React Flow positions are
+ * top-left, so we author top-left directly — no centering math per node.
+ */
+function layoutStagger(agents: Agent[], cm: ChainModel): Node[] {
+  const agentNodes: Node[] = agents.map((a) => {
+    const i = cm.rowIndex.get(a.id) ?? 0;
+    const d = cm.depthOf.get(a.id) ?? 0;
+    return {
+      id: a.id,
+      type: 'agent',
+      position: { x: CLUSTER_LEFT + d * COL_STEP, y: i * ROW_H },
+      data: agentData(a),
+      selected: false, // reconciled by the selectedId effect
+    };
+  });
+
+  const n = agents.length;
+  const clusterHeight = n > 0 ? (n - 1) * ROW_H + NODE_H : NODE_H;
+  const directorNode: Node = {
+    id: DIRECTOR_ID,
+    type: 'director',
+    position: { x: 0, y: clusterHeight / 2 - DIRECTOR_NODE_H / 2 },
+    data: {},
+    draggable: false,
+    selectable: false,
+  };
+
+  // Normalize so nothing is negative (stable fitView), computed over all nodes.
+  const all = [directorNode, ...agentNodes];
+  const minX = Math.min(...all.map((no) => no.position.x));
+  const minY = Math.min(...all.map((no) => no.position.y));
+  const dx = PAD - minX;
+  const dy = PAD - minY;
+  return all.map((no) => ({
+    ...no,
+    position: { x: no.position.x + dx, y: no.position.y + dy },
+  }));
 }
 
 const REDUCE_MOTION =
@@ -210,25 +322,19 @@ const REDUCE_MOTION =
   !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 /**
- * Build the edge set that draws the orchestration flow:
- *  - fork ancestry: parent -> fork (dashed), from the existing `forkedFromId`;
- *  - handoff chain: Director-spawned plan agents run sequentially, so start-time
- *    order IS the handoff order — chain each to the next (solid accent). An
- *    explicit `handoffFromId` field is deferred until parallel spawning lands;
- *    until then this is exact, not a heuristic;
- *  - root: Director -> agent for the chain head and any user-spawned standalone
- *    agent.
- * Exactly one incoming edge per agent. Cheap to rebuild on every update.
+ * Build the edge set that draws the orchestration flow as smooth cubic beziers
+ * (type 'default' — matches the mockup's hand-drawn lanes, not stepped elbows).
+ * Three families, exactly one incoming edge per agent, derived from the shared
+ * ChainModel so geometry and edges can never drift:
+ *  - fork ancestry: parent -> fork (dashed slate), from `forkedFromId`;
+ *  - handoff: previous chain agent -> this (solid accent, animated when live);
+ *  - Director plan-lane: Director -> chain head / standalone agent, dimmed +
+ *    dashed once the lane has settled (done / aborted / paused).
+ * Cheap to rebuild on every update. Handles stay Left-target / Right-source
+ * (no Top/Bottom, no ids) so edges never silently vanish.
  */
-function buildEdges(agents: Agent[]): Edge[] {
+function buildEdges(agents: Agent[], cm: ChainModel): Edge[] {
   const ids = new Set(agents.map((a) => a.id));
-  const chain = agents
-    .filter((a) => a.spawnedBy === 'director' && !a.forkedFromId)
-    .slice()
-    .sort((a, b) => a.startedAt - b.startedAt);
-  const prevOf = new Map<string, string>();
-  for (let i = 1; i < chain.length; i++) prevOf.set(chain[i].id, chain[i - 1].id);
-
   const arrow = (color: string) => ({
     type: MarkerType.ArrowClosed,
     width: 15,
@@ -238,11 +344,14 @@ function buildEdges(agents: Agent[]): Edge[] {
 
   return agents.map((a): Edge => {
     const live = !REDUCE_MOTION && a.status === 'running';
+    const settled =
+      a.status === 'done' || a.status === 'aborted' || a.status === 'paused';
     if (a.forkedFromId && ids.has(a.forkedFromId)) {
       return {
         id: `fork-${a.id}`,
         source: a.forkedFromId,
         target: a.id,
+        type: 'default',
         label: 'fork',
         animated: false,
         markerEnd: arrow('#94a3b8'),
@@ -251,12 +360,13 @@ function buildEdges(agents: Agent[]): Edge[] {
         labelBgStyle: { fill: '#eceef3', fillOpacity: 0.9 },
       };
     }
-    const prev = prevOf.get(a.id);
+    const prev = cm.prevOf.get(a.id);
     if (prev) {
       return {
         id: `ho-${a.id}`,
         source: prev,
         target: a.id,
+        type: 'default',
         animated: live,
         markerEnd: arrow('#1d4ed8'),
         style: { stroke: '#1d4ed8', strokeWidth: 1.75 },
@@ -266,9 +376,12 @@ function buildEdges(agents: Agent[]): Edge[] {
       id: `e-${a.id}`,
       source: DIRECTOR_ID,
       target: a.id,
+      type: 'default',
       animated: live,
-      markerEnd: arrow('#9aa3b2'),
-      style: { stroke: '#9aa3b2', strokeWidth: 1.5 },
+      markerEnd: arrow(settled ? 'rgba(58,68,92,0.5)' : '#9aa3b2'),
+      style: settled
+        ? { stroke: 'rgba(58,68,92,0.34)', strokeWidth: 1.4, strokeDasharray: '4 5' }
+        : { stroke: '#9aa3b2', strokeWidth: 1.5 },
     };
   });
 }
@@ -330,25 +443,9 @@ export function CanvasView({
     const sig = agents.map((a) => a.id).slice().sort().join('|');
     if (sig !== sigRef.current) {
       sigRef.current = sig;
-      const rawNodes: Node[] = [
-        {
-          id: DIRECTOR_ID,
-          type: 'director',
-          position: { x: 0, y: 0 },
-          data: {},
-          draggable: false,
-          selectable: false,
-        },
-        ...agents.map((a) => ({
-          id: a.id,
-          type: 'agent',
-          position: { x: 0, y: 0 },
-          data: agentData(a),
-          selected: a.id === selectedId,
-        })),
-      ];
-      const newEdges = buildEdges(agents);
-      setNodes(layoutLR(rawNodes, newEdges));
+      const cm = buildChainModel(agents);
+      const newEdges = buildEdges(agents, cm);
+      setNodes(layoutStagger(agents, cm));
       setEdges(newEdges);
       // Frame the fleet ONCE, the first time nodes appear (the `fitView` prop
       // fits on mount — before this async layout exists — so the tall Director
@@ -362,7 +459,7 @@ export function CanvasView({
         didFitRef.current = true;
         requestAnimationFrame(() =>
           requestAnimationFrame(() =>
-            rfRef.current?.fitView({ padding: 0.16, maxZoom: 0.9, duration: 350 }),
+            rfRef.current?.fitView({ padding: 0.2, maxZoom: 0.85, duration: 350 }),
           ),
         );
       }
@@ -376,7 +473,7 @@ export function CanvasView({
       );
       // Edges are cheap to rebuild and depend only on immutable fields + status;
       // rebuilding picks up status -> animated changes without a relayout.
-      setEdges(buildEdges(agents));
+      setEdges(buildEdges(agents, buildChainModel(agents)));
     }
   }, [agents, selectedId, setNodes, setEdges]);
 

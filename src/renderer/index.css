@@ -64,6 +64,116 @@
   color: var(--text);
 }
 
+/* ── Flightdeck canvas — agent nodes ───────────────────────────
+   Faithful to docs/redesign/mockups/bold-flightdeck.html: a lifted
+   surface card with a status-coloured edge strip + dot, a name + neutral
+   role chip, a status pill, the current task, and a STEP / ELAPSED footer.
+   Colour comes from status (run/wait/done/appr), not role — role is the
+   chip. Values are the mockup's own (this is the light canvas zone). */
+.cv-node {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 134px;
+  background: #fdfdff;
+  border: 1px solid #cdd2dd;
+  border-radius: 10px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 10px 26px -14px rgba(17, 24, 42, 0.40),
+    0 2px 6px -2px rgba(17, 24, 42, 0.16);
+  font-family: var(--ui);
+  color: #11182a;
+  transition: box-shadow 0.18s, border-color 0.18s;
+}
+.cv-node.sel {
+  border-color: #1d4ed8;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 16px 40px -16px rgba(29, 78, 216, 0.45),
+    0 3px 10px -3px rgba(29, 78, 216, 0.30);
+}
+/* status families → the strip / dot / pill colour set */
+.cv-node.s-run  { --cv-st: #1d4ed8; --cv-st-soft: rgba(29, 78, 216, 0.10); --cv-st-line: rgba(29, 78, 216, 0.34); }
+.cv-node.s-wait { --cv-st: #6b76b0; --cv-st-soft: rgba(107, 118, 176, 0.12); --cv-st-line: rgba(107, 118, 176, 0.34); }
+.cv-node.s-done { --cv-st: #4a5878; --cv-st-soft: rgba(74, 88, 120, 0.12); --cv-st-line: rgba(74, 88, 120, 0.30); }
+.cv-node.s-appr { --cv-st: #b45309; --cv-st-soft: rgba(180, 83, 9, 0.12); --cv-st-line: rgba(180, 83, 9, 0.34); }
+.cv-node.s-err  { --cv-st: #dc2626; --cv-st-soft: rgba(220, 38, 38, 0.12); --cv-st-line: rgba(220, 38, 38, 0.34); }
+
+.cv-strip {
+  position: absolute; left: 0; top: 10px; bottom: 10px;
+  width: 3px; border-radius: 3px;
+  background: var(--cv-st, #4a5878);
+}
+.cv-head {
+  flex: none;
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 11px 12px 8px 15px;
+}
+.cv-dot {
+  flex: none; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--cv-st, #4a5878);
+  position: relative; margin-top: 3px;
+}
+.cv-dot.run::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 50%;
+  border: 1.5px solid var(--cv-st, #1d4ed8);
+  animation: cv-pulse 2.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes cv-pulse {
+  0%   { transform: scale(0.7); opacity: 0.8; }
+  70%  { transform: scale(1.9); opacity: 0; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv-dot.run::after { animation: none; opacity: 0; }
+}
+.cv-id { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.cv-nm {
+  font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: #11182a;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cv-rolechip {
+  align-self: flex-start; max-width: 100%;
+  font-family: var(--mono); font-size: 9px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  padding: 1px 6px; border-radius: 5px;
+  background: #e9ebf1; border: 1px solid #cdd2dd; color: #5e6884;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cv-stag {
+  flex: none;
+  font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 3px 8px; border-radius: 999px;
+  color: var(--cv-st, #4a5878);
+  background: var(--cv-st-soft, rgba(74, 88, 120, 0.12));
+  border: 1px solid var(--cv-st-line, rgba(74, 88, 120, 0.30));
+}
+.cv-task {
+  flex: 1 1 auto; min-height: 0;
+  padding: 0 14px 8px 15px;
+  font-size: 12px; color: #3a445c; line-height: 1.42;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cv-meta {
+  flex: none;
+  display: flex; align-items: center;
+  padding: 7px 14px 8px 15px;
+  border-top: 1px solid #dde1e9;
+  background: #f7f8fb;
+  border-radius: 0 0 10px 10px;
+}
+.cv-cell { display: flex; flex-direction: column; gap: 1px; padding-right: 18px; }
+.cv-cell .cl {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: #8b93a9;
+}
+.cv-cell .cvv {
+  font-family: var(--mono); font-size: 12px; font-weight: 600; color: #11182a;
+}
+
 * { box-sizing: border-box; }
 
 html, body {
