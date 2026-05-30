@@ -178,6 +178,64 @@ export interface Agent {
   forkedFromName?: string;
 }
 
+/**
+ * N18: one measured slice of what the orchestrator injects into an
+ * agent's system prompt at spawn. Token counts are estimates (chars/4,
+ * no tokenizer dep) — treat them as "≈".
+ */
+export interface ContextSegment {
+  /** Display label, e.g. 'Base role prompt', 'Project memory'. */
+  label: string;
+  /** Estimated tokens (chars/4 heuristic). */
+  tokens: number;
+  /** Exact UTF-8 byte length of the segment text. */
+  bytes: number;
+  /** Optional one-line hint — where it comes from / how to trim it. */
+  hint?: string;
+}
+
+/**
+ * A component the orchestrator hands off to the CLI by reference (a path
+ * or config), so its real token cost is loaded CLI-side and not
+ * measurable here. Surfaced for awareness, never counted in the total.
+ */
+export interface ContextNote {
+  label: string;
+  detail: string;
+}
+
+/**
+ * N18: an on-demand breakdown of everything the orchestrator injects
+ * into an agent's system prompt at spawn, by source. This is NOT the
+ * deleted always-on runtime cost/usage meter — it measures the static
+ * prompt the app assembles itself (the one thing it can measure
+ * precisely), so you can spot and trim bloat (a heavy MEMORY.md, a long
+ * project skill) before it rides every spawn.
+ */
+export interface ContextBreakdown {
+  segments: ContextSegment[];
+  /** Sum of segment tokens — the injected, measurable total. */
+  totalTokens: number;
+  /** Sum of segment bytes. */
+  totalBytes: number;
+  /** Model context window in tokens, or null when the id is unknown. */
+  contextWindow: number | null;
+  /** Informational, uncounted (CLI-loaded) components. */
+  notes: ContextNote[];
+}
+
+/** Request payload for the context-breakdown query (fields the renderer already holds). */
+export interface ContextBreakdownRequest {
+  projectId: string;
+  role: AgentRole;
+  subtype?: AgentSubtype;
+  model: string;
+  /** The agent's provider override (undefined → project default). */
+  provider?: Provider;
+  /** The agent's task text — measured as its own segment. */
+  task: string;
+}
+
 export interface ForkAgentRequest {
   /** Parent agent id — its conversation history is the seed for the fork. */
   parentAgentId: string;

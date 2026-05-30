@@ -11,6 +11,7 @@ import {
 import { listHistory } from '../history';
 import { listSlashCommands } from '../commands';
 import { listSkills, writeSkill } from '../skills';
+import { buildContextBreakdown } from '../agents/contextBreakdown';
 import {
   quitAndInstallUpdate,
   getUpdaterState,
@@ -190,6 +191,15 @@ export function registerMiscHandlers(): void {
         return { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
     },
+  );
+
+  ipcMain.handle(
+    IpcChannels.ContextBreakdown,
+    (
+      _event,
+      req: import('../../shared/types').ContextBreakdownRequest,
+    ): import('../../shared/types').ContextBreakdown =>
+      buildContextBreakdown(req),
   );
 
   ipcMain.handle(IpcChannels.UpdaterRestart, (): void => {

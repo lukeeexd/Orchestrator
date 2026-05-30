@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type {
   Agent,
+  ContextBreakdown,
   EffortLevel,
   MemoryProposal,
   Provider,
@@ -13,7 +14,7 @@ import { EffortPicker } from './EffortPicker';
 import { computeLogLineKey } from '../../shared/logNotes';
 import { useLogNotes } from '../hooks/useLogNotes';
 
-type TabId = 'logs' | 'tools' | 'memory' | 'config';
+type TabId = 'logs' | 'tools' | 'memory' | 'config' | 'context';
 
 const COLLAPSED_WIDTH = 36;
 
@@ -96,7 +97,7 @@ export function Drawer({
         className="tabs"
         role="tablist"
         onKeyDown={(e) => {
-          const tabIds: TabId[] = ['logs', 'tools', 'memory', 'config'];
+          const tabIds: TabId[] = ['logs', 'tools', 'memory', 'config', 'context'];
           const idx = tabIds.indexOf(tab);
           if (e.key === 'ArrowRight') {
             e.preventDefault();
@@ -117,6 +118,7 @@ export function Drawer({
         <TabHead id="tools" label="Tools" count={toolCount} active={tab} onSelect={setTab} />
         <TabHead id="memory" label="Memory" count={memoryCount} active={tab} onSelect={setTab} />
         <TabHead id="config" label="Config" active={tab} onSelect={setTab} />
+        <TabHead id="context" label="Context" active={tab} onSelect={setTab} />
       </div>
 
       <div className="drawer-body">
@@ -124,6 +126,7 @@ export function Drawer({
         {tab === 'tools' && <ToolsTab agent={agent} />}
         {tab === 'memory' && <MemoryTab agent={agent} />}
         {tab === 'config' && <ConfigTab agent={agent} provider={provider} />}
+        {tab === 'context' && <ContextTab agent={agent} provider={provider} />}
       </div>
     </div>
   );
@@ -775,6 +778,169 @@ function ConfigTab({
         </span>
       </div>
     </>
+  );
+}
+
+// N18: a small palette so each segment is distinguishable in the bar +
+// its row dot. Cycles if there are ever more segments than colours.
+const CTX_SEG_COLORS = [
+  'var(--accent)',
+  '#6ea8fe',
+  '#c08cff',
+  '#46c8a0',
+  '#e0a458',
+  '#e87a90',
+];
+
+function formatTokens(n: number): string {
+  if (n < 1000) return `${n}`;
+  return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+}
+
+/**
+ * N18: on-demand breakdown of what the orchestrator injects into this
+ * agent at spawn, by source. Computed in main (it reads the role prompt,
+ * project skill, and MEMORY.md off disk) and fetched lazily when the tab
+ * is opened. Deliberately not a runtime cost meter — it's a "what am I
+ * shipping into every spawn" optimizer.
+ */
+function ContextTab({
+  agent,
+  provider,
+}: {
+  agent: Agent;
+  provider: Provider;
+}) {
+  const [data, setData] = useState<ContextBreakdown | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setData(null);
+    setError(null);
+    window.api
+      .getContextBreakdown({
+        projectId: agent.projectId,
+        role: agent.role,
+        subtype: agent.subtype,
+        model: agent.model,
+        provider: agent.provider ?? provider,
+        task: agent.task,
+      })
+      .then((res) => {
+        if (live) setData(res);
+      })
+      .catch((e: unknown) => {
+        if (live) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      live = false;
+    };
+    // Re-fetch on identity / prompt-shaping fields only; `provider` is a
+    // stable prop and the breakdown doesn't change with run status.
+  }, [
+    agent.id,
+    agent.projectId,
+    agent.role,
+    agent.subtype,
+    agent.model,
+    agent.task,
+  ]);
+
+  if (error) {
+    return (
+      <div className="inline-empty">
+        Couldn’t compute the context breakdown: {error}
+      </div>
+    );
+  }
+  if (!data) {
+    return <div className="inline-empty">Measuring injected context…</div>;
+  }
+
+  const { segments, totalTokens, totalBytes, contextWindow, notes } = data;
+  const windowPct =
+    contextWindow && contextWindow > 0
+      ? (100 * totalTokens) / contextWindow
+      : null;
+
+  return (
+    <div className="ctx-tab">
+      <div className="ctx-head">
+        <span className="ctx-total">≈ {formatTokens(totalTokens)} tokens</span>
+        <span className="ctx-sub">
+          injected at spawn
+          {windowPct != null && (
+            <>
+              {' · '}
+              {windowPct < 0.1 ? '<0.1' : windowPct.toFixed(1)}% of{' '}
+              {formatTokens(contextWindow as number)} window
+            </>
+          )}
+        </span>
+      </div>
+
+      <div
+        className="ctx-bar"
+        role="img"
+        aria-label="Injected context composition by source"
+      >
+        {segments.map((s, i) => {
+          const pct = totalTokens > 0 ? (100 * s.tokens) / totalTokens : 0;
+          if (pct <= 0) return null;
+          return (
+            <span
+              key={s.label}
+              className="ctx-bar-seg"
+              style={{
+                width: `${pct}%`,
+                background: CTX_SEG_COLORS[i % CTX_SEG_COLORS.length],
+              }}
+              title={`${s.label} · ≈${formatTokens(s.tokens)} (${pct.toFixed(0)}%)`}
+            />
+          );
+        })}
+      </div>
+
+      <div className="ctx-rows">
+        {segments.map((s, i) => {
+          const pct = totalTokens > 0 ? (100 * s.tokens) / totalTokens : 0;
+          return (
+            <div className="ctx-row" key={s.label}>
+              <span
+                className="ctx-dot"
+                style={{ background: CTX_SEG_COLORS[i % CTX_SEG_COLORS.length] }}
+              />
+              <span className="ctx-label">
+                {s.label}
+                {s.hint && <span className="ctx-hint">{s.hint}</span>}
+              </span>
+              <span className="ctx-tok">≈ {formatTokens(s.tokens)}</span>
+              <span className="ctx-pct">{pct < 1 ? '<1' : pct.toFixed(0)}%</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {notes.length > 0 && (
+        <div className="ctx-notes">
+          {notes.map((n) => (
+            <div className="ctx-note" key={n.label}>
+              <span className="ctx-note-mark">+</span>
+              <span>
+                <b>{n.label}</b> — {n.detail}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="ctx-foot">
+        Estimated at ~4 chars/token ({(totalBytes / 1024).toFixed(1)} KB of
+        text). This is the static prompt the orchestrator ships into every
+        spawn of this agent — trim a heavy role skill or MEMORY.md to shrink it.
+      </div>
+    </div>
   );
 }
 

@@ -118,6 +118,8 @@ export const IpcChannels = {
   CommandsList: 'commands:list',
   SkillsList: 'skills:list',
   SkillsSet: 'skills:set',
+  /** N18: compute the injected-at-spawn context breakdown for an agent. */
+  ContextBreakdown: 'context:breakdown',
   TemplatesList: 'templates:list',
   TemplatesCreate: 'templates:create',
   TemplatesUpdate: 'templates:update',
@@ -1129,6 +1131,10 @@ export interface OrchestratorApi {
     key: import('./types').SkillKey,
     content: string,
   ) => Promise<{ ok: boolean; entry?: SkillEntry; error?: string }>;
+  /** N18: breakdown of what the orchestrator injects into an agent at spawn. */
+  getContextBreakdown: (
+    req: import('./types').ContextBreakdownRequest,
+  ) => Promise<import('./types').ContextBreakdown>;
   // ───────────────────────── Workflow templates ─────────────────────────
   /** Every template (built-ins first, then user-authored alphabetically). */
   listTemplates: () => Promise<import('./types').Template[]>;

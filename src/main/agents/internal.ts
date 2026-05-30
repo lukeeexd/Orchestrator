@@ -22,7 +22,7 @@ import { awaitCompletion as awaitLockedCompletion } from './agent-lock';
  * the wording here means changing the regex in
  * `parseTestsKpi` (src/renderer/components/AgentRow.tsx) too.
  */
-const SUBTYPE_PROMPTS: Partial<
+export const SUBTYPE_PROMPTS: Partial<
   Record<AgentRole, Partial<Record<AgentSubtype, string>>>
 > = {
   qa: {
@@ -66,7 +66,7 @@ When your run finishes, emit a single final line of the form:
  * `orchestrator-memory`; changing it here means changing the regex
  * there too.
  */
-const PROPOSE_MEMORY_PROMPT = `## Proposing memory for future agents
+export const PROPOSE_MEMORY_PROMPT = `## Proposing memory for future agents
 
 If you discover something genuinely worth remembering about *this project* — a non-obvious constraint, a convention that future agents of your role should know, a gotcha that cost you time — propose it for memory by emitting a fenced block in your final message:
 

@@ -131,6 +131,18 @@ export function modelContextTokens(id: string): number | null {
   return MODEL_CONTEXT_TOKENS[id] ?? null;
 }
 
+/**
+ * N18: rough offline token estimate (no tokenizer dependency) — the
+ * long-standing ~4-chars-per-token rule of thumb for English + code.
+ * Real BPE diverges by ~20-30%, so every number this feeds is an
+ * estimate ('≈'). Deliberately heuristic: a 50KB+ tokenizer isn't worth
+ * pulling in for an at-a-glance "what am I injecting" optimizer.
+ */
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
 /** Beta header that unlocks the 1M token context window. */
 const BETA_CONTEXT_1M = 'context-1m-2025-08-07';
 

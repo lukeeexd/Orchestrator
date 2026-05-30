@@ -496,6 +496,10 @@ const api: OrchestratorApi = {
       entry?: import('../shared/ipc').SkillEntry;
       error?: string;
     }>,
+  getContextBreakdown: (req) =>
+    ipcRenderer.invoke(IpcChannels.ContextBreakdown, req) as Promise<
+      import('../shared/types').ContextBreakdown
+    >,
 
   listTemplates: () =>
     ipcRenderer.invoke(IpcChannels.TemplatesList) as Promise<

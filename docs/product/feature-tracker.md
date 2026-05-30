@@ -34,7 +34,7 @@ The highest value-per-effort, no-blocker starting points. Detail in research §2
 | N8 | Pre-acceptance clarifying-questions round-trip | S | `[x]` v0.37.0 |
 | N9 | Plan confidence + driving ambiguities | S | `[ ]` |
 | N34 | Off-device push when blocked / done | M | `[ ]` |
-| N18 | Segmented context breakdown card ⚠️ | S | `[ ]` |
+| N18 | Segmented context breakdown card ⚠️ | S | `[x]` v0.38.0 |
 
 ### Clean recommends + strategic spine
 | ID | Feature | Effort | Status |
@@ -85,7 +85,7 @@ Sorted by ID. See research §3 scorecard + §4/§5 for full detail and the verif
 | N15 | Cross-CLI spend reconciliation from local JSONL | Observability | strategic | M | `[ ]` ⚠️ | Frame as the **out-of-app / offline / Codex** view, not an in-app accuracy fix. Prefer vendoring/shelling `ccusage` over a hand-rolled JSONL parser. |
 | N16 | Trajectory health score for completed runs | Observability | strategic | M | `[ ]` | Heuristic-first (no key); green/amber/red chip in HandoffPayload. **Drop the out-of-scope-edits dimension** (no `declaredScope` field exists). Build the reference-free efficiency baseline. |
 | N17 | Per-role statistical cost-anomaly guard | Observability | strategic | M | `[ ]` ⚠️ | The per-agent ceiling it builds "on top of" **was removed** — reframe. Needs min-sample floor. Real delta: "anomaly guarding on a CLI with no API key." |
-| N18 | Segmented context breakdown + optimizer card | Observability | quick-win | S | `[ ]` ⚠️ | **Resurrects the deleted context meter** + attributes tokens per injected component (role prompt / overrides / MEMORY.md / skills / MCP). Mirrors `/context`. |
+| N18 | Segmented context breakdown + optimizer card | Observability | quick-win | S | `[x]` v0.38.0 | **Shipped reframed:** NOT the deleted always-on cost meter (cut as noise in v0.24.0). On-demand "Context" tab in the inspector → estimated tokens per *injected-at-spawn* source (role prompt / project skill / MEMORY.md / subtype / task); CLI-loaded skills + MCP surfaced as uncounted notes. chars/4 estimate, no tokenizer dep. |
 | N19 | Per-row plan-approval gate (read-only → unlock writes) | Safety/scope | strategic | L | `[ ]` ✅ | **Clean recommend.** Claude Code Agent Teams ships this verbatim. The `'approval'` status is **dormant** (wire it end-to-end). New read-only→full two-phase spawn + directive + approval queue/UI. Verify `--resume` honours a changed tool set. Claude-only. **L is right.** |
 | N20 | Three-tier tool allow-list ('ask' gate) | Safety/scope | strategic | M→L | `[ ]` | **No push channel exists** (keep approval in-app / OS toast). Surfacing 'ask' headlessly = a permission MCP server over bidi `stream-json` = spawn/runner rewrite (F4-class). Reclassify M→L; trim to approve/edit/reject. |
 | N21 | Per-row file-path edit allow-list (fileRegex) | Safety/scope | strategic | M | `[ ]` ✅ | **Clean recommend.** Lead with a **PreToolUse hook returning `permissionDecision:"deny"` — it overrides `bypassPermissions`** (verified). Not enforced for MCP tools (match MCP tool names too). Claude-only. |
@@ -138,6 +138,7 @@ Smaller quality-of-life items (not from the sweep). Add freely.
 ### Recently shipped (for reference)
 | Item | Version | Status |
 |------|---------|--------|
+| N18 — Injected-context breakdown card (inspector "Context" tab) | v0.38.0 | `[x]` |
 | Director node polish (wider node, header declutter, mode dropdown) | v0.37.2 | `[x]` |
 | QOL-1 — Scrollable full agent-log view in the inspector | v0.37.1 | `[x]` |
 | N8 — Pre-acceptance clarifying-questions round-trip | v0.37.0 | `[x]` |
