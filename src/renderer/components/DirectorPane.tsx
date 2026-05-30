@@ -515,6 +515,7 @@ function Message({
           onSaveAsTemplate={onSaveAsTemplate}
           prevRows={prevPlanRows}
           critique={message.critique}
+          confidence={message.confidence}
         />
       )}
       {message.prd && <PRDCard prd={message.prd} />}

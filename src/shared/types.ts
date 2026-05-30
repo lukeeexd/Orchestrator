@@ -333,6 +333,21 @@ export interface ClarifyingQuestion {
   why: string;
 }
 
+/**
+ * N9: the Director's self-reported confidence in a plan it just emitted,
+ * plus the 1–3 ambiguities driving any uncertainty. A hint that informs
+ * the existing confirm-before-spawn — uncalibrated, never blocks. Distinct
+ * from N7's external Plan Critic (adversarial review) and N8's pre-plan
+ * questions (which fold back before a plan exists); these are the
+ * assumptions the Director chose to plan *around* rather than ask about.
+ */
+export interface PlanConfidence {
+  /** 0–100 self-assessed likelihood the plan succeeds as scoped. Uncalibrated. */
+  score: number;
+  /** The 1–3 assumptions the plan rests on (what, if wrong, would change it). */
+  ambiguities: string[];
+}
+
 export type DirectorWho = 'user' | 'director' | 'system';
 
 /**
@@ -384,6 +399,8 @@ export interface DirectorMessage {
   critique?: PlanCritique;
   /** N8: clarifying questions the Director asks (auto mode) instead of a plan. */
   questions?: ClarifyingQuestion[];
+  /** N9: self-reported confidence + driving ambiguities, attached to a plan message. */
+  confidence?: PlanConfidence;
   live?: boolean;
   attachments?: AttachmentRef[];
 }

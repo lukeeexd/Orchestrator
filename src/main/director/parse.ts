@@ -6,6 +6,7 @@ import type {
   PlanCritique,
   CritiqueSeverity,
   ClarifyingQuestion,
+  PlanConfidence,
   RedirectInstruction,
 } from '../../shared/types';
 
@@ -31,6 +32,8 @@ interface ParseResult {
   prd: ProjectPrd | null;
   /** N8: clarifying questions, if a valid `orchestrator-questions` block was found. */
   questions: ClarifyingQuestion[] | null;
+  /** N9: plan confidence + ambiguities, if a valid `orchestrator-confidence` block was found. */
+  confidence: PlanConfidence | null;
 }
 
 const PLAN_RE = /```orchestrator-plan\s*\n([\s\S]*?)\n```/i;
@@ -38,6 +41,7 @@ const REDIRECT_RE = /```orchestrator-redirect\s*\n([\s\S]*?)\n```/i;
 const PRD_RE = /```orchestrator-prd\s*\n([\s\S]*?)\n```/i;
 const CRITIQUE_RE = /```orchestrator-critique\s*\n([\s\S]*?)\n```/i;
 const QUESTIONS_RE = /```orchestrator-questions\s*\n([\s\S]*?)\n```/i;
+const CONFIDENCE_RE = /```orchestrator-confidence\s*\n([\s\S]*?)\n```/i;
 
 const VALID_SEVERITIES: CritiqueSeverity[] = ['info', 'warn', 'error'];
 
@@ -211,6 +215,35 @@ function parseQuestions(raw: string): ClarifyingQuestion[] | null {
   return out.length > 0 ? out : null;
 }
 
+/**
+ * Parse the JSON body of an `orchestrator-confidence` block (N9). Shape:
+ * `{ score: number (0-100), ambiguities: string[] }`. The score is clamped
+ * to 0-100; non-numeric → null (no fake number). Ambiguities are trimmed +
+ * capped at 3 (the prompt asks for 1-3; defend the UI from an over-long
+ * list). A block with neither a usable score nor any ambiguity returns
+ * null so a clean turn renders no pill. Advisory only.
+ */
+function parseConfidence(raw: string): PlanConfidence | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed == null || typeof parsed !== 'object') return null;
+  const r = parsed as Record<string, unknown>;
+  if (typeof r.score !== 'number' || Number.isNaN(r.score)) return null;
+  const score = Math.max(0, Math.min(100, Math.round(r.score)));
+  const ambiguities: string[] = [];
+  if (Array.isArray(r.ambiguities)) {
+    for (const item of r.ambiguities) {
+      if (typeof item === 'string' && item.trim()) ambiguities.push(item.trim());
+      if (ambiguities.length >= 3) break;
+    }
+  }
+  return { score, ambiguities };
+}
+
 function parseRedirect(raw: string): RedirectInstruction | null {
   let parsed: unknown;
   try {
@@ -238,6 +271,7 @@ export function extractDirectives(body: string): ParseResult {
   let redirect: RedirectInstruction | null = null;
   let prd: ProjectPrd | null = null;
   let questions: ClarifyingQuestion[] | null = null;
+  let confidence: PlanConfidence | null = null;
 
   const planMatch = PLAN_RE.exec(body);
   if (planMatch) {
@@ -275,7 +309,16 @@ export function extractDirectives(body: string): ParseResult {
     }
   }
 
-  return { text: text.trim(), plan, redirect, prd, questions };
+  const confidenceMatch = CONFIDENCE_RE.exec(text);
+  if (confidenceMatch) {
+    const parsed = parseConfidence(confidenceMatch[1].trim());
+    if (parsed) {
+      confidence = parsed;
+      text = text.replace(CONFIDENCE_RE, '');
+    }
+  }
+
+  return { text: text.trim(), plan, redirect, prd, questions, confidence };
 }
 
 /** @deprecated Use `extractDirectives` — keeps the old single-purpose name working. */

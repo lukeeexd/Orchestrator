@@ -32,7 +32,7 @@ The highest value-per-effort, no-blocker starting points. Detail in research §2
 | ID | Feature | Effort | Status |
 |----|---------|--------|--------|
 | N8 | Pre-acceptance clarifying-questions round-trip | S | `[x]` v0.37.0 |
-| N9 | Plan confidence + driving ambiguities | S | `[ ]` |
+| N9 | Plan confidence + driving ambiguities | S | `[x]` v0.39.0 |
 | N34 | Off-device push when blocked / done | M | `[ ]` |
 | N18 | Segmented context breakdown card ⚠️ | S | `[x]` v0.38.0 |
 
@@ -76,7 +76,7 @@ Sorted by ID. See research §3 scorecard + §4/§5 for full detail and the verif
 | N6 | Run-scoped blackboard (shared mutable artifact store) | Planning | strategic | L | `[ ]` | **Merge with N5** as its storage layer (don't double-count). Full payoff gated on F4; sequentially the Director already sees handoffs in order. Size-bounded injection (pair N18). |
 | N7 | **Plan Critic** (adversarial pre-spawn plan review) | Pre-spawn | strategic | M | `[x]` v0.36.0 ✅ | **SHIPPED v0.36.0.** One-shot haiku critic (`director/critic.ts` via `runClaudeQuery`) on plans ≥3 rows, claude-only, advisory; `orchestrator-critique` block parsed in `parse.ts`, persisted (migration v29), rendered as per-row `!`/`!!` badges + a ⚑ PLAN CRITIC footer on PlanCard. Tune levers if noisy: critic prompt + effort low→medium. |
 | N8 | Pre-acceptance clarifying-questions round-trip | Pre-spawn | quick-win | S | `[x]` v0.37.0 | **SHIPPED v0.37.0.** Auto-mode-only: Director emits `orchestrator-questions` (≤3, parsed in parse.ts via extractDirectives) instead of a plan when ambiguous; QuestionsCard renders answer fields; submitting folds answers back via the normal `send` (resumes session) → grounded plan. Persisted (migration v30). PRD's `open_questions` kept separate (static, no fold-back). Tune the ask-vs-plan gate in prompt.ts if it over-asks. |
-| N9 | Plan confidence score + driving ambiguities | Pre-spawn | quick-win | S | `[ ]` | Confirm-before-spawn **already exists** (`App.tsx`) — reframe as a confidence pill + ambiguities on the existing confirm, + clarify-gate below a bar. Plan is bare `PlanRow[]` → needs wrapper/sibling block. Present as a hint (uncalibrated). |
+| N9 | Plan confidence score + driving ambiguities | Pre-spawn | quick-win | S | `[x]` v0.39.0 | **Shipped:** Director emits a sibling `orchestrator-confidence` block (score 0–100 + 1–3 ambiguities) alongside a plan → confidence pill + bar + △ DRIVING AMBIGUITIES footer on the PlanCard. Informs the existing confirm; never blocks. Prompt tie-in: low confidence → prefer N8 questions instead. Uncalibrated hint. |
 | N10 | Plan-aware Verifier vs per-row acceptance criteria | Verification | strategic | L | `[ ]` | Optional `criteria` per PlanRow; read-only verify pass → `orchestrator-verdict`. Verifier: a fail does **not** halt the chain today (new conditional logic). Ship advisory first; pair w/ N1/N2/N3 floor. |
 | N11 | Multi-lens review fan-out (+ cross-provider reviewer) | Review | strategic | M | `[ ]` | Quality/Impl/Simplification/Testing/Docs reviewers over one fixed diff + fixer loop. **Read-only over a fixed diff → sidesteps F4.** Not wall-clock parallel here (canvas dressing); hard round cap (PRE-2). |
 | N12 | Adversarial verify-and-converge loop (bounded) | Review | strategic | M | `[ ]` | Ship generator→critic→revise core; **defer the refute-half** (wants parallelism) into N11. Needs a concrete rubric (convergence weak off Playwright happy path). Loop cap. |
@@ -138,6 +138,7 @@ Smaller quality-of-life items (not from the sweep). Add freely.
 ### Recently shipped (for reference)
 | Item | Version | Status |
 |------|---------|--------|
+| N9 — Plan confidence pill + driving ambiguities on the PlanCard | v0.39.0 | `[x]` |
 | N18 — Injected-context breakdown card (inspector "Context" tab) | v0.38.0 | `[x]` |
 | Director node polish (wider node, header declutter, mode dropdown) | v0.37.2 | `[x]` |
 | QOL-1 — Scrollable full agent-log view in the inspector | v0.37.1 | `[x]` |

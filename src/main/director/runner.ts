@@ -570,7 +570,8 @@ class DirectorSession {
         }
       }
 
-      const { text, plan, redirect, prd, questions } = extractDirectives(bodyBuf);
+      const { text, plan, redirect, prd, questions, confidence } =
+        extractDirectives(bodyBuf);
       // PRD mode is "advisor that emits a PRD" — if the Director also
       // emits a plan block in PRD mode, drop the plan so PlanCard's
       // spawn button doesn't appear where spawning isn't the intent.
@@ -580,6 +581,12 @@ class DirectorSession {
       // render outside auto mode (manual = prose advice, prd = the brief).
       const effectiveQuestions =
         effectivePlan || mode !== 'auto' ? undefined : questions ?? undefined;
+      // N9: confidence is a property OF a plan — only attach it when a plan
+      // actually rides this turn. A confidence block without a plan (or in
+      // PRD mode where the plan was dropped) is meaningless, so discard it.
+      const effectiveConfidence = effectivePlan
+        ? confidence ?? undefined
+        : undefined;
       const fallbackBody = runtimeError
         ? `Error: ${runtimeError}`
         : '(empty response)';
@@ -611,6 +618,7 @@ class DirectorSession {
         prd: prd ?? undefined,
         critique,
         questions: effectiveQuestions,
+        confidence: effectiveConfidence,
         live: false,
       });
     } catch (e) {

@@ -844,6 +844,29 @@ body.resizing * { cursor: col-resize !important; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+/* N9: confidence pill (score + mini-bar) in the plan head. */
+.plan-confidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: normal;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+.plan-confidence-bar {
+  width: 44px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--sub-2);
+  overflow: hidden;
+  display: inline-block;
+}
+.plan-confidence-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
 .plan-row {
   display: grid;
   grid-template-columns: 22px 16px 90px minmax(0, 1fr);

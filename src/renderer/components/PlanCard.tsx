@@ -4,6 +4,7 @@ import type {
   PlanRow,
   PlanCritique,
   CritiqueSeverity,
+  PlanConfidence,
 } from '../../shared/types';
 import { ROLE_TINT } from '../../shared/roles';
 import { diffPlans, type PlanRowDiffStatus } from '../lib/planDiff';
@@ -54,6 +55,8 @@ interface Props {
   prevRows?: PlanRow[];
   /** N7: advisory Plan Critic findings for this plan (rendered inline). */
   critique?: PlanCritique;
+  /** N9: the Director's self-reported confidence + driving ambiguities for this plan. */
+  confidence?: PlanConfidence;
 }
 
 /** Severity ranking + the badge colour / tooltip prefix for each. */
@@ -64,6 +67,13 @@ const SEVERITY_COLOR: Record<CritiqueSeverity, string> = {
   error: 'var(--error)',
 };
 
+/** N9: colour-band a self-reported confidence score. Hint only, not a gate. */
+function confidenceColor(score: number): string {
+  if (score >= 75) return 'var(--ok, #4ade80)';
+  if (score >= 50) return 'var(--text-2)';
+  return 'var(--waiting)';
+}
+
 export function PlanCard({
   rows,
   accepted,
@@ -72,6 +82,7 @@ export function PlanCard({
   onSaveAsTemplate,
   prevRows,
   critique,
+  confidence,
 }: Props) {
   // Local editable copy of the plan. The Director's original proposal
   // stays on the message; this state is what the user can prune/tweak
@@ -219,6 +230,30 @@ export function PlanCard({
             </span>
           </span>
         )}
+        {confidence && (
+          <span
+            className="plan-confidence"
+            style={{ color: confidenceColor(confidence.score) }}
+            title={
+              `Director's self-reported confidence this plan succeeds as scoped — ` +
+              `an uncalibrated hint; the plan still waits for your confirm.` +
+              (confidence.ambiguities.length > 0
+                ? `\n\nDriving ambiguities:\n` +
+                  confidence.ambiguities.map((a) => `  • ${a}`).join('\n')
+                : '')
+            }
+          >
+            <span className="plan-confidence-bar" aria-hidden>
+              <span
+                style={{
+                  width: `${confidence.score}%`,
+                  background: confidenceColor(confidence.score),
+                }}
+              />
+            </span>
+            {confidence.score}%
+          </span>
+        )}
         {accepted ? (
           <span className="badge">accepted</span>
         ) : (
@@ -362,6 +397,31 @@ export function PlanCard({
                 {f.severity === 'error' ? '!!' : f.severity === 'warn' ? '!' : '·'}
               </span>
               <span>{f.issue}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      {confidence && confidence.ambiguities.length > 0 && (
+        <div
+          style={{
+            padding: '6px 12px 8px',
+            fontSize: 11,
+            color: 'var(--text-2)',
+            borderTop: '1px dashed var(--sub-2)',
+            marginTop: 4,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 3,
+          }}
+          title="The assumptions the Director planned around rather than asking about. If one is wrong, edit the plan or send a correction before spawning."
+        >
+          <span style={{ color: 'var(--muted)', fontSize: 10, letterSpacing: '0.04em' }}>
+            △ DRIVING AMBIGUITIES
+          </span>
+          {confidence.ambiguities.map((a, i) => (
+            <span key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+              <span style={{ color: 'var(--muted)' }}>•</span>
+              <span>{a}</span>
             </span>
           ))}
         </div>

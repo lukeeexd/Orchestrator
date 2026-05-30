@@ -576,6 +576,15 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE director_messages ADD COLUMN questions TEXT;`);
     },
   },
+  {
+    version: 31,
+    up: (db) => {
+      // N9 plan confidence: the Director's self-reported confidence + driving
+      // ambiguities, stored as JSON on the plan's message. NULL on older rows
+      // (no pill).
+      db.exec(`ALTER TABLE director_messages ADD COLUMN confidence TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;
