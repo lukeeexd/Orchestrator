@@ -133,11 +133,13 @@ Smaller quality-of-life items (not from the sweep). Add freely.
 
 | ID | Item | Status | Note |
 |----|------|--------|------|
+| QOL-2 | Close pill on agent nodes (abort-if-running + remove) | `[x]` v0.40.0 | No way to close/remove an agent existed — `removeAgent` IPC was dormant with no caller. Hover-reveal circular × off the node's top-right corner → `window.api.removeAgent` (aborts running first; confirm gate for active agents). Permanent delete (drops the DB row + notes), not a soft-hide. |
 | QOL-1 | Scrollable full agent-log view in the inspector | `[x]` v0.37.1 | Post-5b regression: the Drawer Logs tab (`Drawer.tsx` `LogsTab`) renders only `agent.log.slice(-8)` — last 8 lines + a count badge that implies more; the old full-stream viewer (`AgentStreamPanel`) was deleted in the Flightdeck redesign. Add a scrollable full log (up to `LOG_TAIL_CAP`, `query.ts`). **This is the one surface where TanStack Virtual earns its keep** if the full log hits the cap — otherwise plain render is fine. |
 
 ### Recently shipped (for reference)
 | Item | Version | Status |
 |------|---------|--------|
+| QOL-2 — Close pill on agent nodes (abort-if-running + remove) | v0.40.0 | `[x]` |
 | N9 — Plan confidence pill + driving ambiguities on the PlanCard | v0.39.0 | `[x]` |
 | N18 — Injected-context breakdown card (inspector "Context" tab) | v0.38.0 | `[x]` |
 | Director node polish (wider node, header declutter, mode dropdown) | v0.37.2 | `[x]` |
