@@ -42,7 +42,7 @@ The highest value-per-effort, no-blocker starting points. Detail in research §2
 | N7 ✅ | Plan Critic (adversarial pre-spawn plan review) | M | `[x]` v0.36.0 |
 | N21 ✅ | Per-row file-path edit allow-list (PreToolUse deny) | M | `[ ]` |
 | N19 ✅ | Per-row plan-approval gate (read-only → unlock writes) | L | `[ ]` |
-| N3 | Deterministic row-transition gates (shell + stderr) | M | `[ ]` |
+| N3 | Deterministic row-transition gates (shell + stderr) | M | `[x]` v0.41.0 |
 | N1 | Deterministic done-gate (run-until-green + re-route) | L | `[ ]` |
 | N2 | Regression-aware verification (fail/pass-to-pass) | L | `[ ]` |
 | N11 | Multi-lens review fan-out | M | `[ ]` |
@@ -70,7 +70,7 @@ Sorted by ID. See research §3 scorecard + §4/§5 for full detail and the verif
 |----|---------|-------|------|--------|--------|--------------------------------|
 | N1 | Deterministic done-gate (run-until-green + re-route) | Verification | strategic | L | `[ ]` | Most-validated idea in the field. Re-route = **fresh spawn**, not redirect (sessionId is CLI-bound). Needs own iteration cap (PRE-2). Per-project opt-in; degrade w/o a test cmd. Ship same-provider retry first. |
 | N2 | Regression-aware verification (fail/pass-to-pass) | Verification | strategic | L | `[ ]` | Compute SWE-bench "resolved" verdict; replaces untrustworthy `tests_run` regex in `handoffPayload.ts`. Clean before-snapshot collides w/ shared workspace → partial dep on N35/PRE-1. Per-project opt-in + changed-tests fast mode. |
-| N3 | Deterministic row-transition gates (shell, stderr feedback) | Verification | strategic | M | `[ ]` | Deterministic floor under N1/N2. Gate point = `director.notifyAgentDone`; failure reuses `redirectAgent`. Maps to Claude Code hooks. Arbitrary shell → first-run confirm + workspace scope + max-retry cap. |
+| N3 | Deterministic row-transition gates (shell, stderr feedback) | Verification | strategic | M | `[x]` v0.41.0 | **Shipped (once-after-plan variant):** per-project `gateCommand` (Director ⋯ menu) runs once after an auto-mode plan; exit 0 = pass, non-zero redirects the LAST agent with the output to fix (cap 2) then stops + surfaces. `agents/gate.ts` (spawn, real exit code, abort-aware), wired in acceptPlan. Plan suppression now auto-only in `runner.ts` so the gate can't fire outside auto. Opened the verification spine (N1/N2 next). |
 | N4 | Living PLAN (re-scope remaining rows from evidence) | Planning | strategic | L | `[ ]` | `planDiff.ts` was built for this; gate point after `awaitCompletion`. Opt-in, material-change-only, user-gated, bounded; never re-add completed rows. Distinct from F2 (manual 2-plan diff). |
 | N5 | Task + Progress Ledger + auto-replan on stall | Planning | strategic | L | `[ ]` | Split: ledger/UI safe; **auto-replan loop is the risky half** (oscillation). Needs explicit max-replans **and** PRE-2 (per-agent cap doesn't bound a Director minting new agents). |
 | N6 | Run-scoped blackboard (shared mutable artifact store) | Planning | strategic | L | `[ ]` | **Merge with N5** as its storage layer (don't double-count). Full payoff gated on F4; sequentially the Director already sees handoffs in order. Size-bounded injection (pair N18). |
@@ -139,6 +139,7 @@ Smaller quality-of-life items (not from the sweep). Add freely.
 ### Recently shipped (for reference)
 | Item | Version | Status |
 |------|---------|--------|
+| N3 — Deterministic verification gate after a plan (run-until-green ×2) | v0.41.0 | `[x]` |
 | QOL-2 — Close pill on agent nodes (abort-if-running + remove) | v0.40.0 | `[x]` |
 | N9 — Plan confidence pill + driving ambiguities on the PlanCard | v0.39.0 | `[x]` |
 | N18 — Injected-context breakdown card (inspector "Context" tab) | v0.38.0 | `[x]` |

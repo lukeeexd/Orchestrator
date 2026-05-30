@@ -21,6 +21,7 @@ interface UseProjectsResult {
   setDirectorEffort: (id: string, effort: EffortLevel) => Promise<void>;
   setDirectorProvider: (id: string, provider: Provider | null) => Promise<void>;
   setAutoBranch: (id: string, on: boolean) => Promise<void>;
+  setGateCommand: (id: string, command: string) => Promise<void>;
   setMcpConfig: (
     id: string,
     config: string | null,
@@ -119,6 +120,14 @@ export function useProjects(): UseProjectsResult {
     [reload],
   );
 
+  const setGateCommand = useCallback(
+    async (id: string, command: string) => {
+      await window.api.setProjectGateCommand(id, command);
+      await reload();
+    },
+    [reload],
+  );
+
   const setMcpConfig = useCallback(
     async (id: string, config: string | null) => {
       const res = await window.api.setProjectMcpConfig(id, config);
@@ -158,6 +167,7 @@ export function useProjects(): UseProjectsResult {
     setDirectorEffort,
     setDirectorProvider,
     setAutoBranch,
+    setGateCommand,
     setMcpConfig,
     setRoleTools,
     remove,

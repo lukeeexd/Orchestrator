@@ -64,6 +64,12 @@ interface Props {
    */
   autoBranch: boolean;
   onAutoBranchChange: (next: boolean) => void;
+  /**
+   * N3: per-project verification command run once after an auto-mode plan
+   * finishes (empty = gate off). Committed on blur.
+   */
+  gateCommand: string;
+  onGateCommandChange: (next: string) => void;
   onSend: (
     body: string,
     mode: DirectorMode,
@@ -111,6 +117,8 @@ export function DirectorPane({
   onDirectorProviderChange,
   autoBranch,
   onAutoBranchChange,
+  gateCommand,
+  onGateCommandChange,
   onSend,
   onSubmitAnswers,
   onSpawnPlan,
@@ -136,6 +144,14 @@ export function DirectorPane({
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [configOpen]);
+  // N3: local draft for the verification-command input — committed on blur so
+  // we don't fire an IPC write per keystroke. Re-seeds when the project (and
+  // thus the prop) changes.
+  const [gateDraft, setGateDraft] = useState(gateCommand);
+  useEffect(() => setGateDraft(gateCommand), [gateCommand]);
+  const commitGate = () => {
+    if (gateDraft.trim() !== gateCommand.trim()) onGateCommandChange(gateDraft);
+  };
   return (
     <div className="pane director" style={{ width }}>
       <div className="pane-head dir-pane-head">
@@ -217,6 +233,29 @@ export function DirectorPane({
                 >
                   <Icon name="branch" size={11} /> {autoBranch ? 'On' : 'Off'}
                 </button>
+              </div>
+              <div className="dir-config-row dir-config-stack">
+                <span>
+                  Verification
+                  <span className="dir-config-hint">
+                    run once after a plan finishes · blank = off
+                  </span>
+                </span>
+                <input
+                  className="text-input"
+                  value={gateDraft}
+                  placeholder="e.g. npm test"
+                  spellCheck={false}
+                  onChange={(e) => setGateDraft(e.target.value)}
+                  onBlur={commitGate}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      commitGate();
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  title="A shell command the Director runs once after an auto-mode plan completes. Exit 0 = pass; non-zero redirects the last agent with the output to fix it (up to 2 tries), then stops + reports. Runs in the workspace. Blank turns it off."
+                />
               </div>
             </div>
           )}

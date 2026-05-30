@@ -572,10 +572,15 @@ class DirectorSession {
 
       const { text, plan, redirect, prd, questions, confidence } =
         extractDirectives(bodyBuf);
-      // PRD mode is "advisor that emits a PRD" — if the Director also
-      // emits a plan block in PRD mode, drop the plan so PlanCard's
-      // spawn button doesn't appear where spawning isn't the intent.
-      const effectivePlan = mode === 'prd' && prd ? null : plan;
+      // Plans are an AUTO-mode artifact. Manual mode = the user drives the
+      // spawns (Director only advises); prd mode = it emits a brief. A stray
+      // orchestrator-plan block in either mode must be dropped — otherwise
+      // PlanCard's Spawn button (and the N3 verification gate that accepting
+      // a plan triggers) would fire where spawning isn't the intent. Enforced
+      // here because this is where the producing mode is authoritative (the
+      // renderer's `mode` prop is the live toggle, not the mode that produced
+      // the plan).
+      const effectivePlan = mode === 'auto' ? plan : null;
       // N8: clarifying questions are an AUTO-mode alternative to a plan. A plan
       // always wins (drop questions if both somehow appear), and they never
       // render outside auto mode (manual = prose advice, prd = the brief).

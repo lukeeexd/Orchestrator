@@ -140,6 +140,7 @@ export function App() {
     setDirectorEffort: setProjectDirectorEffort,
     setDirectorProvider: setProjectDirectorProvider,
     setAutoBranch: setProjectAutoBranch,
+    setGateCommand: setProjectGateCommand,
     setMcpConfig,
     setRoleTools: setProjectRoleTools,
     remove: removeProject,
@@ -798,6 +799,11 @@ export function App() {
                   onAutoBranchChange={(next) => {
                     if (!activeProjectId) return;
                     void setProjectAutoBranch(activeProjectId, next);
+                  }}
+                  gateCommand={activeProject?.gateCommand ?? ''}
+                  onGateCommandChange={(next) => {
+                    if (!activeProjectId) return;
+                    void setProjectGateCommand(activeProjectId, next);
                   }}
                   onSend={send}
                   onSubmitAnswers={(composed) => send(composed, mode)}

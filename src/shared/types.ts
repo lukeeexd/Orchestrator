@@ -89,6 +89,14 @@ export interface Project {
    */
   autoBranch?: boolean;
   /**
+   * N3: a deterministic verification command run once after an auto-mode
+   * plan finishes (e.g. `npm test`, `npx tsc --noEmit`). Exit 0 = pass;
+   * non-zero = fail → the Director redirects the last agent with the
+   * captured output to fix it, re-checks (capped), then surfaces + stops.
+   * Empty / undefined = gate off (the default). Runs in the workspace.
+   */
+  gateCommand?: string;
+  /**
    * Project-level MCP server config, stored verbatim as the JSON the
    * `claude --mcp-config` flag accepts (typically `{"mcpServers": {...}}`).
    * Empty / undefined → no extra MCP servers, the spawn skips

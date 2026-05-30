@@ -184,6 +184,12 @@ const api: OrchestratorApi = {
       id,
       on,
     ) as Promise<{ ok: true }>,
+  setProjectGateCommand: (id, command) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetGateCommand,
+      id,
+      command,
+    ) as Promise<{ ok: true }>,
   listGitBranches: (projectId) =>
     ipcRenderer.invoke(
       IpcChannels.GitListBranches,

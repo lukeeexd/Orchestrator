@@ -9,6 +9,7 @@ import * as director from '../director/runner';
 import {
   awaitCompletion,
   registry,
+  runEndOfPlanGate,
   spawnAgent,
 } from '../agents/runner';
 import { getProject } from '../projects';
@@ -301,6 +302,24 @@ export function registerDirectorHandlers(
             );
             return;
           }
+        }
+        // N3: once every row has spawned, await the final agent and run the
+        // project's verification command (no-op if none configured). The loop
+        // awaits each prev at the top of an iteration, so the last spawn is
+        // still un-awaited here. Guarded on the project still existing.
+        const last = spawned[spawned.length - 1];
+        if (last && getProject(req.projectId)) {
+          try {
+            await awaitCompletion(last.id);
+          } catch {
+            /* tracker swallows; defensive */
+          }
+          await runEndOfPlanGate({
+            projectId: req.projectId,
+            lastAgentId: last.id,
+            sinks: agentSinks,
+            notify: (msg) => director.notifySystem(req.projectId, msg),
+          });
         }
       })();
 

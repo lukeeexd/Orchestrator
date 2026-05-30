@@ -45,6 +45,8 @@ export const IpcChannels = {
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
   ProjectSetDirectorProvider: 'project:setDirectorProvider',
   ProjectSetAutoBranch: 'project:setAutoBranch',
+  /** N3: set the per-project verification command (empty clears it). */
+  ProjectSetGateCommand: 'project:setGateCommand',
   /** F14: list local git branches for the project's workspace. */
   GitListBranches: 'git:listBranches',
   ProjectSetMcpConfig: 'project:setMcpConfig',
@@ -750,6 +752,10 @@ export interface OrchestratorApi {
    * git repo. See `src/main/git.ts` for the skip policy.
    */
   setProjectAutoBranch: (id: string, on: boolean) => Promise<{ ok: true }>;
+  setProjectGateCommand: (
+    id: string,
+    command: string,
+  ) => Promise<{ ok: true }>;
   /**
    * F14: list local git branches for the project's workspace, with
    * the current HEAD called out. Used to populate the auto-branch

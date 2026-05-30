@@ -585,6 +585,14 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE director_messages ADD COLUMN confidence TEXT;`);
     },
   },
+  {
+    version: 32,
+    up: (db) => {
+      // N3 verification gate: per-project shell command run once after an
+      // auto-mode plan finishes. NULL/empty on older rows = gate off.
+      db.exec(`ALTER TABLE projects ADD COLUMN gate_command TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;
