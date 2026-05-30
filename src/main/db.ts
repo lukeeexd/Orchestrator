@@ -593,6 +593,34 @@ const MIGRATIONS: Migration[] = [
       db.exec(`ALTER TABLE projects ADD COLUMN gate_command TEXT;`);
     },
   },
+  {
+    version: 33,
+    up: (db) => {
+      // N5 + N6: run-scoped blackboard (the storage layer) + the progress
+      // ledger derived from it. `blackboard_entries` holds one row per agent
+      // completion during an accepted-plan run, keyed by run_id (= the plan's
+      // director_messages id); `payload` is the JSON HandoffPayload evidence.
+      // The derived ledger rides on the plan's director message as JSON in a
+      // new `ledger` column (NULL on older rows / non-plan messages = no card).
+      db.exec(`
+        CREATE TABLE blackboard_entries (
+          id          TEXT PRIMARY KEY,
+          project_id  TEXT NOT NULL,
+          run_id      TEXT NOT NULL,
+          agent_id    TEXT,
+          agent_name  TEXT NOT NULL,
+          role        TEXT NOT NULL,
+          ts          INTEGER NOT NULL,
+          payload     TEXT NOT NULL
+        );
+
+        CREATE INDEX idx_blackboard_project_run
+          ON blackboard_entries (project_id, run_id);
+
+        ALTER TABLE director_messages ADD COLUMN ledger TEXT;
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

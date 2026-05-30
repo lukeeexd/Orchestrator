@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
 import { PlanCard } from './PlanCard';
+import { LedgerCard } from './LedgerCard';
 import { PRDCard } from './PRDCard';
 import { QuestionsCard } from './QuestionsCard';
 import { Icon } from './Icon';
@@ -170,6 +171,11 @@ function StreamEntry({
             critique={message.critique}
             confidence={message.confidence}
           />
+        </div>
+      )}
+      {message.ledger && message.ledger.rows.length > 0 && (
+        <div className="stream-card">
+          <LedgerCard ledger={message.ledger} />
         </div>
       )}
       {message.prd && (

@@ -51,8 +51,8 @@ export function saveDirectorMessage(m: DirectorMessage): void {
   messageOrdering += 1;
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO director_messages
-      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd, critique, questions, confidence)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd, critique, questions, confidence, ledger)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     m.id,
@@ -74,6 +74,7 @@ export function saveDirectorMessage(m: DirectorMessage): void {
     m.critique ? JSON.stringify(m.critique) : null,
     m.questions ? JSON.stringify(m.questions) : null,
     m.confidence ? JSON.stringify(m.confidence) : null,
+    m.ledger ? JSON.stringify(m.ledger) : null,
   ]);
   stmt.free();
   // A1: audit append. We log the creation moment; subsequent
@@ -149,6 +150,10 @@ export function patchDirectorMessage(
     sets.push('confidence = ?');
     values.push(patch.confidence ? JSON.stringify(patch.confidence) : null);
   }
+  if ('ledger' in patch) {
+    sets.push('ledger = ?');
+    values.push(patch.ledger ? JSON.stringify(patch.ledger) : null);
+  }
   if (sets.length === 0) return;
   values.push(id);
   const stmt = db.prepare(
@@ -162,7 +167,7 @@ export function patchDirectorMessage(
 export function loadDirectorMessages(projectId: string): DirectorMessage[] {
   const db = getDb();
   const stmt = db.prepare(`
-    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd, critique, questions, confidence
+    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd, critique, questions, confidence, ledger
     FROM director_messages
     WHERE project_id = ?
     ORDER BY ordering ASC
@@ -237,6 +242,15 @@ export function loadDirectorMessages(projectId: string): DirectorMessage[] {
         confidence = undefined;
       }
     }
+    const ledgerRaw = row[17];
+    let ledger: DirectorMessage['ledger'];
+    if (typeof ledgerRaw === 'string' && ledgerRaw.length > 0) {
+      try {
+        ledger = JSON.parse(ledgerRaw);
+      } catch {
+        ledger = undefined;
+      }
+    }
     out.push({
       id: asStr(row[0]),
       projectId: asStr(row[12], projectId),
@@ -254,6 +268,7 @@ export function loadDirectorMessages(projectId: string): DirectorMessage[] {
       critique,
       questions,
       confidence,
+      ledger,
     });
     messageOrdering = Math.max(messageOrdering, asInt(row[1]));
   }

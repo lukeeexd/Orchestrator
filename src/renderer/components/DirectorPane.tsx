@@ -23,6 +23,7 @@ import { ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { AttachmentThumb } from './AttachmentThumb';
 import { PlanCard } from './PlanCard';
+import { LedgerCard } from './LedgerCard';
 import { PRDCard } from './PRDCard';
 import { QuestionsCard } from './QuestionsCard';
 import { ModelPicker } from './ModelPicker';
@@ -556,6 +557,9 @@ function Message({
           critique={message.critique}
           confidence={message.confidence}
         />
+      )}
+      {message.ledger && message.ledger.rows.length > 0 && (
+        <LedgerCard ledger={message.ledger} />
       )}
       {message.prd && <PRDCard prd={message.prd} />}
       {message.questions && message.questions.length > 0 && (

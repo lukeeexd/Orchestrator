@@ -356,6 +356,73 @@ export interface PlanConfidence {
   ambiguities: string[];
 }
 
+/**
+ * N6 — run-scoped blackboard. One entry per agent completion during an
+ * accepted-plan run, capturing the structured evidence the agent left behind.
+ * The durable storage layer behind the N5 progress ledger: persisted per
+ * `runId` (= the accepted plan's DirectorMessage id) so the ledger survives an
+ * app restart and a future "inject accumulated artifacts into the next agent"
+ * pass has something concrete to read. Field shapes mirror `HandoffPayload`
+ * (already size-capped in `handoffPayload.ts`).
+ */
+export interface BlackboardEntry {
+  id: string;
+  projectId: string;
+  /** = the accepted plan's DirectorMessage id; groups entries into one run. */
+  runId: string;
+  agentId: string;
+  agentName: string;
+  role: AgentRole;
+  ts: number;
+  summary: string;
+  filesTouched: string[];
+  testsRun: TestsRunSummary | null;
+  errors: string[];
+  todos: string[];
+}
+
+export type LedgerRowStatus = 'pending' | 'active' | 'done' | 'failed';
+
+/**
+ * N5 — one row of the progress ledger, derived from a PlanRow plus the
+ * blackboard entry of the agent that ran it. `evidence` is attached once the
+ * row's agent has completed.
+ */
+export interface LedgerRow {
+  i: number;
+  role: AgentRole;
+  name: string;
+  task: string;
+  status: LedgerRowStatus;
+  evidence?: {
+    filesTouched: number;
+    testsRun: TestsRunSummary | null;
+    errors: number;
+    summary?: string;
+  };
+}
+
+/**
+ * N5 — the Task + Progress Ledger for one accepted-plan run. A derived view
+ * (the plan rows + accumulated blackboard evidence) that rides on the plan's
+ * DirectorMessage as `ledger?` — so it persists and pushes live to the renderer
+ * over the same patch→broadcast path as `critique`/`confidence`, no separate
+ * channel. `stallCount` is a deterministic count of consecutive no-progress
+ * steps; at `STALL_LIMIT` the run is paused and surfaced (NOT auto-replanned —
+ * that risky half is deferred, gated on a session-wide budget cap).
+ */
+export interface RunLedger {
+  runId: string;
+  rows: LedgerRow[];
+  /** Consecutive no-progress steps (reset by any productive step). */
+  stallCount: number;
+  /** True once `stallCount >= STALL_LIMIT` — the run was paused for review. */
+  stalled: boolean;
+  /** Human-readable reason shown on the card when `stalled`. */
+  pausedReason?: string;
+  updatedAt: number;
+}
+
 export type DirectorWho = 'user' | 'director' | 'system';
 
 /**
@@ -409,6 +476,8 @@ export interface DirectorMessage {
   questions?: ClarifyingQuestion[];
   /** N9: self-reported confidence + driving ambiguities, attached to a plan message. */
   confidence?: PlanConfidence;
+  /** N5: live Task/Progress ledger for the run this (accepted) plan kicked off. */
+  ledger?: RunLedger;
   live?: boolean;
   attachments?: AttachmentRef[];
 }

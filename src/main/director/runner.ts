@@ -7,6 +7,7 @@ import type {
   EffortLevel,
   PlanRow,
   PlanCritique,
+  RunLedger,
 } from '../../shared/types';
 import { DEFAULT_EFFORT } from '../../shared/efforts';
 import {
@@ -256,6 +257,19 @@ class DirectorSession {
       mode: this.currentMode,
     });
     void this.pump();
+  }
+
+  /**
+   * N5: patch the live progress ledger onto the plan's message. The accept
+   * loop derives the ledger after each row completes and calls this; it rides
+   * the same patch→broadcast path as `critique`/`confidence`, so it persists
+   * and pushes to the renderer with no separate channel. No-ops silently if
+   * the plan message is gone (e.g. the chat was wiped mid-run) so a detached
+   * loop can't resurrect a deleted message.
+   */
+  updateLedger(planMessageId: string, ledger: RunLedger): void {
+    if (!this.messages.some((m) => m.id === planMessageId)) return;
+    this.patchMessage(planMessageId, { ledger });
   }
 
   acknowledgeRedirect(
@@ -741,6 +755,14 @@ export function notifyAgentDone(
 
 export function notifySystem(projectId: string, body: string): void {
   getSession(projectId).notifySystem(body);
+}
+
+export function updateLedger(
+  projectId: string,
+  planMessageId: string,
+  ledger: RunLedger,
+): void {
+  getSession(projectId).updateLedger(planMessageId, ledger);
 }
 
 export function acknowledgePlanAccepted(

@@ -316,6 +316,7 @@ export function deleteProject(id: string): void {
     `DELETE FROM log_lines WHERE agent_id IN (SELECT id FROM agents WHERE project_id = ?)`,
     `DELETE FROM agents WHERE project_id = ?`,
     `DELETE FROM director_messages WHERE project_id = ?`,
+    `DELETE FROM blackboard_entries WHERE project_id = ?`,
     `DELETE FROM kv WHERE key = 'project:' || ? || ':director_session_id'`,
     `DELETE FROM projects WHERE id = ?`,
   ];
