@@ -6,6 +6,8 @@ import type {
   DirectorMode,
   EffortLevel,
   PlanRow,
+  PlanCritique,
+  RunLedger,
 } from '../../shared/types';
 import { DEFAULT_EFFORT } from '../../shared/efforts';
 import {
@@ -19,6 +21,7 @@ import { readSettings } from '../settings';
 import { effectiveSkill } from '../skills';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractDirectives } from './parse';
+import { runPlanCritic } from './critic';
 import { nowTs } from '../agents/classifier';
 import * as persistence from '../persistence';
 import { prepareAttachments } from '../attachments';
@@ -256,6 +259,19 @@ class DirectorSession {
     void this.pump();
   }
 
+  /**
+   * N5: patch the live progress ledger onto the plan's message. The accept
+   * loop derives the ledger after each row completes and calls this; it rides
+   * the same patch→broadcast path as `critique`/`confidence`, so it persists
+   * and pushes to the renderer with no separate channel. No-ops silently if
+   * the plan message is gone (e.g. the chat was wiped mid-run) so a detached
+   * loop can't resurrect a deleted message.
+   */
+  updateLedger(planMessageId: string, ledger: RunLedger): void {
+    if (!this.messages.some((m) => m.id === planMessageId)) return;
+    this.patchMessage(planMessageId, { ledger });
+  }
+
   acknowledgeRedirect(
     messageId: string,
     agentName: string,
@@ -475,7 +491,7 @@ class DirectorSession {
       // block to emit (Director acts as an advisor), so no reminder.
       const codexReminder =
         mode === 'auto'
-          ? '\n\n---\n\nREMINDER (auto mode): Always emit the `orchestrator-plan` fenced JSON block, even for a single-agent task. Do not describe the plan in prose only — our parser needs the block to auto-spawn anything. If the task is trivial, emit a one-row plan.'
+          ? '\n\n---\n\nREMINDER (auto mode): Emit a fenced JSON block — either `orchestrator-plan` to spawn the fleet, OR `orchestrator-questions` (max 3) if the task is too ambiguous to plan well. Never both. Do not answer in prose only — our parser needs the block. If the task is trivial, just emit a one-row plan; don\'t ask.'
           : mode === 'prd'
             ? '\n\n---\n\nREMINDER (prd mode): Always emit the `orchestrator-prd` fenced JSON block. Do not write the PRD in prose only — our parser needs the block to render the PRD card.'
             : '';
@@ -568,19 +584,60 @@ class DirectorSession {
         }
       }
 
-      const { text, plan, redirect, prd } = extractDirectives(bodyBuf);
-      // PRD mode is "advisor that emits a PRD" — if the Director also
-      // emits a plan block in PRD mode, drop the plan so PlanCard's
-      // spawn button doesn't appear where spawning isn't the intent.
-      const effectivePlan = mode === 'prd' && prd ? null : plan;
+      const { text, plan, redirect, prd, questions, confidence } =
+        extractDirectives(bodyBuf);
+      // Plans are an AUTO-mode artifact. Manual mode = the user drives the
+      // spawns (Director only advises); prd mode = it emits a brief. A stray
+      // orchestrator-plan block in either mode must be dropped — otherwise
+      // PlanCard's Spawn button (and the N3 verification gate that accepting
+      // a plan triggers) would fire where spawning isn't the intent. Enforced
+      // here because this is where the producing mode is authoritative (the
+      // renderer's `mode` prop is the live toggle, not the mode that produced
+      // the plan).
+      const effectivePlan = mode === 'auto' ? plan : null;
+      // N8: clarifying questions are an AUTO-mode alternative to a plan. A plan
+      // always wins (drop questions if both somehow appear), and they never
+      // render outside auto mode (manual = prose advice, prd = the brief).
+      const effectiveQuestions =
+        effectivePlan || mode !== 'auto' ? undefined : questions ?? undefined;
+      // N9: confidence is a property OF a plan — only attach it when a plan
+      // actually rides this turn. A confidence block without a plan (or in
+      // PRD mode where the plan was dropped) is meaningless, so discard it.
+      const effectiveConfidence = effectivePlan
+        ? confidence ?? undefined
+        : undefined;
       const fallbackBody = runtimeError
         ? `Error: ${runtimeError}`
         : '(empty response)';
+      // N7 Plan Critic: one extra cheap-model call between plan-emit and the
+      // final patch. Advisory only — returns null on skip/failure and never
+      // blocks the turn. Folds into the SAME patch so the annotations land
+      // with the plan (one render, no un-critiqued flash). The critic self-
+      // gates (claude-only, >=3 rows) and reuses this turn's controller so a
+      // Director abort cancels it too.
+      let critique: PlanCritique | undefined;
+      if (effectivePlan && this.controller && !this.controller.signal.aborted) {
+        critique =
+          (await runPlanCritic({
+            projectId: this.projectId,
+            rows: effectivePlan,
+            env,
+            provider,
+            controller: this.controller,
+          })) ?? undefined;
+      }
       this.patchMessage(directorMessage.id, {
-        body: text || (effectivePlan || redirect || prd ? '' : fallbackBody),
+        body:
+          text ||
+          (effectivePlan || redirect || prd || effectiveQuestions
+            ? ''
+            : fallbackBody),
         plan: effectivePlan ?? undefined,
         redirect: redirect ?? undefined,
         prd: prd ?? undefined,
+        critique,
+        questions: effectiveQuestions,
+        confidence: effectiveConfidence,
         live: false,
       });
     } catch (e) {
@@ -698,6 +755,14 @@ export function notifyAgentDone(
 
 export function notifySystem(projectId: string, body: string): void {
   getSession(projectId).notifySystem(body);
+}
+
+export function updateLedger(
+  projectId: string,
+  planMessageId: string,
+  ledger: RunLedger,
+): void {
+  getSession(projectId).updateLedger(planMessageId, ledger);
 }
 
 export function acknowledgePlanAccepted(

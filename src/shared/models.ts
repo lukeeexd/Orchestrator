@@ -83,6 +83,16 @@ export function defaultModelForProvider(provider: Provider): string {
 }
 
 /**
+ * Cheapest model for throwaway second-opinion calls (e.g. the N7 Plan Critic),
+ * the opposite of `defaultModelForProvider`'s flagship. Haiku, no 1M beta.
+ * Codex can't pick a model on the ChatGPT plan, so callers skip codex.
+ */
+export function cheapestModelForProvider(provider: Provider): string {
+  if (provider === 'codex') return DEFAULT_CODEX_MODEL;
+  return 'claude-haiku-4-5-20251001';
+}
+
+/**
  * True iff a model id is compatible with a given provider's CLI. Used
  * as a guard so a stale persisted claude id on a codex project doesn't
  * get passed straight through. Codex accepts only the canonical default
@@ -119,6 +129,18 @@ export const MODEL_CONTEXT_TOKENS: Record<string, number> = {
  */
 export function modelContextTokens(id: string): number | null {
   return MODEL_CONTEXT_TOKENS[id] ?? null;
+}
+
+/**
+ * N18: rough offline token estimate (no tokenizer dependency) — the
+ * long-standing ~4-chars-per-token rule of thumb for English + code.
+ * Real BPE diverges by ~20-30%, so every number this feeds is an
+ * estimate ('≈'). Deliberately heuristic: a 50KB+ tokenizer isn't worth
+ * pulling in for an at-a-glance "what am I injecting" optimizer.
+ */
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
 }
 
 /** Beta header that unlocks the 1M token context window. */

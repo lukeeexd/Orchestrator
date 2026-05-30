@@ -18,6 +18,7 @@ export { spawnAgent } from './spawn';
 export { forkAgent } from './fork';
 export { redirectAgent } from './redirect';
 export { abortAgent } from './abort';
+export { runEndOfPlanGate } from './gate';
 export { awaitCompletion, type RunnerSinks } from './internal';
 
 // `registry` is consumed directly by the IPC layer (e.g.

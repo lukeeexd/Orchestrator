@@ -45,6 +45,8 @@ export const IpcChannels = {
   ProjectSetDirectorEffort: 'project:setDirectorEffort',
   ProjectSetDirectorProvider: 'project:setDirectorProvider',
   ProjectSetAutoBranch: 'project:setAutoBranch',
+  /** N3: set the per-project verification command (empty clears it). */
+  ProjectSetGateCommand: 'project:setGateCommand',
   /** F14: list local git branches for the project's workspace. */
   GitListBranches: 'git:listBranches',
   ProjectSetMcpConfig: 'project:setMcpConfig',
@@ -118,6 +120,8 @@ export const IpcChannels = {
   CommandsList: 'commands:list',
   SkillsList: 'skills:list',
   SkillsSet: 'skills:set',
+  /** N18: compute the injected-at-spawn context breakdown for an agent. */
+  ContextBreakdown: 'context:breakdown',
   TemplatesList: 'templates:list',
   TemplatesCreate: 'templates:create',
   TemplatesUpdate: 'templates:update',
@@ -748,6 +752,10 @@ export interface OrchestratorApi {
    * git repo. See `src/main/git.ts` for the skip policy.
    */
   setProjectAutoBranch: (id: string, on: boolean) => Promise<{ ok: true }>;
+  setProjectGateCommand: (
+    id: string,
+    command: string,
+  ) => Promise<{ ok: true }>;
   /**
    * F14: list local git branches for the project's workspace, with
    * the current HEAD called out. Used to populate the auto-branch
@@ -1129,6 +1137,10 @@ export interface OrchestratorApi {
     key: import('./types').SkillKey,
     content: string,
   ) => Promise<{ ok: boolean; entry?: SkillEntry; error?: string }>;
+  /** N18: breakdown of what the orchestrator injects into an agent at spawn. */
+  getContextBreakdown: (
+    req: import('./types').ContextBreakdownRequest,
+  ) => Promise<import('./types').ContextBreakdown>;
   // ───────────────────────── Workflow templates ─────────────────────────
   /** Every template (built-ins first, then user-authored alphabetically). */
   listTemplates: () => Promise<import('./types').Template[]>;

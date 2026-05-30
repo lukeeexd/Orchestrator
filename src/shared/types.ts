@@ -89,6 +89,14 @@ export interface Project {
    */
   autoBranch?: boolean;
   /**
+   * N3: a deterministic verification command run once after an auto-mode
+   * plan finishes (e.g. `npm test`, `npx tsc --noEmit`). Exit 0 = pass;
+   * non-zero = fail → the Director redirects the last agent with the
+   * captured output to fix it, re-checks (capped), then surfaces + stops.
+   * Empty / undefined = gate off (the default). Runs in the workspace.
+   */
+  gateCommand?: string;
+  /**
    * Project-level MCP server config, stored verbatim as the JSON the
    * `claude --mcp-config` flag accepts (typically `{"mcpServers": {...}}`).
    * Empty / undefined → no extra MCP servers, the spawn skips
@@ -178,6 +186,64 @@ export interface Agent {
   forkedFromName?: string;
 }
 
+/**
+ * N18: one measured slice of what the orchestrator injects into an
+ * agent's system prompt at spawn. Token counts are estimates (chars/4,
+ * no tokenizer dep) — treat them as "≈".
+ */
+export interface ContextSegment {
+  /** Display label, e.g. 'Base role prompt', 'Project memory'. */
+  label: string;
+  /** Estimated tokens (chars/4 heuristic). */
+  tokens: number;
+  /** Exact UTF-8 byte length of the segment text. */
+  bytes: number;
+  /** Optional one-line hint — where it comes from / how to trim it. */
+  hint?: string;
+}
+
+/**
+ * A component the orchestrator hands off to the CLI by reference (a path
+ * or config), so its real token cost is loaded CLI-side and not
+ * measurable here. Surfaced for awareness, never counted in the total.
+ */
+export interface ContextNote {
+  label: string;
+  detail: string;
+}
+
+/**
+ * N18: an on-demand breakdown of everything the orchestrator injects
+ * into an agent's system prompt at spawn, by source. This is NOT the
+ * deleted always-on runtime cost/usage meter — it measures the static
+ * prompt the app assembles itself (the one thing it can measure
+ * precisely), so you can spot and trim bloat (a heavy MEMORY.md, a long
+ * project skill) before it rides every spawn.
+ */
+export interface ContextBreakdown {
+  segments: ContextSegment[];
+  /** Sum of segment tokens — the injected, measurable total. */
+  totalTokens: number;
+  /** Sum of segment bytes. */
+  totalBytes: number;
+  /** Model context window in tokens, or null when the id is unknown. */
+  contextWindow: number | null;
+  /** Informational, uncounted (CLI-loaded) components. */
+  notes: ContextNote[];
+}
+
+/** Request payload for the context-breakdown query (fields the renderer already holds). */
+export interface ContextBreakdownRequest {
+  projectId: string;
+  role: AgentRole;
+  subtype?: AgentSubtype;
+  model: string;
+  /** The agent's provider override (undefined → project default). */
+  provider?: Provider;
+  /** The agent's task text — measured as its own segment. */
+  task: string;
+}
+
 export interface ForkAgentRequest {
   /** Parent agent id — its conversation history is the seed for the fork. */
   parentAgentId: string;
@@ -250,6 +316,113 @@ export interface ProjectPrd {
   open_questions: string[];
 }
 
+/**
+ * N7 Plan Critic: an advisory, second-model review of a plan emitted before
+ * any agent spawns. `row_findings` target a specific plan row by its stable
+ * `PlanRow.i`; `plan_findings` are whole-plan issues (e.g. a risky change with
+ * no qa/security row). Severity drives the PlanCard badge colour. Advisory
+ * only — never blocks spawning or edits the plan.
+ */
+export type CritiqueSeverity = 'info' | 'warn' | 'error';
+export interface PlanCritique {
+  row_findings: Array<{ i: number; severity: CritiqueSeverity; issue: string }>;
+  plan_findings: Array<{ severity: CritiqueSeverity; issue: string }>;
+}
+
+/**
+ * N8: a clarifying question the Director asks in auto mode when a task is too
+ * ambiguous to plan well. The user answers in a Q&A card; the answers fold
+ * back into the next Director turn, which then emits a grounded plan. Distinct
+ * from PRD mode's static `open_questions` (those don't fold back).
+ */
+export interface ClarifyingQuestion {
+  question: string;
+  /** Why the answer matters — what it changes about the plan. */
+  why: string;
+}
+
+/**
+ * N9: the Director's self-reported confidence in a plan it just emitted,
+ * plus the 1–3 ambiguities driving any uncertainty. A hint that informs
+ * the existing confirm-before-spawn — uncalibrated, never blocks. Distinct
+ * from N7's external Plan Critic (adversarial review) and N8's pre-plan
+ * questions (which fold back before a plan exists); these are the
+ * assumptions the Director chose to plan *around* rather than ask about.
+ */
+export interface PlanConfidence {
+  /** 0–100 self-assessed likelihood the plan succeeds as scoped. Uncalibrated. */
+  score: number;
+  /** The 1–3 assumptions the plan rests on (what, if wrong, would change it). */
+  ambiguities: string[];
+}
+
+/**
+ * N6 — run-scoped blackboard. One entry per agent completion during an
+ * accepted-plan run, capturing the structured evidence the agent left behind.
+ * The durable storage layer behind the N5 progress ledger: persisted per
+ * `runId` (= the accepted plan's DirectorMessage id) so the ledger survives an
+ * app restart and a future "inject accumulated artifacts into the next agent"
+ * pass has something concrete to read. Field shapes mirror `HandoffPayload`
+ * (already size-capped in `handoffPayload.ts`).
+ */
+export interface BlackboardEntry {
+  id: string;
+  projectId: string;
+  /** = the accepted plan's DirectorMessage id; groups entries into one run. */
+  runId: string;
+  agentId: string;
+  agentName: string;
+  role: AgentRole;
+  ts: number;
+  summary: string;
+  filesTouched: string[];
+  testsRun: TestsRunSummary | null;
+  errors: string[];
+  todos: string[];
+}
+
+export type LedgerRowStatus = 'pending' | 'active' | 'done' | 'failed';
+
+/**
+ * N5 — one row of the progress ledger, derived from a PlanRow plus the
+ * blackboard entry of the agent that ran it. `evidence` is attached once the
+ * row's agent has completed.
+ */
+export interface LedgerRow {
+  i: number;
+  role: AgentRole;
+  name: string;
+  task: string;
+  status: LedgerRowStatus;
+  evidence?: {
+    filesTouched: number;
+    testsRun: TestsRunSummary | null;
+    errors: number;
+    summary?: string;
+  };
+}
+
+/**
+ * N5 — the Task + Progress Ledger for one accepted-plan run. A derived view
+ * (the plan rows + accumulated blackboard evidence) that rides on the plan's
+ * DirectorMessage as `ledger?` — so it persists and pushes live to the renderer
+ * over the same patch→broadcast path as `critique`/`confidence`, no separate
+ * channel. `stallCount` is a deterministic count of consecutive no-progress
+ * steps; at `STALL_LIMIT` the run is paused and surfaced (NOT auto-replanned —
+ * that risky half is deferred, gated on a session-wide budget cap).
+ */
+export interface RunLedger {
+  runId: string;
+  rows: LedgerRow[];
+  /** Consecutive no-progress steps (reset by any productive step). */
+  stallCount: number;
+  /** True once `stallCount >= STALL_LIMIT` — the run was paused for review. */
+  stalled: boolean;
+  /** Human-readable reason shown on the card when `stalled`. */
+  pausedReason?: string;
+  updatedAt: number;
+}
+
 export type DirectorWho = 'user' | 'director' | 'system';
 
 /**
@@ -297,6 +470,14 @@ export interface DirectorMessage {
   redirectFired?: boolean;
   /** P15: PRD emitted by the Director in `[mode: prd]`. Renderer shows it as a PRDCard. */
   prd?: ProjectPrd;
+  /** N7: advisory Plan Critic findings, attached to a plan message before spawn. */
+  critique?: PlanCritique;
+  /** N8: clarifying questions the Director asks (auto mode) instead of a plan. */
+  questions?: ClarifyingQuestion[];
+  /** N9: self-reported confidence + driving ambiguities, attached to a plan message. */
+  confidence?: PlanConfidence;
+  /** N5: live Task/Progress ledger for the run this (accepted) plan kicked off. */
+  ledger?: RunLedger;
   live?: boolean;
   attachments?: AttachmentRef[];
 }

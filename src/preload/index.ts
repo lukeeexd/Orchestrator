@@ -184,6 +184,12 @@ const api: OrchestratorApi = {
       id,
       on,
     ) as Promise<{ ok: true }>,
+  setProjectGateCommand: (id, command) =>
+    ipcRenderer.invoke(
+      IpcChannels.ProjectSetGateCommand,
+      id,
+      command,
+    ) as Promise<{ ok: true }>,
   listGitBranches: (projectId) =>
     ipcRenderer.invoke(
       IpcChannels.GitListBranches,
@@ -496,6 +502,10 @@ const api: OrchestratorApi = {
       entry?: import('../shared/ipc').SkillEntry;
       error?: string;
     }>,
+  getContextBreakdown: (req) =>
+    ipcRenderer.invoke(IpcChannels.ContextBreakdown, req) as Promise<
+      import('../shared/types').ContextBreakdown
+    >,
 
   listTemplates: () =>
     ipcRenderer.invoke(IpcChannels.TemplatesList) as Promise<

@@ -9,6 +9,7 @@ import * as registry from './registry';
 import { classify, nowTs } from './classifier';
 import { buildHandoffPayload } from './handoffPayload';
 import * as director from '../director/runner';
+import * as blackboard from '../blackboard';
 import * as persistence from '../persistence';
 import { prepareAttachments } from '../attachments';
 import { getMcpConfigPath } from '../projects';
@@ -285,6 +286,18 @@ export async function consumeQuery(
           // JSON block on its next turn, not just prose.
           const summary = result.result ?? '';
           const payload = buildHandoffPayload(entry.agent, summary);
+          // N6: record this completion into the run-scoped blackboard. No-op
+          // unless a plan run is active for the project (set by the accept
+          // loop). This runs inside the agent's tracked run promise, so the
+          // entry is written before the accept loop's `await awaitCompletion`
+          // resumes and derives the ledger from it.
+          blackboard.recordCompletion({
+            projectId: entry.agent.projectId,
+            agentId: entry.agent.id,
+            agentName: entry.agent.name,
+            role: entry.agent.role,
+            payload,
+          });
           director.notifyAgentDone(
             entry.agent.projectId,
             entry.agent.name,

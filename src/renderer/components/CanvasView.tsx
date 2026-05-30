@@ -1,7 +1,9 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -56,7 +58,7 @@ const DIRECTOR_ID = '__director__';
 // fed in from App via context (see DirectorSlotContext) so message/stream
 // ticks reconcile the real DirectorPane in place — scroll, focus, and
 // streaming survive — without churning React Flow's node data.
-export const DIRECTOR_NODE_W = 384;
+export const DIRECTOR_NODE_W = 480;
 const DIRECTOR_NODE_H = 564;
 
 // Stagger-layout tunables (bespoke coordinate layout — see layoutStagger).
@@ -70,6 +72,15 @@ const PAD = 40; // normalization padding so nothing is ever negative
 
 /** Live Director UI piped from App into the `director` node. */
 const DirectorSlotContext = createContext<ReactNode>(null);
+
+/**
+ * Node-level actions piped to the agent nodes the same way the Director slot
+ * is — a context Provider wrapping <ReactFlow> reaches the custom node
+ * components. Today just "close" (abort-if-running + remove).
+ */
+const CanvasNodeActionsContext = createContext<{
+  onClose: (id: string) => void;
+}>({ onClose: () => undefined });
 
 // Map an agent status onto the mockup's four status families (run / wait /
 // done / appr) + error. Drives the strip, dot, and status-pill colours via
@@ -97,17 +108,33 @@ function agentData(a: Agent): Record<string, unknown> {
   };
 }
 
-function AgentNodeView({ data, selected }: NodeProps) {
+function AgentNodeView({ id, data, selected }: NodeProps) {
   const status = String(data.status);
   const running = status === 'running';
   const role = String(data.role);
   const subtype = String(data.subtype ?? '');
   const task = String(data.task ?? '');
+  const actions = useContext(CanvasNodeActionsContext);
   return (
     <div
       className={`cv-node ${statusClass(status)}${selected ? ' sel' : ''}`}
       style={{ width: NODE_W }}
     >
+      {/* Hover-reveal close pill. `nodrag` + stopPropagation keep the click
+          from dragging or selecting the node. Removes the agent (aborting it
+          first if it's still running). */}
+      <button
+        type="button"
+        className="cv-close nodrag"
+        title="Close agent — aborts it if still running, then removes it"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          actions.onClose(id);
+        }}
+      >
+        <Icon name="x" size={10} />
+      </button>
       {/* A source + target handle on every side, all hidden. buildEdges picks
           the handle on whichever side FACES the connected node, so an edge
           enters/exits the natural side (left/right/top/bottom) instead of
@@ -639,7 +666,34 @@ export function CanvasView({
     setNodes((prev) => prev.map((n) => ({ ...n, selected: n.id === selectedId })));
   }, [selectedId, setNodes]);
 
+  // Close (remove) an agent node. `registry.remove` already aborts a running
+  // agent before dropping it, so this is safe for any status — but it's a
+  // permanent delete (the row + its pinned notes go too), so confirm before
+  // killing in-flight work. The removal broadcasts back through
+  // onAgentRemove, which prunes it from the agents list and re-renders.
+  const handleCloseAgent = useCallback(
+    (id: string) => {
+      const a = agents.find((x) => x.id === id);
+      if (!a) return;
+      const active = a.status === 'running' || a.status === 'waiting';
+      if (
+        active &&
+        !window.confirm(`"${a.name}" is still running. Abort and remove it?`)
+      ) {
+        return;
+      }
+      if (selectedId === id) onSelectAgent(null);
+      void window.api.removeAgent(id);
+    },
+    [agents, selectedId, onSelectAgent],
+  );
+  const nodeActions = useMemo(
+    () => ({ onClose: handleCloseAgent }),
+    [handleCloseAgent],
+  );
+
   return (
+    <CanvasNodeActionsContext.Provider value={nodeActions}>
     <DirectorSlotContext.Provider value={director}>
     <div
       style={{
@@ -768,5 +822,6 @@ export function CanvasView({
       )}
     </div>
     </DirectorSlotContext.Provider>
+    </CanvasNodeActionsContext.Provider>
   );
 }

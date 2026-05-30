@@ -23,7 +23,9 @@ import { ROLE_TINT } from '../../shared/roles';
 import { Icon } from './Icon';
 import { AttachmentThumb } from './AttachmentThumb';
 import { PlanCard } from './PlanCard';
+import { LedgerCard } from './LedgerCard';
 import { PRDCard } from './PRDCard';
+import { QuestionsCard } from './QuestionsCard';
 import { ModelPicker } from './ModelPicker';
 import { EffortPicker } from './EffortPicker';
 import { DirectorStream } from './DirectorStream';
@@ -63,11 +65,19 @@ interface Props {
    */
   autoBranch: boolean;
   onAutoBranchChange: (next: boolean) => void;
+  /**
+   * N3: per-project verification command run once after an auto-mode plan
+   * finishes (empty = gate off). Committed on blur.
+   */
+  gateCommand: string;
+  onGateCommandChange: (next: string) => void;
   onSend: (
     body: string,
     mode: DirectorMode,
     attachments?: string[],
   ) => Promise<void>;
+  /** N8: submit clarifying-question answers back to the Director (folds into the next turn). */
+  onSubmitAnswers: (composed: string) => Promise<void>;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   /** Open the Save-as-template dialog with the currently-edited rows. */
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
@@ -108,7 +118,10 @@ export function DirectorPane({
   onDirectorProviderChange,
   autoBranch,
   onAutoBranchChange,
+  gateCommand,
+  onGateCommandChange,
   onSend,
+  onSubmitAnswers,
   onSpawnPlan,
   onSaveAsTemplate,
   onWipe,
@@ -118,9 +131,31 @@ export function DirectorPane({
   onSlashAction,
 }: Props) {
   const [confirmWipe, setConfirmWipe] = useState(false);
+  // Overflow menu for the rarely-changed Director config (provider / effort /
+  // auto-branch) — keeps the header to the primary controls (mode + model).
+  const [configOpen, setConfigOpen] = useState(false);
+  const configRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!configOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (configRef.current && !configRef.current.contains(e.target as Node)) {
+        setConfigOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [configOpen]);
+  // N3: local draft for the verification-command input — committed on blur so
+  // we don't fire an IPC write per keystroke. Re-seeds when the project (and
+  // thus the prop) changes.
+  const [gateDraft, setGateDraft] = useState(gateCommand);
+  useEffect(() => setGateDraft(gateCommand), [gateCommand]);
+  const commitGate = () => {
+    if (gateDraft.trim() !== gateCommand.trim()) onGateCommandChange(gateDraft);
+  };
   return (
     <div className="pane director" style={{ width }}>
-      <div className="pane-head">
+      <div className="pane-head dir-pane-head">
         <span className="title">
           <b>Director</b>
         </span>
@@ -143,45 +178,89 @@ export function DirectorPane({
           </span>
         )}
         <ModeToggle mode={mode} onChange={onModeChange} />
-        <select
-          className="text-input settings-select model-picker-compact"
-          value={directorProvider}
-          onChange={(e) =>
-            onDirectorProviderChange(e.target.value as Provider)
-          }
-          title="Director's CLI provider. Can differ from the project's agent default — useful for e.g. running a claude Director over codex specialists. Switching providers resets the Director's session (chat history stays)."
-        >
-          <option value="claude">claude</option>
-          <option value="codex">codex</option>
-        </select>
         <ModelPicker
           value={model}
           onChange={onModelChange}
           compact
           provider={directorProvider}
         />
-        {directorProvider === 'claude' && (
-          <EffortPicker value={effort} onChange={onEffortChange} compact />
-        )}
-        <button
-          className={
-            'icon-btn' + (autoBranch ? ' icon-btn-on' : '')
-          }
-          title={
-            autoBranch
-              ? 'Auto-branch: ON · accepting a plan checks out orchestrator/<planId>-<slug> if the workspace is a clean git repo. Click to disable.'
-              : 'Auto-branch: OFF · plans run on whatever branch you’re on. Click to enable.'
-          }
-          onClick={() => onAutoBranchChange(!autoBranch)}
-        >
-          <Icon name="branch" size={13} />
-        </button>
         <span className="spacer" />
         {busy && (
           <span className="meta" style={{ color: 'var(--accent)' }}>
             streaming
           </span>
         )}
+        <div className="dir-config-wrap" ref={configRef}>
+          <button
+            className={'icon-btn' + (configOpen ? ' icon-btn-on' : '')}
+            title="Director settings — provider, effort, auto-branch"
+            onClick={() => setConfigOpen((v) => !v)}
+          >
+            <Icon name="more" size={14} />
+          </button>
+          {configOpen && (
+            <div className="dir-config-menu">
+              <div className="dir-config-row">
+                <span>Provider</span>
+                <select
+                  className="text-input settings-select"
+                  value={directorProvider}
+                  onChange={(e) =>
+                    onDirectorProviderChange(e.target.value as Provider)
+                  }
+                  title="Director's CLI provider. Can differ from the project's agent default. Switching resets the Director's session (chat history stays)."
+                >
+                  <option value="claude">claude</option>
+                  <option value="codex">codex</option>
+                </select>
+              </div>
+              {directorProvider === 'claude' && (
+                <div className="dir-config-row">
+                  <span>Effort</span>
+                  <EffortPicker value={effort} onChange={onEffortChange} compact />
+                </div>
+              )}
+              <div className="dir-config-row">
+                <span>Auto-branch</span>
+                <button
+                  className={'tb-btn' + (autoBranch ? ' primary' : '')}
+                  style={{ height: 22 }}
+                  onClick={() => onAutoBranchChange(!autoBranch)}
+                  title={
+                    autoBranch
+                      ? 'On · accepting a plan checks out orchestrator/<planId>-<slug> on a clean git repo'
+                      : 'Off · plans run on the current branch'
+                  }
+                >
+                  <Icon name="branch" size={11} /> {autoBranch ? 'On' : 'Off'}
+                </button>
+              </div>
+              <div className="dir-config-row dir-config-stack">
+                <span>
+                  Verification
+                  <span className="dir-config-hint">
+                    run once after a plan finishes · blank = off
+                  </span>
+                </span>
+                <input
+                  className="text-input"
+                  value={gateDraft}
+                  placeholder="e.g. npm test"
+                  spellCheck={false}
+                  onChange={(e) => setGateDraft(e.target.value)}
+                  onBlur={commitGate}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      commitGate();
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  title="A shell command the Director runs once after an auto-mode plan completes. Exit 0 = pass; non-zero redirects the last agent with the output to fix it (up to 2 tries), then stops + reports. Runs in the workspace. Blank turns it off."
+                />
+              </div>
+            </div>
+          )}
+        </div>
         <button
           className="icon-btn"
           title="Wipe chat — drops messages + session memory. Agents stay."
@@ -199,6 +278,7 @@ export function DirectorPane({
           onSpawnPlan={onSpawnPlan}
           onSaveAsTemplate={onSaveAsTemplate}
           onRewindTo={onRewindTo}
+          onSubmitAnswers={onSubmitAnswers}
         />
       ) : messages.length === 0 ? (
         <EmptyChat mode={mode} />
@@ -209,6 +289,7 @@ export function DirectorPane({
           onSpawnPlan={onSpawnPlan}
           onSaveAsTemplate={onSaveAsTemplate}
           onRewindTo={onRewindTo}
+          onSubmitAnswers={onSubmitAnswers}
         />
       )}
 
@@ -298,6 +379,12 @@ function ConfirmWipe({
   );
 }
 
+const MODE_LABEL: Record<DirectorMode, string> = {
+  auto: 'Auto',
+  manual: 'Manual',
+  prd: 'PRD',
+};
+
 function ModeToggle({
   mode,
   onChange,
@@ -306,30 +393,19 @@ function ModeToggle({
   onChange: (next: DirectorMode) => void;
 }) {
   return (
-    <div
-      className="mode-toggle"
+    <select
+      className={
+        'text-input settings-select model-picker-compact mode-select mode-' +
+        mode
+      }
+      value={mode}
+      onChange={(e) => onChange(e.target.value as DirectorMode)}
       title="Auto: Director plans and auto-spawns. Manual: Director advises only. PRD: Director writes a Product Requirements Doc instead of a plan."
     >
-      <button
-        className={mode === 'auto' ? 'on' : ''}
-        onClick={() => onChange('auto')}
-      >
-        auto
-      </button>
-      <button
-        className={mode === 'manual' ? 'on' : ''}
-        onClick={() => onChange('manual')}
-      >
-        manual
-      </button>
-      <button
-        className={mode === 'prd' ? 'on' : ''}
-        onClick={() => onChange('prd')}
-        title="PRD mode — Director emits a Product Requirements Doc instead of a plan. Useful for inherited or under-scoped projects."
-      >
-        prd
-      </button>
-    </div>
+      <option value="auto">{MODE_LABEL.auto}</option>
+      <option value="manual">{MODE_LABEL.manual}</option>
+      <option value="prd">{MODE_LABEL.prd}</option>
+    </select>
   );
 }
 
@@ -368,12 +444,14 @@ function Chat({
   onSpawnPlan,
   onSaveAsTemplate,
   onRewindTo,
+  onSubmitAnswers,
 }: {
   messages: DirectorMessage[];
   mode: DirectorMode;
   onSpawnPlan: (msg: DirectorMessage, rows: PlanRow[]) => Promise<void>;
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
   onRewindTo: (messageId: string) => Promise<void>;
+  onSubmitAnswers: (composed: string) => Promise<void>;
 }) {
   const tailRef = useRef<HTMLDivElement | null>(null);
   // M11: also pin to bottom when an existing message's body
@@ -403,6 +481,7 @@ function Chat({
           }
           onRewindTo={onRewindTo}
           isLastMessage={idx === messages.length - 1}
+          onSubmitAnswers={onSubmitAnswers}
         />
       ))}
       <div ref={tailRef} />
@@ -418,6 +497,7 @@ function Message({
   prevPlanRows,
   onRewindTo,
   isLastMessage,
+  onSubmitAnswers,
 }: {
   message: DirectorMessage;
   mode: DirectorMode;
@@ -426,6 +506,7 @@ function Message({
   prevPlanRows?: PlanRow[];
   onRewindTo: (messageId: string) => Promise<void>;
   isLastMessage: boolean;
+  onSubmitAnswers: (composed: string) => Promise<void>;
 }) {
   // F5: don't offer rewind on the currently-streaming Director turn
   // (the message is mid-write) or on the very last message (there's
@@ -473,9 +554,20 @@ function Message({
           onSpawn={(rows) => onSpawn(message, rows)}
           onSaveAsTemplate={onSaveAsTemplate}
           prevRows={prevPlanRows}
+          critique={message.critique}
+          confidence={message.confidence}
         />
       )}
+      {message.ledger && message.ledger.rows.length > 0 && (
+        <LedgerCard ledger={message.ledger} />
+      )}
       {message.prd && <PRDCard prd={message.prd} />}
+      {message.questions && message.questions.length > 0 && (
+        <QuestionsCard
+          questions={message.questions}
+          onSubmitAnswers={onSubmitAnswers}
+        />
+      )}
       {message.redirect && (
         <div className="dir-redirect">
           <div className="dir-redirect-head">

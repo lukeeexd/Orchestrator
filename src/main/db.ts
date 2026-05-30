@@ -559,6 +559,68 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 29,
+    up: (db) => {
+      // N7 Plan Critic: advisory pre-spawn critique, stored as JSON on the
+      // plan's director message. NULL on older rows (no critique) — the
+      // renderer simply shows no annotations.
+      db.exec(`ALTER TABLE director_messages ADD COLUMN critique TEXT;`);
+    },
+  },
+  {
+    version: 30,
+    up: (db) => {
+      // N8 clarifying questions: the Director's pre-plan questions stored as
+      // JSON on its message. NULL on older rows (no card).
+      db.exec(`ALTER TABLE director_messages ADD COLUMN questions TEXT;`);
+    },
+  },
+  {
+    version: 31,
+    up: (db) => {
+      // N9 plan confidence: the Director's self-reported confidence + driving
+      // ambiguities, stored as JSON on the plan's message. NULL on older rows
+      // (no pill).
+      db.exec(`ALTER TABLE director_messages ADD COLUMN confidence TEXT;`);
+    },
+  },
+  {
+    version: 32,
+    up: (db) => {
+      // N3 verification gate: per-project shell command run once after an
+      // auto-mode plan finishes. NULL/empty on older rows = gate off.
+      db.exec(`ALTER TABLE projects ADD COLUMN gate_command TEXT;`);
+    },
+  },
+  {
+    version: 33,
+    up: (db) => {
+      // N5 + N6: run-scoped blackboard (the storage layer) + the progress
+      // ledger derived from it. `blackboard_entries` holds one row per agent
+      // completion during an accepted-plan run, keyed by run_id (= the plan's
+      // director_messages id); `payload` is the JSON HandoffPayload evidence.
+      // The derived ledger rides on the plan's director message as JSON in a
+      // new `ledger` column (NULL on older rows / non-plan messages = no card).
+      db.exec(`
+        CREATE TABLE blackboard_entries (
+          id          TEXT PRIMARY KEY,
+          project_id  TEXT NOT NULL,
+          run_id      TEXT NOT NULL,
+          agent_id    TEXT,
+          agent_name  TEXT NOT NULL,
+          role        TEXT NOT NULL,
+          ts          INTEGER NOT NULL,
+          payload     TEXT NOT NULL
+        );
+
+        CREATE INDEX idx_blackboard_project_run
+          ON blackboard_entries (project_id, run_id);
+
+        ALTER TABLE director_messages ADD COLUMN ledger TEXT;
+      `);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

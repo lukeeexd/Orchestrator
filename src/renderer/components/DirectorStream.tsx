@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DirectorMessage, DirectorMode, PlanRow } from '../../shared/types';
 import { PlanCard } from './PlanCard';
+import { LedgerCard } from './LedgerCard';
 import { PRDCard } from './PRDCard';
+import { QuestionsCard } from './QuestionsCard';
 import { Icon } from './Icon';
 import { findPrevPlanRows } from '../lib/planDiff';
 
@@ -26,6 +28,8 @@ interface Props {
   onSaveAsTemplate?: (rows: PlanRow[]) => void;
   /** F5: caller handles confirmation + refresh. Per-message affordance. */
   onRewindTo: (messageId: string) => Promise<void>;
+  /** N8: submit clarifying-question answers back to the Director. */
+  onSubmitAnswers: (composed: string) => Promise<void>;
 }
 
 export function DirectorStream({
@@ -34,6 +38,7 @@ export function DirectorStream({
   onSpawnPlan,
   onSaveAsTemplate,
   onRewindTo,
+  onSubmitAnswers,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [stickToBottom, setStickToBottom] = useState(true);
@@ -71,6 +76,7 @@ export function DirectorStream({
           }
           onRewindTo={onRewindTo}
           isLastMessage={idx === messages.length - 1}
+          onSubmitAnswers={onSubmitAnswers}
         />
       ))}
       {messages.length === 0 && (
@@ -93,6 +99,7 @@ function StreamEntry({
   prevPlanRows,
   onRewindTo,
   isLastMessage,
+  onSubmitAnswers,
 }: {
   message: DirectorMessage;
   mode: DirectorMode;
@@ -101,6 +108,7 @@ function StreamEntry({
   prevPlanRows?: PlanRow[];
   onRewindTo: (messageId: string) => Promise<void>;
   isLastMessage: boolean;
+  onSubmitAnswers: (composed: string) => Promise<void>;
 }) {
   // F5: same skip-conditions as the chat-view Message component.
   const canRewind = !message.live && !isLastMessage;
@@ -160,12 +168,27 @@ function StreamEntry({
             onSpawn={onSpawnPlan}
             onSaveAsTemplate={onSaveAsTemplate}
             prevRows={prevPlanRows}
+            critique={message.critique}
+            confidence={message.confidence}
           />
+        </div>
+      )}
+      {message.ledger && message.ledger.rows.length > 0 && (
+        <div className="stream-card">
+          <LedgerCard ledger={message.ledger} />
         </div>
       )}
       {message.prd && (
         <div className="stream-card">
           <PRDCard prd={message.prd} />
+        </div>
+      )}
+      {message.questions && message.questions.length > 0 && (
+        <div className="stream-card">
+          <QuestionsCard
+            questions={message.questions}
+            onSubmitAnswers={onSubmitAnswers}
+          />
         </div>
       )}
       {message.redirect && (

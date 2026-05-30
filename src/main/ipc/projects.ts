@@ -20,6 +20,7 @@ import {
   setActiveProjectId,
   getProject,
   setProjectAutoBranch,
+  setProjectGateCommand,
   setProjectDirectorEffort,
   setProjectDirectorModel,
   setProjectDirectorProvider,
@@ -158,6 +159,13 @@ export function registerProjectsHandlers(ctx: IpcContext): void {
     IpcChannels.ProjectSetAutoBranch,
     (_event, id: string, on: unknown): { ok: true } => {
       setProjectAutoBranch(id, on === true);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    IpcChannels.ProjectSetGateCommand,
+    (_event, id: string, command: unknown): { ok: true } => {
+      setProjectGateCommand(id, typeof command === 'string' ? command : '');
       return { ok: true };
     },
   );

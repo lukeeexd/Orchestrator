@@ -54,7 +54,7 @@ function asInt(v: unknown, fallback = 0): number {
 export function listProjects(): Project[] {
   const db = getDb();
   const res = db.exec(
-    `SELECT id, name, workspace, created_at, director_model, director_effort, role_tools, provider, director_provider, mcp_config, auto_branch FROM projects ORDER BY created_at ASC`,
+    `SELECT id, name, workspace, created_at, director_model, director_effort, role_tools, provider, director_provider, mcp_config, auto_branch, gate_command FROM projects ORDER BY created_at ASC`,
   );
   if (res.length === 0) return [];
   return res[0].values.map((row) => {
@@ -65,6 +65,7 @@ export function listProjects(): Project[] {
     const dpv = row[8];
     const mcp = row[9];
     const ab = row[10];
+    const gc = row[11];
     return {
       id: asStr(row[0]),
       name: asStr(row[1]),
@@ -78,6 +79,7 @@ export function listProjects(): Project[] {
       roleTools: parseRoleTools(rt),
       mcpConfig: typeof mcp === 'string' && mcp.length > 0 ? mcp : undefined,
       autoBranch: ab === 1,
+      gateCommand: typeof gc === 'string' && gc.length > 0 ? gc : undefined,
     };
   });
 }
@@ -213,6 +215,19 @@ export function setProjectAutoBranch(id: string, on: boolean): void {
   scheduleSave();
 }
 
+/**
+ * N3: set the per-project verification command. An empty/whitespace-only
+ * string clears it (stored as NULL), which turns the gate off.
+ */
+export function setProjectGateCommand(id: string, command: string): void {
+  const db = getDb();
+  const trimmed = command.trim();
+  const stmt = db.prepare(`UPDATE projects SET gate_command = ? WHERE id = ?`);
+  stmt.run([trimmed.length > 0 ? trimmed : null, id]);
+  stmt.free();
+  scheduleSave();
+}
+
 export function setProjectDirectorProvider(
   id: string,
   provider: Provider | null,
@@ -301,6 +316,7 @@ export function deleteProject(id: string): void {
     `DELETE FROM log_lines WHERE agent_id IN (SELECT id FROM agents WHERE project_id = ?)`,
     `DELETE FROM agents WHERE project_id = ?`,
     `DELETE FROM director_messages WHERE project_id = ?`,
+    `DELETE FROM blackboard_entries WHERE project_id = ?`,
     `DELETE FROM kv WHERE key = 'project:' || ? || ':director_session_id'`,
     `DELETE FROM projects WHERE id = ?`,
   ];

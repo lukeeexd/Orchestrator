@@ -3,6 +3,10 @@ import type {
   AgentRole,
   Provider,
   ProjectPrd,
+  PlanCritique,
+  CritiqueSeverity,
+  ClarifyingQuestion,
+  PlanConfidence,
   RedirectInstruction,
 } from '../../shared/types';
 
@@ -26,11 +30,20 @@ interface ParseResult {
   redirect: RedirectInstruction | null;
   /** P15: Parsed PRD, if a valid `orchestrator-prd` block was found. */
   prd: ProjectPrd | null;
+  /** N8: clarifying questions, if a valid `orchestrator-questions` block was found. */
+  questions: ClarifyingQuestion[] | null;
+  /** N9: plan confidence + ambiguities, if a valid `orchestrator-confidence` block was found. */
+  confidence: PlanConfidence | null;
 }
 
 const PLAN_RE = /```orchestrator-plan\s*\n([\s\S]*?)\n```/i;
 const REDIRECT_RE = /```orchestrator-redirect\s*\n([\s\S]*?)\n```/i;
 const PRD_RE = /```orchestrator-prd\s*\n([\s\S]*?)\n```/i;
+const CRITIQUE_RE = /```orchestrator-critique\s*\n([\s\S]*?)\n```/i;
+const QUESTIONS_RE = /```orchestrator-questions\s*\n([\s\S]*?)\n```/i;
+const CONFIDENCE_RE = /```orchestrator-confidence\s*\n([\s\S]*?)\n```/i;
+
+const VALID_SEVERITIES: CritiqueSeverity[] = ['info', 'warn', 'error'];
 
 function parsePlan(raw: string): PlanRow[] | null {
   let parsed: unknown;
@@ -119,6 +132,118 @@ function parsePrd(raw: string): ProjectPrd | null {
   };
 }
 
+/**
+ * Parse the JSON body of an `orchestrator-critique` block (N7 Plan Critic).
+ * Per-item guards mirror parsePlan; an all-empty critique returns null
+ * (mirrors parsePrd) so the renderer shows nothing for a clean plan. Advisory
+ * only — a malformed/missing block just yields null, never an error.
+ */
+function parseCritique(raw: string): PlanCritique | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed == null || typeof parsed !== 'object') return null;
+  const r = parsed as Record<string, unknown>;
+  const sev = (v: unknown): CritiqueSeverity | null =>
+    typeof v === 'string' && VALID_SEVERITIES.includes(v as CritiqueSeverity)
+      ? (v as CritiqueSeverity)
+      : null;
+
+  const rowFindings: PlanCritique['row_findings'] = [];
+  if (Array.isArray(r.row_findings)) {
+    for (const item of r.row_findings) {
+      if (item == null || typeof item !== 'object') continue;
+      const f = item as Record<string, unknown>;
+      const severity = sev(f.severity);
+      if (typeof f.i !== 'number' || !severity) continue;
+      if (typeof f.issue !== 'string' || !f.issue.trim()) continue;
+      rowFindings.push({ i: f.i, severity, issue: f.issue.trim() });
+    }
+  }
+  const planFindings: PlanCritique['plan_findings'] = [];
+  if (Array.isArray(r.plan_findings)) {
+    for (const item of r.plan_findings) {
+      if (item == null || typeof item !== 'object') continue;
+      const f = item as Record<string, unknown>;
+      const severity = sev(f.severity);
+      if (!severity || typeof f.issue !== 'string' || !f.issue.trim()) continue;
+      planFindings.push({ severity, issue: f.issue.trim() });
+    }
+  }
+  if (rowFindings.length === 0 && planFindings.length === 0) return null;
+  return { row_findings: rowFindings, plan_findings: planFindings };
+}
+
+/**
+ * Extract a critique from a STANDALONE string (the critic child's stdout) —
+ * deliberately NOT folded into `extractDirectives`, which is the Director's
+ * own-turn parser that strips + acts on plan/redirect/prd blocks. The critic
+ * is a separate process; its output must never be treated as Director
+ * directives.
+ */
+export function extractCritique(body: string): PlanCritique | null {
+  const m = CRITIQUE_RE.exec(body);
+  return m ? parseCritique(m[1].trim()) : null;
+}
+
+/**
+ * Parse the JSON body of an `orchestrator-questions` block (N8). A JSON array
+ * of { question, why } (same array envelope as plan). Per-item guards mirror
+ * parsePlan; empty / all-dropped returns null so a clean turn renders no card.
+ * No hard count cap here — the cap is prompt-only (matches parsePrd's
+ * open_questions, which the parser also doesn't truncate).
+ */
+function parseQuestions(raw: string): ClarifyingQuestion[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+  const out: ClarifyingQuestion[] = [];
+  for (const item of parsed) {
+    if (item == null || typeof item !== 'object') continue;
+    const q = item as Record<string, unknown>;
+    if (typeof q.question !== 'string' || !q.question.trim()) continue;
+    if (typeof q.why !== 'string' || !q.why.trim()) continue;
+    out.push({ question: q.question.trim(), why: q.why.trim() });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
+ * Parse the JSON body of an `orchestrator-confidence` block (N9). Shape:
+ * `{ score: number (0-100), ambiguities: string[] }`. The score is clamped
+ * to 0-100; non-numeric → null (no fake number). Ambiguities are trimmed +
+ * capped at 3 (the prompt asks for 1-3; defend the UI from an over-long
+ * list). A block with neither a usable score nor any ambiguity returns
+ * null so a clean turn renders no pill. Advisory only.
+ */
+function parseConfidence(raw: string): PlanConfidence | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (parsed == null || typeof parsed !== 'object') return null;
+  const r = parsed as Record<string, unknown>;
+  if (typeof r.score !== 'number' || Number.isNaN(r.score)) return null;
+  const score = Math.max(0, Math.min(100, Math.round(r.score)));
+  const ambiguities: string[] = [];
+  if (Array.isArray(r.ambiguities)) {
+    for (const item of r.ambiguities) {
+      if (typeof item === 'string' && item.trim()) ambiguities.push(item.trim());
+      if (ambiguities.length >= 3) break;
+    }
+  }
+  return { score, ambiguities };
+}
+
 function parseRedirect(raw: string): RedirectInstruction | null {
   let parsed: unknown;
   try {
@@ -145,6 +270,8 @@ export function extractDirectives(body: string): ParseResult {
   let plan: PlanRow[] | null = null;
   let redirect: RedirectInstruction | null = null;
   let prd: ProjectPrd | null = null;
+  let questions: ClarifyingQuestion[] | null = null;
+  let confidence: PlanConfidence | null = null;
 
   const planMatch = PLAN_RE.exec(body);
   if (planMatch) {
@@ -173,7 +300,25 @@ export function extractDirectives(body: string): ParseResult {
     }
   }
 
-  return { text: text.trim(), plan, redirect, prd };
+  const questionsMatch = QUESTIONS_RE.exec(text);
+  if (questionsMatch) {
+    const parsed = parseQuestions(questionsMatch[1].trim());
+    if (parsed) {
+      questions = parsed;
+      text = text.replace(QUESTIONS_RE, '');
+    }
+  }
+
+  const confidenceMatch = CONFIDENCE_RE.exec(text);
+  if (confidenceMatch) {
+    const parsed = parseConfidence(confidenceMatch[1].trim());
+    if (parsed) {
+      confidence = parsed;
+      text = text.replace(CONFIDENCE_RE, '');
+    }
+  }
+
+  return { text: text.trim(), plan, redirect, prd, questions, confidence };
 }
 
 /** @deprecated Use `extractDirectives` — keeps the old single-purpose name working. */

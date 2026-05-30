@@ -9,10 +9,13 @@ import * as director from '../director/runner';
 import {
   awaitCompletion,
   registry,
+  runEndOfPlanGate,
   spawnAgent,
 } from '../agents/runner';
 import { getProject } from '../projects';
 import { readSettings } from '../settings';
+import * as blackboard from '../blackboard';
+import { deriveLedger } from '../director/ledger';
 import { assertWorkspaceMatchesProject } from '../security/workspace';
 import { buildBranchName, ensureBranch, isGitRepo } from '../git';
 import type { IpcContext } from './_shared';
@@ -208,6 +211,31 @@ export function registerDirectorHandlers(
           ? req.attachments
           : undefined;
 
+      // N5/N6: a "run" is one accepted plan, keyed by the plan's message id
+      // (already sent for auto-branch). When present we open a run-scoped
+      // blackboard and patch a live progress ledger onto the plan message as
+      // rows complete. Absent (older renderer) → ledger silently off, the same
+      // degradation as auto-branch.
+      const runId = req.planMessageId;
+      const agentIdByRow: Array<string | undefined> = req.rows.map(
+        () => undefined,
+      );
+      // Derive the ledger from the blackboard + plan rows and patch it onto the
+      // plan message. `activeRowIndex` is the row currently running (-1 = none).
+      const refreshLedger = (activeRowIndex: number) => {
+        if (!runId) return null;
+        const ledger = deriveLedger({
+          runId,
+          rows: req.rows,
+          agentIdByRow,
+          entries: blackboard.listEntries(req.projectId, runId),
+          activeRowIndex,
+          updatedAt: Date.now(),
+        });
+        director.updateLedger(req.projectId, runId, ledger);
+        return ledger;
+      };
+
       const spawned: { id: string; name: string }[] = [];
       const firstId =
         req.rows.length > 0
@@ -236,6 +264,13 @@ export function registerDirectorHandlers(
           id: firstId.agentId,
           name: e?.agent.name ?? req.rows[0].name,
         });
+        agentIdByRow[0] = firstId.agentId;
+        // Open the run only once the first agent has actually spawned, so a
+        // failed first spawn can't leak an active run. The agent runs detached
+        // (spawnAgent returns once it's launched), so this lands well before
+        // any completion fires `recordCompletion`.
+        if (runId) blackboard.beginRun(req.projectId, runId);
+        refreshLedger(0);
       }
       const reservedNames = [
         ...spawned.map((s) => s.name),
@@ -248,59 +283,108 @@ export function registerDirectorHandlers(
       );
 
       void (async () => {
-        for (let i = 1; i < req.rows.length; i++) {
-          // H1: per-iteration try/catch + project-still-exists guard.
-          // Without these, a single spawn rejection killed the whole
-          // remaining plan with no user-visible signal, and a project
-          // deleted mid-plan would still attempt to spawn into it.
-          if (!getProject(req.projectId)) {
-            director.notifySystem(
-              req.projectId,
-              `Plan cancelled: project no longer exists. ${
-                req.rows.length - i
-              } row${req.rows.length - i === 1 ? '' : 's'} not spawned.`,
-            );
-            return;
-          }
-          const prev = spawned[spawned.length - 1];
-          if (prev) {
+        try {
+          for (let i = 1; i < req.rows.length; i++) {
+            // H1: per-iteration try/catch + project-still-exists guard.
+            // Without these, a single spawn rejection killed the whole
+            // remaining plan with no user-visible signal, and a project
+            // deleted mid-plan would still attempt to spawn into it.
+            if (!getProject(req.projectId)) {
+              director.notifySystem(
+                req.projectId,
+                `Plan cancelled: project no longer exists. ${
+                  req.rows.length - i
+                } row${req.rows.length - i === 1 ? '' : 's'} not spawned.`,
+              );
+              return;
+            }
+            const prev = spawned[spawned.length - 1];
+            if (prev) {
+              try {
+                await awaitCompletion(prev.id);
+              } catch {
+                /* awaitCompletion never rejects (the tracker swallows),
+                   but be defensive in case that changes */
+              }
+            }
+            // N5: the previous row just settled — refresh the ledger (no row
+            // is running in this gap) and, if two consecutive steps made no
+            // measurable progress, pause the run BEFORE spawning the next row.
+            // Surface only — no auto-replan (deferred, gated on PRE-2).
+            const led = refreshLedger(-1);
+            if (led?.stalled) {
+              director.notifySystem(
+                req.projectId,
+                `⚠ Run paused — ${led.pausedReason} ${
+                  req.rows.length - i
+                } row${req.rows.length - i === 1 ? '' : 's'} not spawned.`,
+              );
+              return;
+            }
+            const row = req.rows[i];
             try {
-              await awaitCompletion(prev.id);
-            } catch {
-              /* awaitCompletion never rejects (the tracker swallows),
-                 but be defensive in case that changes */
+              const r = await spawnAgent(
+                {
+                  projectId: req.projectId,
+                  role: row.role,
+                  task: row.task,
+                  workspace: validatedWorkspace,
+                  spawnedBy: 'director',
+                  ...directorOverrides,
+                  ...(row.provider ? { provider: row.provider } : {}),
+                  ...(planAttachments ? { attachments: planAttachments } : {}),
+                },
+                agentSinks,
+              );
+              const e = registry.get(r.agentId);
+              spawned.push({
+                id: r.agentId,
+                name: e?.agent.name ?? row.name,
+              });
+              agentIdByRow[i] = r.agentId;
+              refreshLedger(i);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              director.notifySystem(
+                req.projectId,
+                `Plan row ${i + 1} (${row.role} — ${row.name}) failed to spawn: ${msg}. Stopping remaining ${
+                  req.rows.length - i - 1
+                } row${req.rows.length - i - 1 === 1 ? '' : 's'}.`,
+              );
+              return;
             }
           }
-          const row = req.rows[i];
-          try {
-            const r = await spawnAgent(
-              {
-                projectId: req.projectId,
-                role: row.role,
-                task: row.task,
-                workspace: validatedWorkspace,
-                spawnedBy: 'director',
-                ...directorOverrides,
-                ...(row.provider ? { provider: row.provider } : {}),
-                ...(planAttachments ? { attachments: planAttachments } : {}),
-              },
-              agentSinks,
-            );
-            const e = registry.get(r.agentId);
-            spawned.push({
-              id: r.agentId,
-              name: e?.agent.name ?? row.name,
+          // N3: once every row has spawned, await the final agent and run the
+          // project's verification command (no-op if none configured). The loop
+          // awaits each prev at the top of an iteration, so the last spawn is
+          // still un-awaited here. Guarded on the project still existing.
+          const last = spawned[spawned.length - 1];
+          if (last && getProject(req.projectId)) {
+            try {
+              await awaitCompletion(last.id);
+            } catch {
+              /* tracker swallows; defensive */
+            }
+            // N5: final ledger after the last row settles (nothing running).
+            const finalLed = refreshLedger(-1);
+            // A stall on the LAST row has no "next row" to halt, so pause here
+            // instead of running the verification gate on a stalled run.
+            if (finalLed?.stalled) {
+              director.notifySystem(
+                req.projectId,
+                `⚠ Run paused — ${finalLed.pausedReason}`,
+              );
+              return;
+            }
+            await runEndOfPlanGate({
+              projectId: req.projectId,
+              lastAgentId: last.id,
+              sinks: agentSinks,
+              notify: (msg) => director.notifySystem(req.projectId, msg),
             });
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            director.notifySystem(
-              req.projectId,
-              `Plan row ${i + 1} (${row.role} — ${row.name}) failed to spawn: ${msg}. Stopping remaining ${
-                req.rows.length - i - 1
-              } row${req.rows.length - i - 1 === 1 ? '' : 's'}.`,
-            );
-            return;
           }
+        } finally {
+          if (runId) blackboard.endRun(req.projectId);
         }
       })();
 
