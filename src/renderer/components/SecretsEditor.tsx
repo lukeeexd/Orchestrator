@@ -43,7 +43,6 @@ export function SecretsEditor({ project }: Props) {
     setEditing(new Map());
     setError(null);
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
 
   const onAdd = async () => {

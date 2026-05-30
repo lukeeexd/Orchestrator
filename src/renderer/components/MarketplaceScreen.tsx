@@ -686,7 +686,6 @@ function AgentSkillsView({
       cancelled = true;
     };
     // skillsCache deliberately excluded — adding it would loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleSubs, listBundleSkills]);
 
   if (visibleSubs.length === 0) {
