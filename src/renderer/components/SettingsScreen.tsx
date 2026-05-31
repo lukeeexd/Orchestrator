@@ -214,6 +214,28 @@ export function SettingsScreen() {
               onChange={(v) => patch('defaultEffort', v)}
             />
           </div>
+
+          <div className="field">
+            <span className="lbl">Max agents per run</span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={draft.maxSpawnsPerRun}
+              onChange={(e) =>
+                patch(
+                  'maxSpawnsPerRun',
+                  Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                )
+              }
+              style={{ width: 80 }}
+            />
+          </div>
+          <div className="settings-help">
+            Backstop for auto-loops (verification-gate fixes, future auto-replan):
+            an accepted plan won't spawn more than this many agents before pausing
+            for review. 0 = unlimited.
+          </div>
         </section>
 
         <section className="settings-section">

@@ -616,7 +616,6 @@ function MemoryTab({ agent }: { agent: Agent }) {
       setPending((prev) => [p, ...prev.filter((x) => x.id !== p.id)]);
     });
     return () => off();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.projectId, agent.role]);
 
   const decide = async (id: string, approve: boolean) => {

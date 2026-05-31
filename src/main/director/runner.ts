@@ -19,6 +19,7 @@ import { runClaudeQuery } from '../cli/spawn';
 import { runCodexQuery } from '../cli/codex';
 import { readSettings } from '../settings';
 import { effectiveSkill } from '../skills';
+import { stripOrchestratorFences } from '../sanitize';
 import { DIRECTOR_SYSTEM_PROMPT } from './prompt';
 import { extractDirectives } from './parse';
 import { runPlanCritic } from './critic';
@@ -32,18 +33,8 @@ import {
   pluginDirsForProject,
 } from '../marketplace';
 
-/**
- * R-A8: strip `orchestrator-*` fence blocks from a free-form string
- * before it lands inside Director-bound input. The Director's parser
- * picks up these fences from any message it sees on its next turn;
- * letting an agent's summary contain one would let buggy or
- * malicious agent output forge a redirect / plan / prd directive.
- */
-const ORCHESTRATOR_FENCE_RE = /```orchestrator-[a-z]+\s*\n[\s\S]*?\n```/gi;
-function stripOrchestratorFences(s: string): string {
-  if (!s) return s;
-  return s.replace(ORCHESTRATOR_FENCE_RE, '[orchestrator-fence redacted]');
-}
+// R-A8 fence-stripping lives in ../sanitize (shared with the N6 run-digest
+// injection path, which hardens agent→agent prompt context the same way).
 
 /**
  * Build the Director's effective system prompt: the hardcoded base

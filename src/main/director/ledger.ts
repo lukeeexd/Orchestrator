@@ -35,6 +35,10 @@ export interface DeriveLedgerInput {
   entries: BlackboardEntry[];
   /** Index of the row whose agent is currently running; -1 when none. */
   activeRowIndex: number;
+  /** PRE-2a: director-driven spawns recorded for the run so far. */
+  spawnCount: number;
+  /** PRE-2a: the run's spawn cap (`maxSpawnsPerRun`). 0 = unlimited. */
+  spawnCap: number;
   /** Caller-supplied timestamp (keeps this function clock-free). */
   updatedAt: number;
 }
@@ -71,8 +75,16 @@ function isNoProgress(
 }
 
 export function deriveLedger(input: DeriveLedgerInput): RunLedger {
-  const { runId, rows, agentIdByRow, entries, activeRowIndex, updatedAt } =
-    input;
+  const {
+    runId,
+    rows,
+    agentIdByRow,
+    entries,
+    activeRowIndex,
+    spawnCount,
+    spawnCap,
+    updatedAt,
+  } = input;
 
   const byAgentId = new Map<string, BlackboardEntry>();
   for (const e of entries) byAgentId.set(e.agentId, e);
@@ -130,12 +142,22 @@ export function deriveLedger(input: DeriveLedgerInput): RunLedger {
     ? `${stallCount} consecutive steps made no measurable progress (no files changed and/or tests still failing). Paused for review — redirect the last agent or send new guidance to continue.`
     : undefined;
 
+  // PRE-2a: spawn-cap state. cap === 0 means unlimited (off).
+  const capped = spawnCap > 0 && spawnCount >= spawnCap;
+  const cappedReason = capped
+    ? `Run hit its spawn cap (${spawnCount}/${spawnCap} agents). Stopped to avoid a runaway loop — raise "Max agents per run" in Settings, or send new guidance, to continue.`
+    : undefined;
+
   return {
     runId,
     rows: ledgerRows,
     stallCount,
     stalled,
     ...(pausedReason ? { pausedReason } : {}),
+    spawnCount,
+    spawnCap,
+    capped,
+    ...(cappedReason ? { cappedReason } : {}),
     updatedAt,
   };
 }

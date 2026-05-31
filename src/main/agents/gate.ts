@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { getProject } from '../projects';
 import * as registry from './registry';
+import * as blackboard from '../blackboard';
 import { redirectAgent } from './redirect';
 import { awaitCompletion, type RunnerSinks } from './internal';
 
@@ -139,6 +140,16 @@ export async function runEndOfPlanGate(opts: {
       );
       return;
     }
+    // PRE-2a: a gate fix re-runs the agent — another director-driven spawn.
+    // Stop before redirecting if the run already hit its spawn cap, rather than
+    // minting work past the backstop.
+    const budget = blackboard.spawnBudgetExhausted(projectId);
+    if (budget.exhausted) {
+      notify(
+        `✗ Verification still failing, but the run hit its spawn cap (${budget.count}/${budget.cap} agents). Stopping. Raise "Max agents per run" in Settings to allow more fix attempts.`,
+      );
+      return;
+    }
     fixes += 1;
     notify(
       `✗ Verification failed (exit ${code}). Redirecting ${agentName} to fix it (attempt ${fixes}/${maxFixes}).`,
@@ -159,6 +170,8 @@ export async function runEndOfPlanGate(opts: {
       );
       return;
     }
+    // Count the fix-redirect against the run's spawn cap.
+    blackboard.recordSpawn(projectId);
     try {
       await awaitCompletion(lastAgentId);
     } catch {

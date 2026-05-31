@@ -69,6 +69,20 @@ export function LedgerCard({ ledger }: { ledger: RunLedger }) {
             ⚠ paused
           </span>
         )}
+        {ledger.capped && (
+          <span
+            className="badge"
+            style={{
+              background: 'var(--sub-2)',
+              color: 'var(--waiting)',
+              fontSize: 10,
+              marginLeft: ledger.stalled ? 6 : 'auto',
+            }}
+            title="The run hit its spawn cap (Settings → Max agents per run) and stopped to avoid a runaway loop."
+          >
+            ⚠ capped
+          </span>
+        )}
       </div>
       {ledger.rows.map((r, i) => (
         <LedgerRowView key={`${r.name}-${i}`} row={r} isLast={i === total - 1} />
@@ -88,6 +102,23 @@ export function LedgerCard({ ledger }: { ledger: RunLedger }) {
         >
           <span style={{ fontWeight: 700 }}>⚠</span>
           <span>{ledger.pausedReason}</span>
+        </div>
+      )}
+      {ledger.capped && ledger.cappedReason && (
+        <div
+          style={{
+            padding: '6px 12px 8px',
+            fontSize: 11,
+            color: 'var(--waiting)',
+            borderTop: '1px dashed var(--sub-2)',
+            marginTop: 4,
+            display: 'flex',
+            gap: 6,
+            alignItems: 'baseline',
+          }}
+        >
+          <span style={{ fontWeight: 700 }}>⚠</span>
+          <span>{ledger.cappedReason}</span>
         </div>
       )}
     </div>

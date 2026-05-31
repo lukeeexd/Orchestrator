@@ -420,6 +420,14 @@ export interface RunLedger {
   stalled: boolean;
   /** Human-readable reason shown on the card when `stalled`. */
   pausedReason?: string;
+  /** PRE-2a: director-driven agent spawns recorded for this run so far. */
+  spawnCount: number;
+  /** PRE-2a: the run's spawn cap (the `maxSpawnsPerRun` setting). 0 = unlimited. */
+  spawnCap: number;
+  /** PRE-2a: true once `spawnCount >= spawnCap > 0` — the run hit its cap and halted. */
+  capped: boolean;
+  /** Human-readable reason shown on the card when `capped`. */
+  cappedReason?: string;
   updatedAt: number;
 }
 

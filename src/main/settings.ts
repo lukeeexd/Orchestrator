@@ -68,6 +68,11 @@ const DEFAULTS: Settings = {
   defaultBudgetUsd: 0,
   defaultBudgetTokens: 0,
   defaultBudgetSeconds: 0,
+  // PRE-2a: run-wide spawn cap — a backstop so an auto-loop (N3 gate fixes,
+  // future N5 auto-replan) can't mint unbounded agents in one run. 25 is well
+  // above any normal plan + gate fixes; 0 = unlimited. Backfills onto older
+  // settings.json via the {...DEFAULTS, ...parsed} merge on read.
+  maxSpawnsPerRun: 25,
   // Marketplace "defaults for new projects" knob. Off so the simple
   // global-applies-everywhere model is the default; users who want
   // per-project customization opt in via the Settings checkbox.
