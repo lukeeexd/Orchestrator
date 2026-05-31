@@ -268,7 +268,10 @@ export function registerDirectorHandlers(
         // Open the run only once the first agent has actually spawned, so a
         // failed first spawn can't leak an active run. The agent runs detached
         // (spawnAgent returns once it's launched), so this lands well before
-        // any completion fires `recordCompletion`.
+        // any completion fires `recordCompletion`. Row 0's own N6 digest is
+        // empty regardless of whether beginRun has run yet — there are no prior
+        // entries on the first row — so the injection is correct independent of
+        // this ordering; beginRun's placement only governs entry attribution.
         if (runId) blackboard.beginRun(req.projectId, runId);
         refreshLedger(0);
       }

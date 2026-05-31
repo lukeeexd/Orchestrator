@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { getDb, scheduleSave } from './db';
+import { formatRunDigest } from './runDigest';
 import type {
   AgentRole,
   BlackboardEntry,
@@ -186,4 +187,20 @@ export function listEntries(
     });
   }
   return out;
+}
+
+// ─────────────────────────── injection digest ───────────────────────────
+
+/**
+ * Build the run-context digest to inject into an agent spawning into the
+ * project's active run. Returns null when there is no active run, or no prior
+ * entries yet — so the first row of a plan (and any user-spawned agent outside
+ * a run) gets nothing. Formatting is delegated to the pure `formatRunDigest`
+ * (runDigest.ts); read at spawn time in `agents/spawn.ts`.
+ */
+export function buildInjectionDigest(projectId: string): string | null {
+  const runId = activeRuns.get(projectId);
+  if (!runId) return null;
+  const digest = formatRunDigest(listEntries(projectId, runId));
+  return digest.length > 0 ? digest : null;
 }

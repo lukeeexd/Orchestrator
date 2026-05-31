@@ -14,6 +14,7 @@ import {
 } from '../../shared/models';
 import * as registry from './registry';
 import { nowTs } from './classifier';
+import * as blackboard from '../blackboard';
 import { readSettings } from '../settings';
 import * as persistence from '../persistence';
 import { prepareAttachments } from '../attachments';
@@ -171,12 +172,25 @@ async function run(
     for (const line of prep.warnLines) {
       sinks.onLog(agentId, { ts: nowTs(), kind: 'warn', msg: line });
     }
+    // N6: for a Director-spawned plan row, inject a size-bounded digest of what
+    // earlier agents in the run already did (files / tests / summaries from the
+    // run-scoped blackboard) so the chain builds on prior work instead of
+    // rediscovering it. Gated to `director` spawns: a user manually spawning an
+    // agent while a plan happens to be running shouldn't inherit that plan's
+    // context. Null for the first row too (no prior entries yet). Initial spawn
+    // only — redirect/fork resume an existing session and see prior context
+    // through their own conversation, not this digest.
+    const runDigest =
+      entry.agent.spawnedBy === 'director'
+        ? blackboard.buildInjectionDigest(req.projectId)
+        : null;
+    const priorBlock = runDigest ? `${runDigest}\n\n` : '';
     const promptWithContext = `[workspace] ${workdir}
 All file paths resolve here — your Read, Write, Edit, Glob, Grep tools all operate inside this folder. Use simple relative paths like "notes.md" (preferred) or the absolute path above.
 
 Do NOT invent paths like /home/user/, /tmp/, or POSIX-style locations — they are not real on this system. Your bash 'pwd' may report this folder in MSYS form (e.g. /d/ClaudeCode/foo) which is equivalent to the Windows path above; file-tool calls should still use Windows-style or simple relative paths.
 
-${prep.textInline}Task:
+${priorBlock}${prep.textInline}Task:
 ${req.task}`;
 
     const q = buildQuery({
