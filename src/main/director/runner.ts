@@ -54,7 +54,13 @@ export interface DirectorSinks {
 
 type QueueEntry =
   | { kind: 'user'; body: string; mode: DirectorMode; attachments?: string[] }
-  | { kind: 'system'; body: string; mode: DirectorMode };
+  | {
+      kind: 'system';
+      body: string;
+      mode: DirectorMode;
+      /** N5: present when this is an auto-replan turn — stamped onto the plan it emits. */
+      replan?: { of: string; attempt: number };
+    };
 
 let sharedSinks: DirectorSinks | null = null;
 
@@ -224,6 +230,43 @@ class DirectorSession {
     void this.pump();
   }
 
+  /**
+   * N5 auto-replan: after a run stalls, queue a Director turn that emits a
+   * REVISED plan for the remaining work. `promptBody` is built by the caller
+   * (the accept loop) from the blackboard evidence + remaining rows, while the
+   * run is still active. Bounded by the `maxReplansPerRun` setting:
+   * `planMessageId` is the stalled plan's message, the new attempt = its replan
+   * depth + 1; if that exceeds the cap (or the cap is 0/off) we do NOT offer a
+   * replan and return false, so the caller just pauses instead. The emitted
+   * plan surfaces as a normal PlanCard — user-approved, never auto-spawned —
+   * tagged with replan provenance for the "revised after a stall" badge.
+   * Returns true if a replan turn was queued.
+   */
+  requestReplan(planMessageId: string, promptBody: string): boolean {
+    const max = readSettings().maxReplansPerRun ?? 0;
+    if (max <= 0) return false;
+    const cur = this.messages.find((m) => m.id === planMessageId);
+    const attempt = (cur?.replan?.attempt ?? 0) + 1;
+    if (attempt > max) return false;
+    this.pushMessage({
+      id: randomUUID(),
+      projectId: this.projectId,
+      who: 'system',
+      name: 'system',
+      time: timeOnly(),
+      body: `⟳ Run stalled — the Director is revising the plan (auto-replan ${attempt}/${max})…`,
+    });
+    this.queue.push({
+      kind: 'system',
+      body: promptBody,
+      // Replans only make sense in auto mode — a plan must be emitted.
+      mode: 'auto',
+      replan: { of: planMessageId, attempt },
+    });
+    void this.pump();
+    return true;
+  }
+
   acknowledgePlanAccepted(rows: PlanRow[], spawnedNames: string[]): void {
     for (let i = this.messages.length - 1; i >= 0; i--) {
       if (this.messages[i].plan) {
@@ -318,7 +361,8 @@ class DirectorSession {
         const next = this.queue.shift();
         if (!next) break;
         const attachments = next.kind === 'user' ? next.attachments : undefined;
-        await this.runTurn(next.body, next.mode, attachments);
+        const replan = next.kind === 'system' ? next.replan : undefined;
+        await this.runTurn(next.body, next.mode, attachments, replan);
       }
     } finally {
       this.busy = false;
@@ -391,6 +435,7 @@ class DirectorSession {
     promptBody: string,
     mode: DirectorMode,
     attachments?: string[],
+    replan?: { of: string; attempt: number },
   ): Promise<void> {
     const settings = readSettings();
     const env: Record<string, string | undefined> = { ...process.env };
@@ -629,6 +674,10 @@ class DirectorSession {
         critique,
         questions: effectiveQuestions,
         confidence: effectiveConfidence,
+        // N5: stamp replan provenance when this turn was an auto-replan AND it
+        // actually produced a plan (a replan turn that asks questions instead
+        // isn't a revised plan).
+        replan: effectivePlan && replan ? replan : undefined,
         live: false,
       });
     } catch (e) {
@@ -754,6 +803,14 @@ export function updateLedger(
   ledger: RunLedger,
 ): void {
   getSession(projectId).updateLedger(planMessageId, ledger);
+}
+
+export function requestReplan(
+  projectId: string,
+  planMessageId: string,
+  promptBody: string,
+): boolean {
+  return getSession(projectId).requestReplan(planMessageId, promptBody);
 }
 
 export function acknowledgePlanAccepted(

@@ -621,6 +621,15 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 34,
+    up: (db) => {
+      // N5 auto-replan: provenance of a Director-revised plan generated after a
+      // stall — JSON {of, attempt} on the plan's director message. NULL on
+      // older rows / non-replan plans (no "revised after stall" badge).
+      db.exec(`ALTER TABLE director_messages ADD COLUMN replan TEXT;`);
+    },
+  },
 ];
 
 let dbInstance: Database | null = null;

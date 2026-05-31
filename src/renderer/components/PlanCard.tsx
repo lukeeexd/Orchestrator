@@ -57,6 +57,8 @@ interface Props {
   critique?: PlanCritique;
   /** N9: the Director's self-reported confidence + driving ambiguities for this plan. */
   confidence?: PlanConfidence;
+  /** N5: set when this plan is a Director revision generated after a prior run stalled. */
+  replan?: { of: string; attempt: number };
 }
 
 /** Severity ranking + the badge colour / tooltip prefix for each. */
@@ -83,6 +85,7 @@ export function PlanCard({
   prevRows,
   critique,
   confidence,
+  replan,
 }: Props) {
   // Local editable copy of the plan. The Director's original proposal
   // stays on the message; this state is what the user can prune/tweak
@@ -197,6 +200,21 @@ export function PlanCard({
     <div className="dir-plan">
       <div className="dir-plan-head">
         <span>Plan</span>
+        {replan && (
+          <span
+            className="badge"
+            style={{
+              background: 'var(--sub-2)',
+              color: 'var(--waiting)',
+              fontSize: 10,
+              marginLeft: 6,
+              whiteSpace: 'nowrap',
+            }}
+            title="The Director revised this plan after the previous run stalled (no measurable progress). Review and approve it before spawning — revised plans are never auto-spawned."
+          >
+            ⟳ revised after stall · {replan.attempt}
+          </span>
+        )}
         {hasMeaningfulDiff && planDiff && (
           <span
             className="badge"

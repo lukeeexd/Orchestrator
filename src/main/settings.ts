@@ -73,6 +73,11 @@ const DEFAULTS: Settings = {
   // above any normal plan + gate fixes; 0 = unlimited. Backfills onto older
   // settings.json via the {...DEFAULTS, ...parsed} merge on read.
   maxSpawnsPerRun: 25,
+  // N5: after a run stalls, the Director offers up to this many consecutive
+  // auto-replans (each still user-approved) before it stops offering more and
+  // just pauses. 2 = "give the Director two corrective swings"; 0 = never
+  // auto-replan (surface + pause only). Backfills via the DEFAULTS merge.
+  maxReplansPerRun: 2,
   // Marketplace "defaults for new projects" knob. Off so the simple
   // global-applies-everywhere model is the default; users who want
   // per-project customization opt in via the Settings checkbox.

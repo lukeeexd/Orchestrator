@@ -1,3 +1,5 @@
+import type { PlanRow } from '../../shared/types';
+
 export const DIRECTOR_SYSTEM_PROMPT = `You are the Director of an orchestration system. Your job is to help the user decompose a task and supervise specialized agents as they carry it out.
 
 You do not write code or run commands yourself. You plan, sequence, and coordinate.
@@ -267,3 +269,49 @@ If the task is genuinely trivial (rename one variable, fix one typo), don't both
 
 Tight. Terminal voice. No flattery. No emoji.
 `;
+
+/**
+ * N5 auto-replan: the instruction body for a replan turn. The accept loop
+ * builds the evidence (completed-steps digest from the blackboard + the rows
+ * that never ran + the remaining spawn budget) while the run is still active,
+ * and this composes it into a prompt that asks the Director for a TIGHT revised
+ * plan over only the remaining work (or clarifying questions if the stall is
+ * genuinely ambiguous). runTurn prepends the usual `[mode: auto]` + fleet/skill
+ * blocks, so this returns only the task-specific instruction.
+ */
+export function buildReplanPrompt(input: {
+  stallReason: string;
+  completedDigest: string | null;
+  remainingRows: PlanRow[];
+  budgetRemaining: number;
+}): string {
+  const { stallReason, completedDigest, remainingRows, budgetRemaining } = input;
+  const remaining =
+    remainingRows.length > 0
+      ? remainingRows
+          .map((r) => `- ${r.i}. ${r.role} ${r.name} — ${r.task}`)
+          .join('\n')
+      : '(none — every planned step was attempted)';
+  const done =
+    completedDigest && completedDigest.trim().length > 0
+      ? completedDigest
+      : 'No measurable progress was recorded by the agents that ran.';
+  const budgetLine = Number.isFinite(budgetRemaining)
+    ? `Keep the revised plan within ${budgetRemaining} agent(s) (the per-run spawn cap).`
+    : 'No spawn cap is set for this run.';
+  return [
+    'AUTO-REPLAN — the current run stalled and was paused.',
+    '',
+    `Why it paused: ${stallReason}`,
+    '',
+    'What the agents already did this run:',
+    done,
+    '',
+    'Planned steps that have NOT run yet:',
+    remaining,
+    '',
+    budgetLine,
+    '',
+    'Emit a REVISED orchestrator-plan covering ONLY the remaining work. Use the "What the agents already did this run" section above to identify finished work and do NOT re-add it (that section lists the most recent steps; older ones may be summarized). The previous approach stalled, so reconsider it: reorder, change roles, split the stuck step, or insert a verification step. If the stall reveals a genuine ambiguity you cannot resolve from the evidence, emit orchestrator-questions instead of a plan. Keep it tight and within the spawn budget.',
+  ].join('\n');
+}

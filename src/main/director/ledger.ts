@@ -145,7 +145,7 @@ export function deriveLedger(input: DeriveLedgerInput): RunLedger {
   // PRE-2a: spawn-cap state. cap === 0 means unlimited (off).
   const capped = spawnCap > 0 && spawnCount >= spawnCap;
   const cappedReason = capped
-    ? `Run hit its spawn cap (${spawnCount}/${spawnCap} agents). Stopped to avoid a runaway loop — raise "Max agents per run" in Settings, or send new guidance, to continue.`
+    ? `Run hit its per-run spawn cap (${spawnCount}/${spawnCap} agents). Stopped to avoid a runaway loop — raise "Max agents per run" in Settings, or send new guidance, to continue. (Each accepted replan starts a fresh run with a fresh cap.)`
     : undefined;
 
   return {

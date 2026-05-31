@@ -16,6 +16,7 @@ import { getProject } from '../projects';
 import { readSettings } from '../settings';
 import * as blackboard from '../blackboard';
 import { deriveLedger } from '../director/ledger';
+import { buildReplanPrompt } from '../director/prompt';
 import { assertWorkspaceMatchesProject } from '../security/workspace';
 import { buildBranchName, ensureBranch, isGitRepo } from '../git';
 import type { IpcContext } from './_shared';
@@ -320,17 +321,38 @@ export function registerDirectorHandlers(
               }
             }
             // N5: the previous row just settled — refresh the ledger (no row
-            // is running in this gap) and, if two consecutive steps made no
-            // measurable progress, pause the run BEFORE spawning the next row.
-            // Surface only — no auto-replan (deferred, gated on PRE-2).
+            // is running in this gap). If two consecutive steps made no
+            // measurable progress, try an AUTO-REPLAN before pausing: the
+            // Director revises the remaining plan from the run's evidence and
+            // surfaces it for the user to approve (never auto-spawned). Bounded
+            // by maxReplansPerRun; requestReplan returns false when the cap is
+            // hit or replan is disabled — then we fall back to the plain pause.
             const led = refreshLedger(-1);
             if (led?.stalled) {
-              director.notifySystem(
-                req.projectId,
-                `⚠ Run paused — ${led.pausedReason} ${
-                  req.rows.length - i
-                } row${req.rows.length - i === 1 ? '' : 's'} not spawned.`,
-              );
+              const reason = led.pausedReason ?? 'No measurable progress.';
+              const cap = readSettings().maxSpawnsPerRun;
+              const replanned =
+                runId != null &&
+                director.requestReplan(
+                  req.projectId,
+                  runId,
+                  buildReplanPrompt({
+                    stallReason: reason,
+                    completedDigest: blackboard.buildInjectionDigest(
+                      req.projectId,
+                    ),
+                    remainingRows: req.rows.slice(i),
+                    budgetRemaining: cap > 0 ? cap : Infinity,
+                  }),
+                );
+              if (!replanned) {
+                director.notifySystem(
+                  req.projectId,
+                  `⚠ Run paused — ${reason} ${
+                    req.rows.length - i
+                  } row${req.rows.length - i === 1 ? '' : 's'} not spawned.`,
+                );
+              }
               return;
             }
             // PRE-2a: stop before minting the next agent if the run hit its
@@ -398,8 +420,12 @@ export function registerDirectorHandlers(
             }
             // N5: final ledger after the last row settles (nothing running).
             const finalLed = refreshLedger(-1);
-            // A stall on the LAST row has no "next row" to halt, so pause here
-            // instead of running the verification gate on a stalled run.
+            // A stall on the LAST row deliberately does NOT auto-replan: every
+            // planned row has run, so there's no "remaining work" to revise (a
+            // replan here would carry zero remaining rows). Pause for review
+            // instead — and skip the verification gate, which shouldn't run on a
+            // stalled result. The user can redirect the last agent or send new
+            // guidance. (Mid-run stalls, above, do offer a replan.)
             if (finalLed?.stalled) {
               director.notifySystem(
                 req.projectId,

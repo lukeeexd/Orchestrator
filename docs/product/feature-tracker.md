@@ -24,6 +24,34 @@ cost/budget/context surface removed in v0.24.0 (treat as a *re-introduction*).
 
 ---
 
+## Strategy note — cockpit pivot (2026-05-31, verified)
+
+Claude Code now ships native multi-agent orchestration (subagents + Workflow tool). We
+checked (via the claude-code-guide specialist) whether Orchestrator should **delegate**
+orchestration to it. **Verdict: it can't, and shouldn't try.** Native subagents/workflows
+are *model-driven* (only invokable by Claude inside a session — no headless
+"run-this-workflow" entrypoint a desktop app can drive), their sub-fan-out is **opaque** in
+`stream-json`, per-subagent governance is **definition-time only**, and they're claude-only
++ single-session. So:
+
+- **The orchestration engine is core, not redundant.** It's the *only* way to get the
+  observable + governed + multi-provider + persistent + steerable fleet that is
+  Orchestrator's whole value. Keep building it (Director, multi-process spawner, gates).
+- **What native beats us on** is *autonomous, opaque, single-session* fan-out — which a
+  supervised cockpit deliberately isn't. Not our lane; don't chase it.
+- **N29 reframed** = a narrow, opt-in **"scale escape hatch"**: a node can be an agent we
+  prompt to use native subagents internally. We govern the *boundary* (approval, allow-list,
+  provider, spawn cap) but the internal fan-out is invisible + ungoverned. "Trade control
+  for scale." NOT "the Director authors a workflow the cockpit runs" (verified infeasible).
+- **The real architectural fork is F4 (parallel lanes)** — Orchestrator's *own* observable
+  parallel execution — which would unblock the *observable + governed* versions of N11 / N25
+  / N31 that native can't match. F4 is the high-leverage decision, not native delegation.
+- **Reversal:** N1 / N2 / N11 / N12 / N25 / N31 / N32 / N36 are **not** "redundant with
+  native" (an earlier read) — native can't observe or govern them. They're legitimate
+  cockpit builds; their blocker is F4 (parallelism), not the native engine.
+
+---
+
 ## ★ Priorities (the curated shortlist)
 
 The highest value-per-effort, no-blocker starting points. Detail in research §2/§4.
@@ -72,7 +100,7 @@ Sorted by ID. See research §3 scorecard + §4/§5 for full detail and the verif
 | N2 | Regression-aware verification (fail/pass-to-pass) | Verification | strategic | L | `[ ]` | Compute SWE-bench "resolved" verdict; replaces untrustworthy `tests_run` regex in `handoffPayload.ts`. Clean before-snapshot collides w/ shared workspace → partial dep on N35/PRE-1. Per-project opt-in + changed-tests fast mode. |
 | N3 | Deterministic row-transition gates (shell, stderr feedback) | Verification | strategic | M | `[x]` v0.41.0 | **Shipped (once-after-plan variant):** per-project `gateCommand` (Director ⋯ menu) runs once after an auto-mode plan; exit 0 = pass, non-zero redirects the LAST agent with the output to fix (cap 2) then stops + surfaces. `agents/gate.ts` (spawn, real exit code, abort-aware), wired in acceptPlan. Plan suppression now auto-only in `runner.ts` so the gate can't fire outside auto. Opened the verification spine (N1/N2 next). |
 | N4 | Living PLAN (re-scope remaining rows from evidence) | Planning | strategic | L | `[ ]` | `planDiff.ts` was built for this; gate point after `awaitCompletion`. Opt-in, material-change-only, user-gated, bounded; never re-add completed rows. Distinct from F2 (manual 2-plan diff). |
-| N5 | Task + Progress Ledger + auto-replan on stall | Planning | strategic | L | `[x]` v0.42.0 (safe half) | **Shipped the safe half (ledger + stall pause; NOT auto-replan).** A live progress ledger rides on the accepted-plan DirectorMessage as `ledger?` (persisted + broadcast like critique/confidence — no new channel); the accept loop (`ipc/director.ts`) derives it after each `awaitCompletion` and patches it. Deterministic, conservative stall counter (`director/ledger.ts`, `STALL_LIMIT=2`): errored-no-change OR same-files-repeat-while-failing; read-only roles carved out. At 2 consecutive no-progress steps the run **pauses + surfaces** (stops spawning remaining rows + a ⚠ system message) — no auto-replan. `LedgerCard` renders in stream + chat views. **Auto-replan loop now UNBLOCKED** by PRE-2a (v0.44.0 spawn cap) — next slice: on stall, have the Director re-plan from the blackboard/ledger + mint new rows, bounded by `blackboard.spawnBudgetExhausted`/`remaining`. |
+| N5 | Task + Progress Ledger + auto-replan on stall | Planning | strategic | L | `[x]` v0.42.0 (ledger) + v0.45.0 (auto-replan) | **FULLY SHIPPED.** v0.42.0: live progress ledger on the plan's DirectorMessage + deterministic stall counter (`director/ledger.ts`, `STALL_LIMIT=2`) that pauses+surfaces at 2 no-progress steps. **v0.45.0 — supervised auto-replan:** on a mid-run stall the accept loop calls `director.requestReplan` (`runner.ts`), which queues a Director turn whose prompt (`buildReplanPrompt`, `prompt.ts` — completed-steps blackboard digest + remaining rows + spawn-cap hint) emits a REVISED plan for the remaining work. It renders as a normal PlanCard tagged `replan:{of,attempt}` ("revised after a stall" badge) and the user **approves it — never auto-spawned** (the approval gate is the oscillation guard). Bounded by `maxReplansPerRun` (setting, default 2) via the per-message attempt chain; each approved replan is a fresh run (fresh spawn cap). Final-row stalls pause (no remaining work). Migration v34 (`replan` column). The autonomous-oscillation risk the original caveat feared is structurally gone (the loop returns on stall — only a human approval continues it). |
 | N6 | Run-scoped blackboard (shared mutable artifact store) | Planning | strategic | L | `[x]` v0.42.0 + v0.43.0 (injection) | **Shipped as N5's storage layer (merged, not double-counted).** `blackboard.ts` + migration v33 `blackboard_entries` (run_id = the plan's message id), one entry per agent completion written at the `query.ts` handoff chokepoint (no-op outside an active run), size-capped to 50/run, cascade-deleted with the project. The ledger derives from it. **v0.43.0 — size-bounded injection shipped:** pure `runDigest.ts` `formatRunDigest` renders the run's prior entries (files/tests/errors + truncated summary, last 8, ~2.5 KB cap) into a "## Prior steps in this run" block; `blackboard.buildInjectionDigest` resolves the active run; `agents/spawn.ts` prepends it before the task for **director-spawned** rows (not user spawns, not row 0). R-A8 hardened (per-summary `stripOrchestratorFences`, extracted to shared `sanitize.ts`) + secret-scrubbed. |
 | N7 | **Plan Critic** (adversarial pre-spawn plan review) | Pre-spawn | strategic | M | `[x]` v0.36.0 ✅ | **SHIPPED v0.36.0.** One-shot haiku critic (`director/critic.ts` via `runClaudeQuery`) on plans ≥3 rows, claude-only, advisory; `orchestrator-critique` block parsed in `parse.ts`, persisted (migration v29), rendered as per-row `!`/`!!` badges + a ⚑ PLAN CRITIC footer on PlanCard. Tune levers if noisy: critic prompt + effort low→medium. |
 | N8 | Pre-acceptance clarifying-questions round-trip | Pre-spawn | quick-win | S | `[x]` v0.37.0 | **SHIPPED v0.37.0.** Auto-mode-only: Director emits `orchestrator-questions` (≤3, parsed in parse.ts via extractDirectives) instead of a plan when ambiguous; QuestionsCard renders answer fields; submitting folds answers back via the normal `send` (resumes session) → grounded plan. Persisted (migration v30). PRD's `open_questions` kept separate (static, no fold-back). Tune the ask-vs-plan gate in prompt.ts if it over-asks. |
@@ -139,6 +167,7 @@ Smaller quality-of-life items (not from the sweep). Add freely.
 ### Recently shipped (for reference)
 | Item | Version | Status |
 |------|---------|--------|
+| N5 — Supervised auto-replan on stall (Director revises the remaining plan → user-approved PlanCard, bounded by `maxReplansPerRun`) | v0.45.0 | `[x]` |
 | PRE-2a — Run-wide spawn cap (count-based backstop; halt+surface like the stall pause; `maxSpawnsPerRun` setting, default 25). Unblocks N5 auto-replan + N1/N11/N12/N13/N32. | v0.44.0 | `[x]` |
 | N6 — Blackboard injection: prior-steps digest into director-spawned agents (R-A8 hardened) | v0.43.0 | `[x]` |
 | N5+N6 — Task/Progress ledger + run-scoped blackboard (safe half; stall pause, no auto-replan) | v0.42.0 | `[x]` |

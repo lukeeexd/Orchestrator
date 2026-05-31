@@ -170,6 +170,7 @@ function StreamEntry({
             prevRows={prevPlanRows}
             critique={message.critique}
             confidence={message.confidence}
+            replan={message.replan}
           />
         </div>
       )}

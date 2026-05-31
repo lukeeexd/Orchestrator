@@ -51,8 +51,8 @@ export function saveDirectorMessage(m: DirectorMessage): void {
   messageOrdering += 1;
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO director_messages
-      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd, critique, questions, confidence, ledger)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd, critique, questions, confidence, ledger, replan)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run([
     m.id,
@@ -75,6 +75,7 @@ export function saveDirectorMessage(m: DirectorMessage): void {
     m.questions ? JSON.stringify(m.questions) : null,
     m.confidence ? JSON.stringify(m.confidence) : null,
     m.ledger ? JSON.stringify(m.ledger) : null,
+    m.replan ? JSON.stringify(m.replan) : null,
   ]);
   stmt.free();
   // A1: audit append. We log the creation moment; subsequent
@@ -154,6 +155,10 @@ export function patchDirectorMessage(
     sets.push('ledger = ?');
     values.push(patch.ledger ? JSON.stringify(patch.ledger) : null);
   }
+  if ('replan' in patch) {
+    sets.push('replan = ?');
+    values.push(patch.replan ? JSON.stringify(patch.replan) : null);
+  }
   if (sets.length === 0) return;
   values.push(id);
   const stmt = db.prepare(
@@ -167,7 +172,7 @@ export function patchDirectorMessage(
 export function loadDirectorMessages(projectId: string): DirectorMessage[] {
   const db = getDb();
   const stmt = db.prepare(`
-    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd, critique, questions, confidence, ledger
+    SELECT id, ordering, who, name, time, body, plan, plan_accepted, live, attachments, redirect, redirect_fired, project_id, prd, critique, questions, confidence, ledger, replan
     FROM director_messages
     WHERE project_id = ?
     ORDER BY ordering ASC
@@ -251,6 +256,15 @@ export function loadDirectorMessages(projectId: string): DirectorMessage[] {
         ledger = undefined;
       }
     }
+    const replanRaw = row[18];
+    let replan: DirectorMessage['replan'];
+    if (typeof replanRaw === 'string' && replanRaw.length > 0) {
+      try {
+        replan = JSON.parse(replanRaw);
+      } catch {
+        replan = undefined;
+      }
+    }
     out.push({
       id: asStr(row[0]),
       projectId: asStr(row[12], projectId),
@@ -269,6 +283,7 @@ export function loadDirectorMessages(projectId: string): DirectorMessage[] {
       questions,
       confidence,
       ledger,
+      replan,
     });
     messageOrdering = Math.max(messageOrdering, asInt(row[1]));
   }

@@ -556,6 +556,7 @@ function Message({
           prevRows={prevPlanRows}
           critique={message.critique}
           confidence={message.confidence}
+          replan={message.replan}
         />
       )}
       {message.ledger && message.ledger.rows.length > 0 && (
