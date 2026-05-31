@@ -39,8 +39,16 @@ function derive(input: {
   agentIdByRow: Array<string | undefined>;
   entries: BlackboardEntry[];
   activeRowIndex: number;
+  spawnCount?: number;
+  spawnCap?: number;
 }) {
-  return deriveLedger({ runId: 'r', updatedAt: 0, ...input });
+  return deriveLedger({
+    runId: 'r',
+    updatedAt: 0,
+    spawnCount: 0,
+    spawnCap: 0,
+    ...input,
+  });
 }
 
 describe('deriveLedger — status mapping', () => {
@@ -168,5 +176,39 @@ describe('deriveLedger — stall counting', () => {
 
   it('STALL_LIMIT is 2 (Magentic-One threshold)', () => {
     expect(STALL_LIMIT).toBe(2);
+  });
+});
+
+describe('deriveLedger — PRE-2a spawn cap', () => {
+  const base = {
+    rows: [row(1)],
+    agentIdByRow: ['a0'] as Array<string | undefined>,
+    entries: [entry('a0')],
+    activeRowIndex: -1,
+  };
+
+  it('echoes spawnCount + spawnCap onto the ledger', () => {
+    const led = derive({ ...base, spawnCount: 3, spawnCap: 25 });
+    expect(led.spawnCount).toBe(3);
+    expect(led.spawnCap).toBe(25);
+  });
+
+  it('is not capped while under the cap', () => {
+    const led = derive({ ...base, spawnCount: 4, spawnCap: 25 });
+    expect(led.capped).toBe(false);
+    expect(led.cappedReason).toBeUndefined();
+  });
+
+  it('caps when spawnCount reaches the cap, with a reason', () => {
+    const led = derive({ ...base, spawnCount: 25, spawnCap: 25 });
+    expect(led.capped).toBe(true);
+    expect(led.cappedReason).toBeTruthy();
+    expect(led.cappedReason).toContain('25/25');
+  });
+
+  it('cap of 0 means unlimited — never capped even at a high count', () => {
+    const led = derive({ ...base, spawnCount: 999, spawnCap: 0 });
+    expect(led.capped).toBe(false);
+    expect(led.cappedReason).toBeUndefined();
   });
 });

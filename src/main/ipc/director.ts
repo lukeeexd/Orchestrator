@@ -224,12 +224,15 @@ export function registerDirectorHandlers(
       // plan message. `activeRowIndex` is the row currently running (-1 = none).
       const refreshLedger = (activeRowIndex: number) => {
         if (!runId) return null;
+        const budget = blackboard.spawnBudgetExhausted(req.projectId);
         const ledger = deriveLedger({
           runId,
           rows: req.rows,
           agentIdByRow,
           entries: blackboard.listEntries(req.projectId, runId),
           activeRowIndex,
+          spawnCount: budget.count,
+          spawnCap: budget.cap,
           updatedAt: Date.now(),
         });
         director.updateLedger(req.projectId, runId, ledger);
@@ -272,7 +275,13 @@ export function registerDirectorHandlers(
         // empty regardless of whether beginRun has run yet — there are no prior
         // entries on the first row — so the injection is correct independent of
         // this ordering; beginRun's placement only governs entry attribution.
-        if (runId) blackboard.beginRun(req.projectId, runId);
+        if (runId) {
+          blackboard.beginRun(req.projectId, runId);
+          // PRE-2a: count row 0 against the run cap (it already spawned — the
+          // first agent is never gated, but it does consume from the budget so
+          // the count the ledger shows is the true agent total).
+          blackboard.recordSpawn(req.projectId);
+        }
         refreshLedger(0);
       }
       const reservedNames = [
@@ -324,6 +333,24 @@ export function registerDirectorHandlers(
               );
               return;
             }
+            // PRE-2a: stop before minting the next agent if the run hit its
+            // spawn cap (backstop against runaway auto-loops). Surface + halt,
+            // same as the stall pause — no auto-replan past the cap. `led`
+            // already reflects capped=true via refreshLedger above.
+            if (runId) {
+              const budget = blackboard.spawnBudgetExhausted(req.projectId);
+              if (budget.exhausted) {
+                director.notifySystem(
+                  req.projectId,
+                  `⚠ Run capped — ${budget.count}/${budget.cap} agents spawned. ${
+                    req.rows.length - i
+                  } row${
+                    req.rows.length - i === 1 ? '' : 's'
+                  } not spawned. Raise "Max agents per run" in Settings to allow more.`,
+                );
+                return;
+              }
+            }
             const row = req.rows[i];
             try {
               const r = await spawnAgent(
@@ -345,6 +372,7 @@ export function registerDirectorHandlers(
                 name: e?.agent.name ?? row.name,
               });
               agentIdByRow[i] = r.agentId;
+              if (runId) blackboard.recordSpawn(req.projectId);
               refreshLedger(i);
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);

@@ -122,6 +122,9 @@ export const partialSettingsSchema = z
     defaultBudgetUsd: z.number().nonnegative(),
     defaultBudgetTokens: z.number().nonnegative(),
     defaultBudgetSeconds: z.number().nonnegative(),
+    // PRE-2a: run-wide spawn cap. Must be listed here or .partial() strips it
+    // on save (same landmine as `theme`). Int, nonnegative; 0 = unlimited.
+    maxSpawnsPerRun: z.number().int().nonnegative(),
     copyGlobalSubsToNewProjects: z.boolean(),
     // Without this, the .partial() z.object STRIPS the unknown `theme` key
     // and the setting never persists through setSettings.

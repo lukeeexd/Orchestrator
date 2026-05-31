@@ -243,6 +243,8 @@ export interface Settings {
   defaultBudgetTokens: number;
   /** Per-agent wall-clock cap in seconds. 0 = unlimited. */
   defaultBudgetSeconds: number;
+  /** PRE-2a: max director-driven agent spawns per accepted-plan run — a backstop so auto-loops (gate fixes, future auto-replan) can't mint unbounded agents. 0 = unlimited. */
+  maxSpawnsPerRun: number;
   /**
    * When true, creating a new project copies every current
    * marketplace global-scope subscription into the new project as a

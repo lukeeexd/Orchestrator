@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { getDb, scheduleSave } from './db';
 import { formatRunDigest } from './runDigest';
+import { readSettings } from './settings';
 import type {
   AgentRole,
   BlackboardEntry,
@@ -49,16 +50,60 @@ function isRole(value: unknown): value is AgentRole {
  */
 const activeRuns = new Map<string, string>();
 
+/**
+ * PRE-2a: per-run count of director-driven agent spawns (plan rows + N3 gate
+ * fix-redirects + future N5 auto-replan / N1 re-spawns). The backstop against
+ * an auto-loop minting unbounded agents now that per-agent budgets are gone.
+ * Same in-memory, per-run lifecycle as `activeRuns` (reset on beginRun, cleared
+ * on endRun); user-spawned agents never touch it.
+ */
+const activeRunSpawns = new Map<string, number>();
+
 export function beginRun(projectId: string, runId: string): void {
   activeRuns.set(projectId, runId);
+  activeRunSpawns.set(projectId, 0);
 }
 
 export function endRun(projectId: string): void {
   activeRuns.delete(projectId);
+  activeRunSpawns.delete(projectId);
 }
 
 export function activeRun(projectId: string): string | undefined {
   return activeRuns.get(projectId);
+}
+
+// ─────────────────────────── PRE-2a spawn cap ───────────────────────────
+
+/** Count one director-driven spawn against the run. Returns the new count. */
+export function recordSpawn(projectId: string): number {
+  const next = (activeRunSpawns.get(projectId) ?? 0) + 1;
+  activeRunSpawns.set(projectId, next);
+  return next;
+}
+
+/** Spawns recorded for the project's active run so far. */
+export function runSpawnCount(projectId: string): number {
+  return activeRunSpawns.get(projectId) ?? 0;
+}
+
+/**
+ * Whether the run has hit its spawn cap. The cap is the global
+ * `maxSpawnsPerRun` setting (0 = unlimited/off). Read this BEFORE minting a new
+ * agent (rows 1+, gate fix-redirects, future auto-replan); when exhausted the
+ * caller surfaces + halts (no auto-replan past the cap). `remaining` lets a
+ * future N5 auto-replan size its replan to the budget left.
+ */
+export function spawnBudgetExhausted(projectId: string): {
+  exhausted: boolean;
+  count: number;
+  cap: number;
+  remaining: number;
+} {
+  const cap = readSettings().maxSpawnsPerRun ?? 0;
+  const count = runSpawnCount(projectId);
+  const remaining = cap > 0 ? Math.max(0, cap - count) : Infinity;
+  return { exhausted: cap > 0 && count >= cap, count, cap, remaining };
 }
 
 // ───────────────────────────── storage ─────────────────────────────
